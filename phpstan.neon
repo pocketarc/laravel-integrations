@@ -1,0 +1,17 @@
+includes:
+    - vendor/larastan/larastan/extension.neon
+    - vendor/phpstan/phpstan-strict-rules/rules.neon
+
+parameters:
+    paths:
+        - src
+    level: 10
+    ignoreErrors:
+        # Eloquent's fluent interface triggers this incorrectly
+        - identifier: staticMethod.dynamicCall
+        # ide-helper generates incomplete stubs for Request
+        -
+            message: '#Call to an undefined method Illuminate\\Http\\Request::(query|merge)\(\)#'
+            reportUnmatched: false
+    scanFiles:
+        - _ide_helper.php

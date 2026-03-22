@@ -1,0 +1,54 @@
+{
+    "$schema": "https://getcomposer.org/schema.json",
+    "name": "pocketarc/laravel-integrations",
+    "description": "Production-ready third-party integrations for Laravel — credential management, API request logging, rate limiting, sync scheduling, OAuth2, and health monitoring.",
+    "keywords": ["laravel", "integrations", "api", "oauth2", "sync", "webhooks"],
+    "license": "MIT",
+    "authors": [
+        {
+            "name": "Bruno Moreira",
+            "email": "bruno.moreira@solmyr.com"
+        }
+    ],
+    "type": "library",
+    "require": {
+        "php": "^8.3",
+        "illuminate/support": "^11.0|^12.0|^13.0"
+    },
+    "require-dev": {
+        "barryvdh/laravel-ide-helper": "^3.6",
+        "captainhook/captainhook": "^5.28",
+        "larastan/larastan": "^3",
+        "laravel/pint": "^1.24",
+        "orchestra/testbench": "^10.0|^11.0",
+        "phpstan/phpstan-strict-rules": "^2.0",
+        "phpunit/phpunit": "^12.0",
+        "spatie/laravel-data": "^4.20"
+    },
+    "autoload": {
+        "psr-4": {
+            "Integrations\\": "src/"
+        }
+    },
+    "autoload-dev": {
+        "psr-4": {
+            "Integrations\\Tests\\": "tests/"
+        }
+    },
+    "extra": {
+        "laravel": {
+            "providers": [
+                "Integrations\\IntegrationsServiceProvider"
+            ]
+        }
+    },
+    "suggest": {
+        "spatie/laravel-data": "For typed credential and metadata casting (^4.0)."
+    },
+    "config": {
+        "sort-packages": true,
+        "allow-plugins": {
+            "phpstan/extension-installer": true
+        }
+    }
+}
