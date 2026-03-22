@@ -23,9 +23,13 @@ return [
         // URL prefix for OAuth routes: GET /{prefix}/{id}/oauth/authorize, GET /{prefix}/oauth/callback
         'route_prefix' => 'integrations',
 
-        // OAuth routes need session and CSRF protection because they involve user-facing
-        // browser redirects, unlike webhooks which are server-to-server.
+        // Middleware for OAuth authorize and revoke routes. These are user-initiated actions
+        // that need session, CSRF, and typically app authentication.
         'middleware' => ['web'],
+
+        // Middleware for the OAuth callback route. This is a redirect back from the external
+        // provider, so it cannot carry session-based app auth. Keep this minimal.
+        'callback_middleware' => ['web'],
 
         // Where to redirect the user after a successful OAuth authorization callback.
         'success_redirect' => '/integrations',

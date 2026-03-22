@@ -189,7 +189,7 @@ class Integration extends Model
                 'class' => $e::class,
                 'message' => $e->getMessage(),
                 'code' => $e->getCode(),
-                'trace' => mb_substr($e->getTraceAsString(), 0, 2000),
+                'trace' => mb_strcut($e->getTraceAsString(), 0, 2000),
             ];
 
             $responseCode = $this->extractStatusCodeFromException($e);
@@ -258,7 +258,7 @@ class Integration extends Model
         int $durationMs,
         ?CarbonInterface $cacheFor,
     ): IntegrationRequest {
-        $truncatedRequestData = $requestData !== null ? mb_substr($requestData, 0, 65530) : null;
+        $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
 
         /** @var IntegrationRequest */
         return $this->requests()->create([
@@ -345,7 +345,7 @@ class Integration extends Model
 
     private function findCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $requestData !== null ? hash('xxh128', mb_substr($requestData, 0, 65530)) : null;
+        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
 
         return $this->requests()
             ->where('endpoint', $endpoint)
@@ -360,7 +360,7 @@ class Integration extends Model
 
     private function findStaleCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $requestData !== null ? hash('xxh128', mb_substr($requestData, 0, 65530)) : null;
+        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
 
         return $this->requests()
             ->where('endpoint', $endpoint)

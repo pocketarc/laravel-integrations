@@ -85,11 +85,16 @@ class IntegrationsServiceProvider extends ServiceProvider
                 Route::get('{integration}/oauth/authorize', [OAuthController::class, 'authorize'])
                     ->where('integration', '[0-9]+')
                     ->name('integrations.oauth.authorize');
-                Route::get('oauth/callback', [OAuthController::class, 'callback'])
-                    ->name('integrations.oauth.callback');
                 Route::post('{integration}/oauth/revoke', [OAuthController::class, 'revoke'])
                     ->where('integration', '[0-9]+')
                     ->name('integrations.oauth.revoke');
+            });
+
+        Route::middleware(Config::oauthCallbackMiddleware())
+            ->prefix(Config::oauthRoutePrefix())
+            ->group(function (): void {
+                Route::get('oauth/callback', [OAuthController::class, 'callback'])
+                    ->name('integrations.oauth.callback');
             });
     }
 }

@@ -73,13 +73,6 @@ class WebhookController extends Controller
             return new JsonResponse(['error' => 'Invalid signature.'], 403);
         }
 
-        $integration->logOperation(
-            operation: 'webhook',
-            direction: 'inbound',
-            status: 'pending',
-            summary: "Webhook received from {$providerKey}",
-        );
-
         WebhookReceived::dispatch($integration, $providerKey);
 
         try {

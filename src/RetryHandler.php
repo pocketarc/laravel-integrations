@@ -33,6 +33,14 @@ class RetryHandler
         int $defaultBaseDelayMs = 1_000,
         ?Closure $onRetry = null,
     ): mixed {
+        if ($maxRetries < 1) {
+            throw new \InvalidArgumentException('$maxRetries must be at least 1.');
+        }
+
+        if ($rateLimitDelayMs < 0 || $serverErrorBaseDelayMs < 0 || $defaultBaseDelayMs < 0) {
+            throw new \InvalidArgumentException('Delay values must be non-negative.');
+        }
+
         $lastException = null;
         $retriesMade = 0;
         $exhausted = false;
@@ -44,12 +52,12 @@ class RetryHandler
                 $lastException = $e;
                 $statusCode = self::extractStatusCode($e);
 
-                if ($attempt >= $maxRetries) {
-                    $exhausted = true;
+                if (! self::isRetryable($e, $statusCode, $retryableStatusCodes)) {
                     break;
                 }
 
-                if (! self::isRetryable($e, $statusCode, $retryableStatusCodes)) {
+                if ($attempt >= $maxRetries) {
+                    $exhausted = true;
                     break;
                 }
 
