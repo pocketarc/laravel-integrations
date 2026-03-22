@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Support\Carbon;
+use Integrations\Support\Config;
 
 /**
  * @property int $id
@@ -35,10 +36,7 @@ class IntegrationMapping extends Model
 
     public function getTable(): string
     {
-        /** @var string $prefix */
-        $prefix = config('integrations.table_prefix', 'integration');
-
-        return $prefix.'_mappings';
+        return Config::tablePrefix().'_mappings';
     }
 
     /**

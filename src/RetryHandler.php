@@ -35,6 +35,7 @@ class RetryHandler
     ): mixed {
         $lastException = null;
         $retriesMade = 0;
+        $exhausted = false;
 
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
             try {
@@ -44,6 +45,7 @@ class RetryHandler
                 $statusCode = self::extractStatusCode($e);
 
                 if ($attempt >= $maxRetries) {
+                    $exhausted = true;
                     break;
                 }
 
@@ -57,13 +59,15 @@ class RetryHandler
                     $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs,
                 );
 
-                $onRetry?->call(new \stdClass, $attempt, $e);
+                if ($onRetry !== null) {
+                    ($onRetry)($attempt, $e);
+                }
 
                 usleep($delayMs * 1000);
             }
         }
 
-        if ($retriesMade > 0) {
+        if ($exhausted && $retriesMade > 0) {
             throw new RetriesExhaustedException($retriesMade, $lastException);
         }
 

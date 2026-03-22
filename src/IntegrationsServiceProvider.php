@@ -15,6 +15,8 @@ use Integrations\Console\TestCommand;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Http\OAuthController;
 use Integrations\Http\WebhookController;
+use Integrations\Support\Config;
+use InvalidArgumentException;
 
 class IntegrationsServiceProvider extends ServiceProvider
 {
@@ -25,11 +27,15 @@ class IntegrationsServiceProvider extends ServiceProvider
         $this->app->singleton(IntegrationManager::class, function (): IntegrationManager {
             $manager = new IntegrationManager($this->app);
 
-            /** @var array<string, class-string> $providers */
-            $providers = config('integrations.providers', []);
+            foreach (Config::providers() as $key => $class) {
+                if (! class_exists($class)) {
+                    throw new InvalidArgumentException("Integration provider class '{$class}' for key '{$key}' does not exist.");
+                }
 
-            foreach ($providers as $key => $class) {
-                /** @var class-string<IntegrationProvider> $class */
+                if (! is_subclass_of($class, IntegrationProvider::class)) {
+                    throw new InvalidArgumentException("Integration provider class '{$class}' for key '{$key}' must implement ".IntegrationProvider::class.'.');
+                }
+
                 $manager->register($key, $class);
             }
 
@@ -63,13 +69,8 @@ class IntegrationsServiceProvider extends ServiceProvider
 
     private function registerRoutes(): void
     {
-        /** @var string $webhookPrefix */
-        $webhookPrefix = config('integrations.webhook.prefix', 'integrations');
-        /** @var list<string> $webhookMiddleware */
-        $webhookMiddleware = config('integrations.webhook.middleware', []);
-
-        Route::middleware($webhookMiddleware)
-            ->prefix($webhookPrefix)
+        Route::middleware(Config::webhookMiddleware())
+            ->prefix(Config::webhookPrefix())
             ->group(function (): void {
                 Route::match(['get', 'post'], '{provider}/webhook', [WebhookController::class, 'handle'])
                     ->name('integrations.webhook');
@@ -78,13 +79,8 @@ class IntegrationsServiceProvider extends ServiceProvider
                     ->name('integrations.webhook.specific');
             });
 
-        /** @var string $oauthPrefix */
-        $oauthPrefix = config('integrations.oauth.route_prefix', 'integrations');
-        /** @var list<string> $oauthMiddleware */
-        $oauthMiddleware = config('integrations.oauth.middleware', ['web']);
-
-        Route::middleware($oauthMiddleware)
-            ->prefix($oauthPrefix)
+        Route::middleware(Config::oauthMiddleware())
+            ->prefix(Config::oauthRoutePrefix())
             ->group(function (): void {
                 Route::get('{integration}/oauth/authorize', [OAuthController::class, 'authorize'])
                     ->where('integration', '[0-9]+')

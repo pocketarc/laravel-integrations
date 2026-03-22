@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\Config;
 
 class PruneCommand extends Command
 {
@@ -17,12 +18,9 @@ class PruneCommand extends Command
 
     public function handle(): int
     {
-        /** @var int $requestsDays */
-        $requestsDays = config('integrations.pruning.requests_days', 90);
-        /** @var int $logsDays */
-        $logsDays = config('integrations.pruning.logs_days', 365);
-        /** @var int $chunkSize */
-        $chunkSize = config('integrations.pruning.chunk_size', 1000);
+        $requestsDays = Config::pruningRequestsDays();
+        $logsDays = Config::pruningLogsDays();
+        $chunkSize = Config::pruningChunkSize();
 
         $requestsPruned = $this->pruneTable(
             IntegrationRequest::class,
@@ -51,13 +49,18 @@ class PruneCommand extends Command
         $totalDeleted = 0;
 
         do {
-            /** @var int $deleted */
-            $deleted = $modelClass::where('created_at', '<', $cutoff)
+            $ids = $modelClass::where('created_at', '<', $cutoff)
                 ->limit($chunkSize)
-                ->delete();
+                ->pluck('id');
 
+            if ($ids->isEmpty()) {
+                break;
+            }
+
+            /** @var int $deleted */
+            $deleted = $modelClass::whereIn('id', $ids)->delete();
             $totalDeleted += $deleted;
-        } while ($deleted >= $chunkSize);
+        } while ($ids->count() >= $chunkSize);
 
         return $totalDeleted;
     }

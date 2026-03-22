@@ -8,7 +8,9 @@ use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
+use Integrations\Support\Config;
 
 /**
  * @property int $id
@@ -49,10 +51,7 @@ class IntegrationLog extends Model
 
     public function getTable(): string
     {
-        /** @var string $prefix */
-        $prefix = config('integrations.table_prefix', 'integration');
-
-        return $prefix.'_logs';
+        return Config::tablePrefix().'_logs';
     }
 
     /**
@@ -85,7 +84,7 @@ class IntegrationLog extends Model
     }
 
     /**
-     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  Builder  $query
      * @return Builders\IntegrationLogBuilder<IntegrationLog>
      */
     #[\Override]

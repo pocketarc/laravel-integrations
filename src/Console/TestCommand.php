@@ -27,15 +27,15 @@ class TestCommand extends Command
                 continue;
             }
 
-            $provider = $manager->provider($integration->provider);
-
-            if (! $provider instanceof HasHealthCheck) {
-                continue;
-            }
-
-            $tested++;
-
             try {
+                $provider = $manager->provider($integration->provider);
+
+                if (! $provider instanceof HasHealthCheck) {
+                    continue;
+                }
+
+                $tested++;
+
                 $healthy = $provider->healthCheck($integration);
 
                 if ($healthy) {
@@ -48,6 +48,7 @@ class TestCommand extends Command
                     $failed++;
                 }
             } catch (\Throwable $e) {
+                $tested++;
                 $this->error("  [FAIL] {$integration->name} ({$integration->provider}): {$e->getMessage()}");
                 $integration->recordFailure();
                 $failed++;

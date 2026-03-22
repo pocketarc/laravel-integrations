@@ -17,8 +17,14 @@ class ReplayWebhookCommand extends Command
 
     public function handle(): int
     {
-        /** @var string $requestId */
         $requestId = $this->argument('requestId');
+
+        if (! is_string($requestId) || $requestId === '') {
+            $this->error('A valid request ID is required.');
+
+            return self::FAILURE;
+        }
+
         $originalRequest = IntegrationRequest::find($requestId);
 
         if ($originalRequest === null) {
@@ -50,9 +56,15 @@ class ReplayWebhookCommand extends Command
         );
 
         if ($originalRequest->request_data !== null) {
-            $decoded = json_decode($originalRequest->request_data, true);
-            if (is_array($decoded)) {
-                $fakeRequest->merge($decoded);
+            try {
+                $decoded = json_decode($originalRequest->request_data, true, 512, JSON_THROW_ON_ERROR);
+                if (is_array($decoded)) {
+                    $fakeRequest->merge($decoded);
+                }
+            } catch (\JsonException $e) {
+                $this->error("Could not decode request data for IntegrationRequest #{$requestId}: {$e->getMessage()}");
+
+                return self::FAILURE;
             }
         }
 

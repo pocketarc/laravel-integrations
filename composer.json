@@ -1,7 +1,7 @@
 {
     "$schema": "https://getcomposer.org/schema.json",
     "name": "pocketarc/laravel-integrations",
-    "description": "Production-ready third-party integrations for Laravel — credential management, API request logging, rate limiting, sync scheduling, OAuth2, and health monitoring.",
+    "description": "Production-ready third-party integrations for Laravel. Credential management, API request logging, rate limiting, sync scheduling, OAuth2, and health monitoring.",
     "keywords": ["laravel", "integrations", "api", "oauth2", "sync", "webhooks"],
     "license": "MIT",
     "authors": [

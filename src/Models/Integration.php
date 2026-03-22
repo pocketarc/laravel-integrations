@@ -18,12 +18,15 @@ use Illuminate\Support\Carbon;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
+use Integrations\Support\Config;
+use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 
 /**
@@ -33,7 +36,7 @@ use Psr\Http\Message\ResponseInterface;
  * @property array<string, mixed>|null $credentials
  * @property array<string, mixed>|null $metadata
  * @property bool $is_active
- * @property string $health_status
+ * @property HealthStatus $health_status
  * @property int $consecutive_failures
  * @property Carbon|null $last_error_at
  * @property Carbon|null $last_synced_at
@@ -69,10 +72,7 @@ class Integration extends Model
 
     public function getTable(): string
     {
-        /** @var string $prefix */
-        $prefix = config('integrations.table_prefix', 'integration');
-
-        return $prefix.'s';
+        return Config::tablePrefix().'s';
     }
 
     /**
@@ -84,6 +84,7 @@ class Integration extends Model
             'credentials' => 'encrypted:json',
             'metadata' => 'json',
             'is_active' => 'boolean',
+            'health_status' => HealthStatus::class,
             'consecutive_failures' => 'integer',
             'last_error_at' => 'datetime',
             'last_synced_at' => 'datetime',
@@ -127,7 +128,7 @@ class Integration extends Model
             return (string) $key;
         }
 
-        throw new \InvalidArgumentException('Model key must be a string or integer.');
+        throw new InvalidArgumentException('Model key must be a string or integer.');
     }
 
     /**
@@ -146,25 +147,24 @@ class Integration extends Model
         bool $serveStale = false,
         ?int $retryOfId = null,
     ): mixed {
-        /** @var bool $rateLimitEnabled */
-        $rateLimitEnabled = config('integrations.rate_limiting.enabled', true);
-
-        if ($rateLimitEnabled) {
+        if (Config::rateLimitingEnabled()) {
             $this->enforceRateLimit();
         }
 
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
-        /** @var bool $cacheEnabled */
-        $cacheEnabled = config('integrations.request_logging.cache_enabled', true);
-
         // Check cache
-        if ($cacheFor !== null && $cacheEnabled) {
+        if ($cacheFor !== null && Config::cacheEnabled()) {
             $cached = $this->findCachedResponse($endpoint, $method, $encodedRequestData);
             if ($cached !== null) {
-                $cached->increment('cache_hits');
+                try {
+                    $decoded = json_decode($cached->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
+                    $cached->increment('cache_hits');
 
-                return json_decode($cached->response_data ?? '{}', true);
+                    return $decoded;
+                } catch (\JsonException) {
+                    // Corrupt cached data - treat as cache miss and re-request
+                }
             }
         }
 
@@ -198,9 +198,12 @@ class Integration extends Model
             if ($serveStale) {
                 $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
                 if ($stale !== null) {
-                    $stale->increment('stale_hits');
-                    $result = json_decode($stale->response_data ?? '{}', true);
-                    // Still log the failed attempt, but we have a result
+                    try {
+                        $result = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
+                        $stale->increment('stale_hits');
+                    } catch (\JsonException) {
+                        // Corrupt stale data - no fallback available
+                    }
                 }
             }
 
@@ -255,11 +258,14 @@ class Integration extends Model
         int $durationMs,
         ?CarbonInterface $cacheFor,
     ): IntegrationRequest {
+        $truncatedRequestData = $requestData !== null ? mb_substr($requestData, 0, 65530) : null;
+
         /** @var IntegrationRequest */
         return $this->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
-            'request_data' => $requestData !== null ? mb_substr($requestData, 0, 65530) : null,
+            'request_data' => $truncatedRequestData,
+            'request_data_hash' => $truncatedRequestData !== null ? hash('xxh128', $truncatedRequestData) : null,
             'retry_of' => $retryOfId,
             'related_type' => $relatedTo !== null ? $relatedTo->getMorphClass() : null,
             'related_id' => $relatedTo !== null ? self::keyToString($relatedTo->getKey()) : null,
@@ -339,25 +345,29 @@ class Integration extends Model
 
     private function findCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
+        $hash = $requestData !== null ? hash('xxh128', mb_substr($requestData, 0, 65530)) : null;
+
         return $this->requests()
             ->where('endpoint', $endpoint)
             ->where('method', $method)
             ->where('response_success', true)
             ->where('expires_at', '>', now())
-            ->when($requestData !== null, fn (Builder $q) => $q->whereRaw('CRC32(request_data) = CRC32(?)', [$requestData]))
-            ->when($requestData === null, fn (Builder $q) => $q->whereNull('request_data'))
+            ->when($hash !== null, fn (Builder $q) => $q->where('request_data_hash', $hash))
+            ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
             ->latest()
             ->first();
     }
 
     private function findStaleCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
+        $hash = $requestData !== null ? hash('xxh128', mb_substr($requestData, 0, 65530)) : null;
+
         return $this->requests()
             ->where('endpoint', $endpoint)
             ->where('method', $method)
             ->where('response_success', true)
-            ->when($requestData !== null, fn (Builder $q) => $q->whereRaw('CRC32(request_data) = CRC32(?)', [$requestData]))
-            ->when($requestData === null, fn (Builder $q) => $q->whereNull('request_data'))
+            ->when($hash !== null, fn (Builder $q) => $q->where('request_data_hash', $hash))
+            ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
             ->latest()
             ->first();
     }
@@ -390,11 +400,11 @@ class Integration extends Model
 
         $this->update([
             'consecutive_failures' => 0,
-            'health_status' => 'healthy',
+            'health_status' => HealthStatus::Healthy,
         ]);
 
-        if ($previousStatus !== 'healthy') {
-            IntegrationHealthChanged::dispatch($this, $previousStatus, 'healthy');
+        if ($previousStatus !== HealthStatus::Healthy) {
+            IntegrationHealthChanged::dispatch($this, $previousStatus, HealthStatus::Healthy);
         }
     }
 
@@ -403,14 +413,9 @@ class Integration extends Model
         $previousStatus = $this->health_status;
         $failures = $this->consecutive_failures + 1;
 
-        /** @var int $degradedAfter */
-        $degradedAfter = config('integrations.health.degraded_after', 5);
-        /** @var int $failingAfter */
-        $failingAfter = config('integrations.health.failing_after', 20);
-
         $newStatus = match (true) {
-            $failures >= $failingAfter => 'failing',
-            $failures >= $degradedAfter => 'degraded',
+            $failures >= Config::failingAfter() => HealthStatus::Failing,
+            $failures >= Config::degradedAfter() => HealthStatus::Degraded,
             default => $previousStatus,
         };
 

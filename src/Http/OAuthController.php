@@ -13,6 +13,7 @@ use Integrations\Contracts\HasOAuth2;
 use Integrations\Events\OAuthCompleted;
 use Integrations\Events\OAuthRevoked;
 use Integrations\Models\Integration;
+use Integrations\Support\Config;
 use Symfony\Component\HttpKernel\Exception\BadRequestHttpException;
 use Symfony\Component\HttpKernel\Exception\NotFoundHttpException;
 
@@ -28,14 +29,10 @@ class OAuthController extends Controller
         }
 
         $state = Str::random(40);
-        /** @var int $ttl */
-        $ttl = config('integrations.oauth.state_ttl', 600);
 
-        Cache::put("integrations:oauth:state:{$state}", $model->id, $ttl);
+        Cache::put(Config::cachePrefix().":oauth:state:{$state}", $model->id, Config::oauthStateTtl());
 
-        /** @var string $routePrefix */
-        $routePrefix = config('integrations.oauth.route_prefix', 'integrations');
-        $redirectUri = url("{$routePrefix}/oauth/callback");
+        $redirectUri = url(Config::oauthRoutePrefix().'/oauth/callback');
 
         $authUrl = $provider->authorizationUrl($model, $redirectUri, $state);
 
@@ -51,7 +48,7 @@ class OAuthController extends Controller
             throw new BadRequestHttpException('Missing state or code parameter.');
         }
 
-        $integrationId = Cache::pull("integrations:oauth:state:{$state}");
+        $integrationId = Cache::pull(Config::cachePrefix().":oauth:state:{$state}");
 
         if (! is_int($integrationId) && ! is_string($integrationId)) {
             throw new BadRequestHttpException('Invalid or expired state parameter.');
@@ -69,9 +66,7 @@ class OAuthController extends Controller
             throw new BadRequestHttpException('Provider does not support OAuth2.');
         }
 
-        /** @var string $routePrefix */
-        $routePrefix = config('integrations.oauth.route_prefix', 'integrations');
-        $redirectUri = url("{$routePrefix}/oauth/callback");
+        $redirectUri = url(Config::oauthRoutePrefix().'/oauth/callback');
 
         $tokenData = $provider->exchangeCode($integration, $code, $redirectUri);
 
@@ -81,10 +76,7 @@ class OAuthController extends Controller
 
         OAuthCompleted::dispatch($integration);
 
-        /** @var string $successRedirect */
-        $successRedirect = config('integrations.oauth.success_redirect', '/integrations');
-
-        return new RedirectResponse($successRedirect);
+        return new RedirectResponse(Config::oauthSuccessRedirect());
     }
 
     public function revoke(int $integration): RedirectResponse
@@ -105,9 +97,6 @@ class OAuthController extends Controller
 
         OAuthRevoked::dispatch($model);
 
-        /** @var string $successRedirect */
-        $successRedirect = config('integrations.oauth.success_redirect', '/integrations');
-
-        return new RedirectResponse($successRedirect);
+        return new RedirectResponse(Config::oauthSuccessRedirect());
     }
 }

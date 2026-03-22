@@ -6,9 +6,11 @@ namespace Integrations\Console;
 
 use Illuminate\Console\Command;
 use Integrations\Contracts\HasScheduledSync;
+use Integrations\Enums\HealthStatus;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\SyncIntegration;
 use Integrations\Models\Integration;
+use Integrations\Support\Config;
 
 class SyncCommand extends Command
 {
@@ -37,8 +39,7 @@ class SyncCommand extends Command
                 continue;
             }
 
-            /** @var string $queue */
-            $queue = config('integrations.sync.queue', 'default');
+            $queue = Config::syncQueue();
 
             SyncIntegration::dispatch($integration->id)->onQueue($queue);
             $dispatched++;
@@ -53,7 +54,7 @@ class SyncCommand extends Command
 
     private function shouldSkipDueToHealth(Integration $integration): bool
     {
-        if ($integration->health_status === 'healthy') {
+        if ($integration->health_status === HealthStatus::Healthy) {
             return false;
         }
 
@@ -61,15 +62,9 @@ class SyncCommand extends Command
             return false;
         }
 
-        /** @var int $degradedBackoff */
-        $degradedBackoff = config('integrations.health.degraded_backoff', 2);
-        /** @var int $failingBackoff */
-        $failingBackoff = config('integrations.health.failing_backoff', 10);
-
         $multiplier = match ($integration->health_status) {
-            'degraded' => $degradedBackoff,
-            'failing' => $failingBackoff,
-            default => 1,
+            HealthStatus::Degraded => Config::degradedBackoff(),
+            HealthStatus::Failing => Config::failingBackoff(),
         };
 
         $effectiveInterval = $integration->sync_interval_minutes * $multiplier;

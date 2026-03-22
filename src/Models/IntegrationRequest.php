@@ -9,7 +9,9 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
+use Integrations\Support\Config;
 
 /**
  * @property int $id
@@ -56,10 +58,7 @@ class IntegrationRequest extends Model
 
     public function getTable(): string
     {
-        /** @var string $prefix */
-        $prefix = config('integrations.table_prefix', 'integration');
-
-        return $prefix.'_requests';
+        return Config::tablePrefix().'_requests';
     }
 
     /**
@@ -104,7 +103,7 @@ class IntegrationRequest extends Model
     }
 
     /**
-     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  Builder  $query
      * @return Builders\IntegrationRequestBuilder<IntegrationRequest>
      */
     #[\Override]

@@ -3,7 +3,7 @@
         "verbosity": "normal",
         "run-mode": "local",
         "git-directory": ".git",
-        "php-path": "/opt/homebrew/opt/php/bin/php",
+        "php-path": "php",
         "includes": [],
         "custom": {}
     },

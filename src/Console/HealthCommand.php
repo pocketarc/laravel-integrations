@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
+use Illuminate\Support\Facades\DB;
+use Integrations\Enums\HealthStatus;
 use Integrations\Models\Integration;
 
 class HealthCommand extends Command
@@ -28,13 +30,12 @@ class HealthCommand extends Command
             $this->info("=== {$integration->name} ({$integration->provider}) ===");
 
             $healthColor = match ($integration->health_status) {
-                'healthy' => 'green',
-                'degraded' => 'yellow',
-                'failing' => 'red',
-                default => 'white',
+                HealthStatus::Healthy => 'green',
+                HealthStatus::Degraded => 'yellow',
+                HealthStatus::Failing => 'red',
             };
 
-            $this->line("  Health: <fg={$healthColor}>{$integration->health_status}</>");
+            $this->line("  Health: <fg={$healthColor}>{$integration->health_status->value}</>");
             $this->line("  Consecutive failures: {$integration->consecutive_failures}");
             $this->line('  Last error: '.($integration->last_error_at?->diffForHumans() ?? 'None'));
             $this->line('  Last synced: '.($integration->last_synced_at?->diffForHumans() ?? 'Never'));
@@ -47,11 +48,17 @@ class HealthCommand extends Command
             $this->line("  Requests (24h): {$total} total, {$successful} successful");
             $this->line('  Avg response time: '.(is_numeric($avgDuration) ? round((float) $avgDuration).'ms' : 'N/A'));
 
+            $jsonExpr = match (DB::getDriverName()) {
+                'pgsql' => "error->>'message'",
+                'sqlite' => "json_extract(error, '$.message')",
+                default => "JSON_UNQUOTE(JSON_EXTRACT(error, '$.message'))",
+            };
+
             $topErrors = $integration->requests()
                 ->recent(24)
                 ->failed()
-                ->selectRaw("JSON_UNQUOTE(JSON_EXTRACT(error, '$.message')) as error_message, COUNT(*) as count")
-                ->groupByRaw("JSON_UNQUOTE(JSON_EXTRACT(error, '$.message'))")
+                ->selectRaw("{$jsonExpr} as error_message, COUNT(*) as count")
+                ->groupByRaw("{$jsonExpr}")
                 ->orderByDesc('count')
                 ->limit(3)
                 ->pluck('count', 'error_message');

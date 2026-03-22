@@ -12,6 +12,7 @@ use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Models\Integration;
+use Integrations\Support\Config;
 
 class SyncIntegration implements ShouldQueue
 {
@@ -28,11 +29,8 @@ class SyncIntegration implements ShouldQueue
      */
     public function middleware(): array
     {
-        /** @var int $lockTtl */
-        $lockTtl = config('integrations.sync.lock_ttl', 600);
-
         return [
-            (new WithoutOverlapping("integration-sync-{$this->integrationId}"))->expireAfter($lockTtl),
+            (new WithoutOverlapping("integration-sync-{$this->integrationId}"))->expireAfter(Config::syncLockTtl()),
         ];
     }
 

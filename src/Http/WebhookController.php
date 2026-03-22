@@ -56,7 +56,7 @@ class WebhookController extends Controller
 
         $integration = Integration::find($id);
 
-        if ($integration === null || $integration->provider !== $provider) {
+        if ($integration === null || $integration->provider !== $provider || ! $integration->is_active) {
             return new JsonResponse(['error' => 'Integration not found.'], 404);
         }
 
@@ -82,8 +82,27 @@ class WebhookController extends Controller
 
         WebhookReceived::dispatch($integration, $providerKey);
 
-        $result = $provider->handleWebhook($integration, $request);
+        try {
+            $result = $provider->handleWebhook($integration, $request);
 
-        return new JsonResponse($result ?? ['status' => 'ok']);
+            $integration->logOperation(
+                operation: 'webhook',
+                direction: 'inbound',
+                status: 'success',
+                summary: "Webhook from {$providerKey} handled successfully.",
+            );
+
+            return new JsonResponse($result ?? ['status' => 'ok']);
+        } catch (\Throwable $e) {
+            $integration->logOperation(
+                operation: 'webhook',
+                direction: 'inbound',
+                status: 'failed',
+                summary: "Webhook from {$providerKey} failed.",
+                error: $e->getMessage(),
+            );
+
+            throw $e;
+        }
     }
 }

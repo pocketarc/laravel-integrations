@@ -36,8 +36,13 @@ class IntegrationManager
             throw new InvalidArgumentException("Integration provider '{$key}' is not registered.");
         }
 
-        /** @var IntegrationProvider */
-        return $this->container->make($this->providers[$key]);
+        $provider = $this->container->make($this->providers[$key]);
+
+        if (! $provider instanceof IntegrationProvider) {
+            throw new InvalidArgumentException("Resolved class for provider '{$key}' does not implement ".IntegrationProvider::class.'.');
+        }
+
+        return $provider;
     }
 
     /**

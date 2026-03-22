@@ -52,7 +52,9 @@ return new class extends Migration
             $table->unsignedInteger('stale_hits')->default(0);
             $table->timestamps();
 
+            $table->string('request_data_hash', 32)->nullable()->index();
             $table->index(['integration_id', 'created_at']);
+            $table->index(['endpoint', 'method', 'response_success']);
             $table->index('retry_of');
         });
 
