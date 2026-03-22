@@ -1,0 +1,15 @@
+name: laravel-integrations
+
+services:
+  devtools:
+    build:
+      context: .
+      dockerfile: docker/php/Dockerfile
+    init: true
+    stop_grace_period: 1s
+    tty: true
+    stdin_open: true
+    working_dir: /var/www/html
+    volumes:
+      - .:/var/www/html
+    command: /bin/bash
