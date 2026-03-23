@@ -12,6 +12,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Integrations\Support\Config;
+use Integrations\Testing\IntegrationRequestFake;
 
 /**
  * @property int $id
@@ -110,5 +111,36 @@ class IntegrationRequest extends Model
     public function newEloquentBuilder($query): Builders\IntegrationRequestBuilder
     {
         return new Builders\IntegrationRequestBuilder($query);
+    }
+
+    /**
+     * @param  array<string, mixed|\Closure>  $fakeResponses
+     */
+    public static function fake(array $fakeResponses = []): IntegrationRequestFake
+    {
+        return IntegrationRequestFake::activate($fakeResponses);
+    }
+
+    public static function stopFaking(): void
+    {
+        IntegrationRequestFake::deactivate();
+    }
+
+    public static function assertRequested(string $endpoint, ?int $times = null): void
+    {
+        IntegrationRequestFake::assertRequested($endpoint, $times);
+    }
+
+    public static function assertNotRequested(string $endpoint): void
+    {
+        IntegrationRequestFake::assertNotRequested($endpoint);
+    }
+
+    /**
+     * @param  \Closure(string|null): bool  $callback
+     */
+    public static function assertRequestedWith(string $endpoint, \Closure $callback): void
+    {
+        IntegrationRequestFake::assertRequestedWith($endpoint, $callback);
     }
 }
