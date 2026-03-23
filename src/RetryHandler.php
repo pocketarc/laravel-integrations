@@ -101,6 +101,7 @@ class RetryHandler
      */
     public static function calculateDelayMs(\Throwable $e, int $attempt): int
     {
+        $attempt = max(1, $attempt);
         $statusCode = self::extractStatusCode($e);
 
         return self::calculateDelay($statusCode, $attempt, 30_000, 2_000, 1_000);

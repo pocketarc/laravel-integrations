@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit\Commands;
 
+use Illuminate\Support\Facades\DB;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
@@ -39,7 +40,9 @@ class ReplayWebhookCommandTest extends TestCase
 
     public function test_fails_on_missing_request(): void
     {
-        $this->artisan('integrations:replay-webhook 999')
+        $missingId = (int) DB::table('integration_requests')->max('id') + 1;
+
+        $this->artisan("integrations:replay-webhook {$missingId}")
             ->assertFailed()
             ->expectsOutputToContain('not found');
     }

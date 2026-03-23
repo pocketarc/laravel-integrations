@@ -35,6 +35,7 @@ use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
+use Spatie\LaravelData\Data;
 
 /**
  * @property int $id
@@ -76,6 +77,8 @@ class Integration extends Model
 {
     /** @var array<string> */
     protected $guarded = [];
+
+    private ?int $lastCreatedRequestId = null;
 
     protected static function booted(): void
     {
@@ -197,7 +200,7 @@ class Integration extends Model
         if ($maxRetries > 1) {
             return $this->requestWithRetries(
                 $endpoint, $method, $callback, $relatedTo,
-                $encodedRequestData, $cacheFor, $serveStale, $maxRetries,
+                $encodedRequestData, $cacheFor, $serveStale, $maxRetries, $retryOfId,
             );
         }
 
@@ -219,32 +222,30 @@ class Integration extends Model
         ?CarbonInterface $cacheFor,
         bool $serveStale,
         int $maxRetries,
+        ?int $retryOfId = null,
     ): mixed {
-        /** @var int|null $firstRequestId */
-        $firstRequestId = null;
+        $firstRequestId = $retryOfId;
         $lastException = null;
 
+        $this->lastCreatedRequestId = null;
+
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            $allowStale = $serveStale && $attempt === $maxRetries;
+
             try {
                 $result = $this->executeRequest(
                     $endpoint, $method, $callback, $relatedTo,
-                    $encodedRequestData, $cacheFor, $serveStale,
+                    $encodedRequestData, $cacheFor, $allowStale,
                     retryOfId: $firstRequestId,
                 );
 
-                if ($firstRequestId === null) {
-                    $id = $this->requests()->latest('id')->value('id');
-                    $firstRequestId = is_int($id) ? $id : null;
-                }
+                $firstRequestId ??= $this->lastCreatedRequestId;
 
                 return $result;
             } catch (\Throwable $e) {
                 $lastException = $e;
 
-                if ($firstRequestId === null) {
-                    $id = $this->requests()->latest('id')->value('id');
-                    $firstRequestId = is_int($id) ? $id : null;
-                }
+                $firstRequestId ??= $this->lastCreatedRequestId;
 
                 if ($attempt >= $maxRetries) {
                     throw $e;
@@ -320,6 +321,7 @@ class Integration extends Model
                         $relatedTo, $responseCode, $responseData, false,
                         $error, $durationMs, $cacheFor,
                     );
+                    $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
                     RequestFailed::dispatch($this, $request);
                 }
@@ -336,6 +338,7 @@ class Integration extends Model
                 $relatedTo, $responseCode, $responseData, $responseSuccess,
                 $error, $durationMs, $cacheFor,
             );
+            $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
             if ($responseSuccess) {
                 RequestCompleted::dispatch($this, $request);
@@ -545,14 +548,14 @@ class Integration extends Model
     {
         $this->refreshTokenIfNeeded();
 
-        $token = $this->credentials['access_token'] ?? null;
+        $token = $this->credentialsArray()['access_token'] ?? null;
 
         return is_string($token) ? $token : null;
     }
 
     public function tokenExpiresSoon(): bool
     {
-        $expiresAt = $this->credentials['token_expires_at'] ?? null;
+        $expiresAt = $this->credentialsArray()['token_expires_at'] ?? null;
         if (! is_string($expiresAt)) {
             return false;
         }
@@ -576,8 +579,23 @@ class Integration extends Model
 
         $newCredentials = $provider->refreshToken($this);
         $this->update([
-            'credentials' => array_merge($this->credentials ?? [], $newCredentials),
+            'credentials' => array_merge($this->credentialsArray(), $newCredentials),
         ]);
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function credentialsArray(): array
+    {
+        $raw = $this->getAttribute('credentials');
+
+        if ($raw instanceof Data) {
+            /** @var array<string, mixed> */
+            return $raw->toArray();
+        }
+
+        return $this->credentials ?? [];
     }
 
     public function markSynced(): void
@@ -613,7 +631,6 @@ class Integration extends Model
         ?int $durationMs = null,
         ?int $parentId = null,
     ): IntegrationLog {
-        /** @var IntegrationLog $log */
         $log = $this->logs()->create([
             'parent_id' => $parentId,
             'operation' => $operation,

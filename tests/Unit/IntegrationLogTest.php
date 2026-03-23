@@ -100,7 +100,13 @@ class IntegrationLogTest extends TestCase
 
         $this->integration->logOperation(operation: 'sync', direction: 'inbound', status: 'failed', error: 'Connection timeout');
 
-        Event::assertDispatched(OperationFailed::class);
+        Event::assertDispatched(OperationFailed::class, function (OperationFailed $event): bool {
+            return $event->integration->is($this->integration)
+                && $event->log->operation === 'sync'
+                && $event->log->direction === 'inbound'
+                && $event->log->status === 'failed'
+                && $event->log->error === 'Connection timeout';
+        });
         Event::assertNotDispatched(OperationCompleted::class);
     }
 
