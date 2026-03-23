@@ -47,6 +47,7 @@ class HealthTrackingTest extends TestCase
     public function test_transitions_to_degraded(): void
     {
         Event::fake();
+        config(['integrations.health.degraded_after' => 5]);
 
         $integration = Integration::create([
             'provider' => 'test',

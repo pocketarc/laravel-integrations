@@ -72,8 +72,9 @@ class RetryHandlerTest extends TestCase
                 callback: fn () => throw new ConnectionException('timeout'),
                 maxRetries: 3,
                 rateLimitDelayMs: 0,
+                serverErrorBaseDelayMs: 0,
                 defaultBaseDelayMs: 0,
-                onRetry: function (int $attempt, \Throwable $e) use (&$retryAttempts): void {
+                onRetry: function (int $attempt, \Throwable $_e) use (&$retryAttempts): void {
                     $retryAttempts[] = $attempt;
                 },
             );

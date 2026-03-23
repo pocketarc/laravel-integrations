@@ -48,7 +48,7 @@ class PruneCommandTest extends TestCase
             'created_at' => now()->subDays(400),
         ]);
 
-        IntegrationLog::create([
+        $recentLog = IntegrationLog::create([
             'integration_id' => $integration->id,
             'operation' => 'sync',
             'direction' => 'inbound',
@@ -60,5 +60,6 @@ class PruneCommandTest extends TestCase
             ->assertSuccessful();
 
         $this->assertDatabaseCount('integration_logs', 1);
+        $this->assertDatabaseHas('integration_logs', ['id' => $recentLog->id]);
     }
 }

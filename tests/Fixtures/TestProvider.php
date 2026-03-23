@@ -73,7 +73,9 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
 
     public function authorizationUrl(Integration $integration, string $redirectUri, string $state): string
     {
-        return "https://provider.example.com/oauth/authorize?redirect_uri={$redirectUri}&state={$state}";
+        $query = http_build_query(['redirect_uri' => $redirectUri, 'state' => $state]);
+
+        return "https://provider.example.com/oauth/authorize?{$query}";
     }
 
     public function exchangeCode(Integration $integration, string $code, string $redirectUri): array

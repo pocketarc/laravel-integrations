@@ -88,6 +88,7 @@ class RequestWrapperTest extends TestCase
         );
 
         $this->assertNull($result);
+        $this->assertDatabaseCount('integration_requests', 0);
     }
 
     public function test_request_with_explicit_request_data(): void
