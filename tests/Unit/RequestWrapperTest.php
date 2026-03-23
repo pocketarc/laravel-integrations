@@ -102,7 +102,8 @@ class RequestWrapperTest extends TestCase
 
         $request = IntegrationRequest::first();
         $this->assertNotNull($request);
-        $this->assertStringContainsString('test@example.com', $request->request_data ?? '');
+        $decoded = json_decode($request->request_data ?? '', true);
+        $this->assertSame('test@example.com', $decoded['email'] ?? null);
     }
 
     public function test_retry_of_links_to_original(): void

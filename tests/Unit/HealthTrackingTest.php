@@ -70,6 +70,7 @@ class HealthTrackingTest extends TestCase
     public function test_transitions_to_failing(): void
     {
         Event::fake();
+        config(['integrations.health.failing_after' => 20]);
 
         $integration = Integration::create([
             'provider' => 'test',
