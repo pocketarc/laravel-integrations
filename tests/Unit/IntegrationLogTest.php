@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Support\Facades\Event;
+use Integrations\Events\OperationCompleted;
+use Integrations\Events\OperationFailed;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
 use Integrations\Tests\TestCase;
@@ -79,5 +82,35 @@ class IntegrationLogTest extends TestCase
         $this->assertCount(1, IntegrationLog::failed()->get());
         $this->assertCount(2, IntegrationLog::forOperation('sync')->get());
         $this->assertCount(3, IntegrationLog::topLevel()->get());
+    }
+
+    public function test_dispatches_operation_completed_event(): void
+    {
+        Event::fake();
+
+        $this->integration->logOperation(operation: 'sync', direction: 'inbound', status: 'success');
+
+        Event::assertDispatched(OperationCompleted::class);
+        Event::assertNotDispatched(OperationFailed::class);
+    }
+
+    public function test_dispatches_operation_failed_event(): void
+    {
+        Event::fake();
+
+        $this->integration->logOperation(operation: 'sync', direction: 'inbound', status: 'failed', error: 'Connection timeout');
+
+        Event::assertDispatched(OperationFailed::class);
+        Event::assertNotDispatched(OperationCompleted::class);
+    }
+
+    public function test_no_event_for_pending_status(): void
+    {
+        Event::fake();
+
+        $this->integration->logOperation(operation: 'webhook', direction: 'inbound', status: 'pending');
+
+        Event::assertNotDispatched(OperationCompleted::class);
+        Event::assertNotDispatched(OperationFailed::class);
     }
 }

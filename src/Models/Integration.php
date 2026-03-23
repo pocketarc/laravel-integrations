@@ -15,16 +15,22 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Integrations\Casts\IntegrationCredentialCast;
+use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Enums\HealthStatus;
+use Integrations\Events\IntegrationCreated;
 use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
+use Integrations\Events\OperationCompleted;
+use Integrations\Events\OperationFailed;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
+use Integrations\RetryHandler;
 use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
@@ -71,6 +77,13 @@ class Integration extends Model
     /** @var array<string> */
     protected $guarded = [];
 
+    protected static function booted(): void
+    {
+        static::created(function (Integration $integration): void {
+            IntegrationCreated::dispatch($integration);
+        });
+    }
+
     public function getTable(): string
     {
         return Config::tablePrefix().'s';
@@ -82,8 +95,8 @@ class Integration extends Model
     protected function casts(): array
     {
         return [
-            'credentials' => 'encrypted:json',
-            'metadata' => 'json',
+            'credentials' => IntegrationCredentialCast::class,
+            'metadata' => IntegrationMetadataCast::class,
             'is_active' => 'boolean',
             'health_status' => HealthStatus::class,
             'consecutive_failures' => 'integer',
@@ -147,6 +160,7 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
+        int $maxRetries = 1,
     ): mixed {
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -180,6 +194,89 @@ class Integration extends Model
             return null;
         }
 
+        if ($maxRetries > 1) {
+            return $this->requestWithRetries(
+                $endpoint, $method, $callback, $relatedTo,
+                $encodedRequestData, $cacheFor, $serveStale, $maxRetries,
+            );
+        }
+
+        return $this->executeRequest(
+            $endpoint, $method, $callback, $relatedTo,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId,
+        );
+    }
+
+    /**
+     * @param  Closure(): mixed  $callback
+     */
+    private function requestWithRetries(
+        string $endpoint,
+        string $method,
+        Closure $callback,
+        ?Model $relatedTo,
+        ?string $encodedRequestData,
+        ?CarbonInterface $cacheFor,
+        bool $serveStale,
+        int $maxRetries,
+    ): mixed {
+        /** @var int|null $firstRequestId */
+        $firstRequestId = null;
+        $lastException = null;
+
+        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+            try {
+                $result = $this->executeRequest(
+                    $endpoint, $method, $callback, $relatedTo,
+                    $encodedRequestData, $cacheFor, $serveStale,
+                    retryOfId: $firstRequestId,
+                );
+
+                if ($firstRequestId === null) {
+                    $id = $this->requests()->latest('id')->value('id');
+                    $firstRequestId = is_int($id) ? $id : null;
+                }
+
+                return $result;
+            } catch (\Throwable $e) {
+                $lastException = $e;
+
+                if ($firstRequestId === null) {
+                    $id = $this->requests()->latest('id')->value('id');
+                    $firstRequestId = is_int($id) ? $id : null;
+                }
+
+                if ($attempt >= $maxRetries) {
+                    throw $e;
+                }
+
+                if (! RetryHandler::isRetryable($e)) {
+                    throw $e;
+                }
+
+                $delayMs = RetryHandler::calculateDelayMs($e, $attempt);
+                if ($delayMs > 0) {
+                    usleep($delayMs * 1000);
+                }
+            }
+        }
+
+        throw $lastException ?? new \RuntimeException('Retry logic exhausted without result.');
+    }
+
+    /**
+     * @param  Closure(): mixed  $callback
+     */
+    private function executeRequest(
+        string $endpoint,
+        string $method,
+        Closure $callback,
+        ?Model $relatedTo,
+        ?string $encodedRequestData,
+        ?CarbonInterface $cacheFor,
+        bool $serveStale,
+        ?int $retryOfId = null,
+    ): mixed {
         $startTime = hrtime(true);
         $responseSuccess = false;
         $responseCode = null;
@@ -202,7 +299,6 @@ class Integration extends Model
 
             $responseCode = $this->extractStatusCodeFromException($e);
 
-            // Stale cache fallback
             if ($serveStale) {
                 $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
                 if ($stale !== null) {
@@ -210,7 +306,6 @@ class Integration extends Model
                         $result = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
                         $stale->increment('stale_hits');
                     } catch (\JsonException) {
-                        // Corrupt stale data - no fallback available
                     }
                 }
             }
@@ -219,13 +314,15 @@ class Integration extends Model
                 $this->recordFailure();
                 $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-                $request = $this->persistRequest(
-                    $endpoint, $method, $encodedRequestData, $retryOfId,
-                    $relatedTo, $responseCode, $responseData, false,
-                    $error, $durationMs, $cacheFor,
-                );
+                if (Config::requestLoggingEnabled()) {
+                    $request = $this->persistRequest(
+                        $endpoint, $method, $encodedRequestData, $retryOfId,
+                        $relatedTo, $responseCode, $responseData, false,
+                        $error, $durationMs, $cacheFor,
+                    );
 
-                RequestFailed::dispatch($this, $request);
+                    RequestFailed::dispatch($this, $request);
+                }
 
                 throw $e;
             }
@@ -233,18 +330,24 @@ class Integration extends Model
 
         $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-        $request = $this->persistRequest(
-            $endpoint, $method, $encodedRequestData, $retryOfId,
-            $relatedTo, $responseCode, $responseData, $responseSuccess,
-            $error, $durationMs, $cacheFor,
-        );
+        if (Config::requestLoggingEnabled()) {
+            $request = $this->persistRequest(
+                $endpoint, $method, $encodedRequestData, $retryOfId,
+                $relatedTo, $responseCode, $responseData, $responseSuccess,
+                $error, $durationMs, $cacheFor,
+            );
+
+            if ($responseSuccess) {
+                RequestCompleted::dispatch($this, $request);
+            } else {
+                RequestFailed::dispatch($this, $request);
+            }
+        }
 
         if ($responseSuccess) {
             $this->recordSuccess();
-            RequestCompleted::dispatch($this, $request);
         } else {
             $this->recordFailure();
-            RequestFailed::dispatch($this, $request);
         }
 
         return $result;
@@ -510,8 +613,8 @@ class Integration extends Model
         ?int $durationMs = null,
         ?int $parentId = null,
     ): IntegrationLog {
-        /** @var IntegrationLog */
-        return $this->logs()->create([
+        /** @var IntegrationLog $log */
+        $log = $this->logs()->create([
             'parent_id' => $parentId,
             'operation' => $operation,
             'direction' => $direction,
@@ -522,6 +625,14 @@ class Integration extends Model
             'error' => $error,
             'duration_ms' => $durationMs,
         ]);
+
+        if ($status === 'success') {
+            OperationCompleted::dispatch($this, $log);
+        } elseif ($status === 'failed') {
+            OperationFailed::dispatch($this, $log);
+        }
+
+        return $log;
     }
 
     public function mapExternalId(string $externalId, Model $internalModel): IntegrationMapping

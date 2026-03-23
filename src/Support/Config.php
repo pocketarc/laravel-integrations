@@ -95,6 +95,13 @@ final class Config
         return is_bool($value) ? $value : true;
     }
 
+    public static function requestLoggingEnabled(): bool
+    {
+        $value = config('integrations.request_logging.enabled', true);
+
+        return is_bool($value) ? $value : true;
+    }
+
     public static function cacheEnabled(): bool
     {
         $value = config('integrations.request_logging.cache_enabled', true);
