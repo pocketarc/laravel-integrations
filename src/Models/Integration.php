@@ -26,6 +26,7 @@ use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
 use Integrations\Support\Config;
+use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 
@@ -147,6 +148,13 @@ class Integration extends Model
         bool $serveStale = false,
         ?int $retryOfId = null,
     ): mixed {
+        $fake = IntegrationRequestFake::active();
+        if ($fake !== null) {
+            $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
+
+            return $fake->record($this, $endpoint, $method, $encodedData);
+        }
+
         if (Config::rateLimitingEnabled()) {
             $this->enforceRateLimit();
         }
