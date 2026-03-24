@@ -8,15 +8,15 @@ use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Crypt;
+use Integrations\IntegrationManager;
 use Override;
 use Spatie\LaravelData\Data;
 
 /**
  * Handles encryption at rest and optional typed casting via Spatie LaravelData.
  *
- * When a Data class is configured for the integration's provider in
- * `integrations.credential_data_classes`, the decrypted JSON is cast to that
- * Data class. Otherwise, returns a plain array.
+ * When the provider's credentialDataClass() returns a Data class, the decrypted
+ * JSON is cast to that class. Otherwise, returns a plain array.
  *
  * @implements CastsAttributes<Data|array<string, mixed>|null, mixed>
  */
@@ -52,15 +52,29 @@ class IntegrationCredentialCast implements CastsAttributes
         $provider = $attributes['provider'] ?? null;
 
         if (is_string($provider)) {
-            /** @var array<string, class-string<Data>> $mapping */
-            $mapping = config('integrations.credential_data_classes', []);
+            $dataClass = $this->resolveDataClass($provider);
 
-            if (isset($mapping[$provider]) && is_subclass_of($mapping[$provider], Data::class)) {
-                return $mapping[$provider]::from($decoded);
+            if ($dataClass !== null && is_subclass_of($dataClass, Data::class)) {
+                return $dataClass::from($decoded);
             }
         }
 
         return $decoded;
+    }
+
+    private function resolveDataClass(string $provider): ?string
+    {
+        try {
+            $manager = app(IntegrationManager::class);
+
+            if ($manager->has($provider)) {
+                return $manager->provider($provider)->credentialDataClass();
+            }
+        } catch (\Throwable) {
+            // Provider resolution failed — fall through to plain array.
+        }
+
+        return null;
     }
 
     /**

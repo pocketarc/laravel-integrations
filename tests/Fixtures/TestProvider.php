@@ -94,4 +94,14 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
     {
         return 300;
     }
+
+    public function credentialDataClass(): ?string
+    {
+        return null;
+    }
+
+    public function metadataDataClass(): ?string
+    {
+        return null;
+    }
 }

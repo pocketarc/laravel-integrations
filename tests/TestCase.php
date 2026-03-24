@@ -7,12 +7,16 @@ namespace Integrations\Tests;
 use Integrations\IntegrationsServiceProvider;
 use Integrations\Testing\IntegrationRequestFake;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use Spatie\LaravelData\LaravelDataServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [IntegrationsServiceProvider::class];
+        return [
+            LaravelDataServiceProvider::class,
+            IntegrationsServiceProvider::class,
+        ];
     }
 
     protected function defineDatabaseMigrations(): void
