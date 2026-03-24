@@ -90,7 +90,12 @@ class IntegrationLogTest extends TestCase
 
         $this->integration->logOperation(operation: 'sync', direction: 'inbound', status: 'success');
 
-        Event::assertDispatched(OperationCompleted::class);
+        Event::assertDispatched(OperationCompleted::class, function (OperationCompleted $event): bool {
+            return $event->integration->is($this->integration)
+                && $event->log->operation === 'sync'
+                && $event->log->direction === 'inbound'
+                && $event->log->status === 'success';
+        });
         Event::assertNotDispatched(OperationFailed::class);
     }
 

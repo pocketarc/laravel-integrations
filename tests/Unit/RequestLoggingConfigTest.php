@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Support\Facades\Event;
+use Integrations\Events\RequestCompleted;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Tests\Fixtures\TestProvider;
@@ -24,8 +26,9 @@ class RequestLoggingConfigTest extends TestCase
         $this->integration->refresh();
     }
 
-    public function test_disabling_logging_skips_persistence(): void
+    public function test_disabling_logging_skips_event_dispatch(): void
     {
+        Event::fake();
         config(['integrations.request_logging.enabled' => false]);
 
         $result = $this->integration->request(
@@ -35,7 +38,8 @@ class RequestLoggingConfigTest extends TestCase
         );
 
         $this->assertSame(['ok' => true], $result);
-        $this->assertDatabaseCount('integration_requests', 0);
+        $this->assertDatabaseCount('integration_requests', 1);
+        Event::assertNotDispatched(RequestCompleted::class);
     }
 
     public function test_health_tracking_works_with_logging_disabled(): void
@@ -52,6 +56,6 @@ class RequestLoggingConfigTest extends TestCase
 
         $this->integration->refresh();
         $this->assertSame(0, $this->integration->consecutive_failures);
-        $this->assertDatabaseCount('integration_requests', 0);
+        $this->assertDatabaseCount('integration_requests', 1);
     }
 }

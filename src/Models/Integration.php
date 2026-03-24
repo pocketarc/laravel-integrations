@@ -41,8 +41,8 @@ use Spatie\LaravelData\Data;
  * @property int $id
  * @property string $provider
  * @property string $name
- * @property array<string, mixed>|null $credentials
- * @property array<string, mixed>|null $metadata
+ * @property Data|array<string, mixed>|null $credentials
+ * @property Data|array<string, mixed>|null $metadata
  * @property bool $is_active
  * @property HealthStatus $health_status
  * @property int $consecutive_failures
@@ -315,14 +315,14 @@ class Integration extends Model
                 $this->recordFailure();
                 $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-                if (Config::requestLoggingEnabled()) {
-                    $request = $this->persistRequest(
-                        $endpoint, $method, $encodedRequestData, $retryOfId,
-                        $relatedTo, $responseCode, $responseData, false,
-                        $error, $durationMs, $cacheFor,
-                    );
-                    $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
+                $request = $this->persistRequest(
+                    $endpoint, $method, $encodedRequestData, $retryOfId,
+                    $relatedTo, $responseCode, $responseData, false,
+                    $error, $durationMs, $cacheFor,
+                );
+                $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
+                if (Config::requestLoggingEnabled()) {
                     RequestFailed::dispatch($this, $request);
                 }
 
@@ -332,14 +332,14 @@ class Integration extends Model
 
         $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-        if (Config::requestLoggingEnabled()) {
-            $request = $this->persistRequest(
-                $endpoint, $method, $encodedRequestData, $retryOfId,
-                $relatedTo, $responseCode, $responseData, $responseSuccess,
-                $error, $durationMs, $cacheFor,
-            );
-            $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
+        $request = $this->persistRequest(
+            $endpoint, $method, $encodedRequestData, $retryOfId,
+            $relatedTo, $responseCode, $responseData, $responseSuccess,
+            $error, $durationMs, $cacheFor,
+        );
+        $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
+        if (Config::requestLoggingEnabled()) {
             if ($responseSuccess) {
                 RequestCompleted::dispatch($this, $request);
             } else {
@@ -586,16 +586,16 @@ class Integration extends Model
     /**
      * @return array<string, mixed>
      */
-    private function credentialsArray(): array
+    public function credentialsArray(): array
     {
-        $raw = $this->getAttribute('credentials');
+        $credentials = $this->credentials;
 
-        if ($raw instanceof Data) {
+        if ($credentials instanceof Data) {
             /** @var array<string, mixed> */
-            return $raw->toArray();
+            return $credentials->toArray();
         }
 
-        return $this->credentials ?? [];
+        return is_array($credentials) ? $credentials : [];
     }
 
     public function markSynced(): void
