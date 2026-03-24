@@ -33,7 +33,7 @@ class ListCommand extends Command
             return [
                 $integration->name,
                 $integration->provider,
-                $integration->health_status,
+                $integration->health_status->value,
                 $integration->is_active ? 'Yes' : 'No',
                 $integration->last_synced_at?->format('Y-m-d H:i:s') ?? 'Never',
                 (string) $totalRequests,

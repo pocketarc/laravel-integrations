@@ -52,7 +52,7 @@ class RetryHandler
                 $lastException = $e;
                 $statusCode = self::extractStatusCode($e);
 
-                if (! self::isRetryable($e, $statusCode, $retryableStatusCodes)) {
+                if (! self::isRetryableInternal($e, $statusCode, $retryableStatusCodes)) {
                     break;
                 }
 
@@ -86,6 +86,27 @@ class RetryHandler
         throw new \RuntimeException('Retry logic exhausted without result.');
     }
 
+    /**
+     * Check if an exception is retryable with default status codes.
+     */
+    public static function isRetryable(\Throwable $e): bool
+    {
+        $statusCode = self::extractStatusCode($e);
+
+        return self::isRetryableInternal($e, $statusCode, [429, 500, 502, 503, 504]);
+    }
+
+    /**
+     * Calculate the retry delay in milliseconds for a given exception and attempt.
+     */
+    public static function calculateDelayMs(\Throwable $e, int $attempt): int
+    {
+        $attempt = max(1, $attempt);
+        $statusCode = self::extractStatusCode($e);
+
+        return self::calculateDelay($statusCode, $attempt, 30_000, 2_000, 1_000);
+    }
+
     private static function extractStatusCode(\Throwable $e): ?int
     {
         if ($e instanceof LaravelRequestException) {
@@ -102,7 +123,7 @@ class RetryHandler
     /**
      * @param  list<int>  $retryableStatusCodes
      */
-    private static function isRetryable(\Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
+    private static function isRetryableInternal(\Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
     {
         if ($e instanceof ConnectionException) {
             return true;

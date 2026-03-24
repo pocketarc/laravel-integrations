@@ -71,7 +71,7 @@ class OAuthController extends Controller
         $tokenData = $provider->exchangeCode($integration, $code, $redirectUri);
 
         $integration->update([
-            'credentials' => array_merge($integration->credentials ?? [], $tokenData),
+            'credentials' => array_merge($integration->credentialsArray(), $tokenData),
         ]);
 
         OAuthCompleted::dispatch($integration);
@@ -90,7 +90,7 @@ class OAuthController extends Controller
 
         $provider->revokeToken($model);
 
-        $credentials = $model->credentials ?? [];
+        $credentials = $model->credentialsArray();
         unset($credentials['access_token'], $credentials['refresh_token'], $credentials['token_expires_at']);
 
         $model->update(['credentials' => $credentials]);

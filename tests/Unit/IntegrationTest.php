@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Support\Facades\Event;
 use Integrations\Enums\HealthStatus;
+use Integrations\Events\IntegrationCreated;
 use Integrations\Models\Integration;
 use Integrations\Tests\TestCase;
 
@@ -99,5 +101,14 @@ class IntegrationTest extends TestCase
         $due = Integration::dueForSync()->get();
         $this->assertCount(1, $due);
         $this->assertSame('Due', $due->first()?->name);
+    }
+
+    public function test_dispatches_created_event(): void
+    {
+        Event::fake(IntegrationCreated::class);
+
+        Integration::create(['provider' => 'test', 'name' => 'New']);
+
+        Event::assertDispatched(IntegrationCreated::class);
     }
 }
