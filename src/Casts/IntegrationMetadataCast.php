@@ -6,15 +6,16 @@ namespace Integrations\Casts;
 
 use Illuminate\Contracts\Database\Eloquent\CastsAttributes;
 use Illuminate\Database\Eloquent\Model;
+use Integrations\IntegrationManager;
 use Override;
 use Spatie\LaravelData\Data;
+use Throwable;
 
 /**
  * Handles optional typed casting via Spatie LaravelData for metadata.
  *
- * When a Data class is configured for the integration's provider in
- * `integrations.metadata_data_classes`, the JSON is cast to that Data class.
- * Otherwise, returns a plain array.
+ * When the provider's metadataDataClass() returns a Data class, the JSON is
+ * cast to that class. Otherwise, returns a plain array.
  *
  * @implements CastsAttributes<Data|array<string, mixed>|null, mixed>
  */
@@ -40,15 +41,25 @@ class IntegrationMetadataCast implements CastsAttributes
         $provider = $attributes['provider'] ?? null;
 
         if (is_string($provider)) {
-            /** @var array<string, class-string<Data>> $mapping */
-            $mapping = config('integrations.metadata_data_classes', []);
+            $dataClass = $this->resolveDataClass($provider);
 
-            if (isset($mapping[$provider]) && is_subclass_of($mapping[$provider], Data::class)) {
-                return $mapping[$provider]::from($decoded);
+            if ($dataClass !== null && is_subclass_of($dataClass, Data::class)) {
+                return $dataClass::from($decoded);
             }
         }
 
         return $decoded;
+    }
+
+    private function resolveDataClass(string $provider): ?string
+    {
+        try {
+            return app(IntegrationManager::class)->resolveMetadataDataClass($provider);
+        } catch (Throwable $e) {
+            report($e);
+
+            return null;
+        }
     }
 
     /**

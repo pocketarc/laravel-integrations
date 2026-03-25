@@ -62,6 +62,16 @@ class ZendeskProvider implements IntegrationProvider
             'locale' => ['sometimes', 'string'],
         ];
     }
+
+    public function credentialDataClass(): ?string
+    {
+        return ZendeskCredentials::class;
+    }
+
+    public function metadataDataClass(): ?string
+    {
+        return null;
+    }
 }
 ```
 
@@ -246,13 +256,13 @@ $result = RetryHandler::execute(
 
 Every provider must implement `IntegrationProvider`. Optional interfaces add capabilities:
 
-| Interface | Purpose |
-|---|---|
-| `IntegrationProvider` | **Required.** Name, credential rules, metadata rules. |
-| `HasScheduledSync` | Scheduled sync support with rate limits. |
-| `HandlesWebhooks` | Inbound webhook handling with signature verification. |
-| `HasOAuth2` | OAuth2 authorization flow with token refresh. |
-| `HasHealthCheck` | Lightweight connection testing. |
+| Interface             | Purpose                                                         |
+|-----------------------|-----------------------------------------------------------------|
+| `IntegrationProvider` | **Required.** Name, credential/metadata rules and Data classes. |
+| `HasScheduledSync`    | Scheduled sync support with rate limits.                        |
+| `HandlesWebhooks`     | Inbound webhook handling with signature verification.           |
+| `HasOAuth2`           | OAuth2 authorization flow with token refresh.                   |
+| `HasHealthCheck`      | Lightweight connection testing.                                 |
 
 <details>
 <summary><strong>IntegrationProvider</strong> (required)</summary>
@@ -263,8 +273,10 @@ use Integrations\Contracts\IntegrationProvider;
 interface IntegrationProvider
 {
     public function name(): string;
-    public function credentialRules(): array;  // Laravel validation rules
-    public function metadataRules(): array;    // Laravel validation rules
+    public function credentialRules(): array;    // Laravel validation rules
+    public function metadataRules(): array;      // Laravel validation rules
+    public function credentialDataClass(): ?string; // Spatie Data class or null
+    public function metadataDataClass(): ?string;   // Spatie Data class or null
 }
 ```
 
@@ -435,18 +447,7 @@ class ZendeskProvider implements IntegrationProvider, HasHealthCheck
 
 ## Typed credentials and metadata
 
-By default, `$integration->credentials` returns a plain array. You can map providers to [Spatie Laravel Data](https://spatie-laravel-data.com/) classes for typed access:
-
-```php
-// config/integrations.php
-'credential_data_classes' => [
-    'zendesk' => App\Data\ZendeskCredentials::class,
-],
-
-'metadata_data_classes' => [
-    'zendesk' => App\Data\ZendeskMetadata::class,
-],
-```
+By default, `$integration->credentials` returns a plain array. Providers can declare a [Laravel Data](https://spatie.be/docs/laravel-data/v4/introduction) class for typed access via `credentialDataClass()` and `metadataDataClass()`:
 
 ```php
 use Spatie\LaravelData\Data;
@@ -458,6 +459,23 @@ class ZendeskCredentials extends Data
         public string $api_token,
         public string $email,
     ) {}
+}
+```
+
+```php
+class ZendeskProvider implements IntegrationProvider
+{
+    // ...
+
+    public function credentialDataClass(): ?string
+    {
+        return ZendeskCredentials::class;
+    }
+
+    public function metadataDataClass(): ?string
+    {
+        return null; // plain array
+    }
 }
 ```
 
@@ -478,11 +496,11 @@ OAuth2 authorization with automatic token refresh is built in.
 
 The package registers these routes automatically:
 
-| Route | Name | Purpose |
-|---|---|---|
-| `GET /integrations/{id}/oauth/authorize` | `integrations.oauth.authorize` | Start the OAuth flow |
-| `GET /integrations/oauth/callback` | `integrations.oauth.callback` | Handle provider callback |
-| `POST /integrations/{id}/oauth/revoke` | `integrations.oauth.revoke` | Revoke authorization |
+| Route                                    | Name                           | Purpose                  |
+|------------------------------------------|--------------------------------|--------------------------|
+| `GET /integrations/{id}/oauth/authorize` | `integrations.oauth.authorize` | Start the OAuth flow     |
+| `GET /integrations/oauth/callback`       | `integrations.oauth.callback`  | Handle provider callback |
+| `POST /integrations/{id}/oauth/revoke`   | `integrations.oauth.revoke`    | Revoke authorization     |
 
 ### Starting the flow
 
@@ -514,9 +532,9 @@ if ($integration->tokenExpiresSoon()) {
 
 Webhook routes are registered automatically:
 
-| Route | Name | Purpose |
-|---|---|---|
-| `GET\|POST /integrations/{provider}/webhook` | `integrations.webhook` | Generic provider webhook |
+| Route                                             | Name                            | Purpose                      |
+|---------------------------------------------------|---------------------------------|------------------------------|
+| `GET\|POST /integrations/{provider}/webhook`      | `integrations.webhook`          | Generic provider webhook     |
 | `GET\|POST /integrations/{provider}/{id}/webhook` | `integrations.webhook.specific` | Integration-specific webhook |
 
 When a webhook arrives:
@@ -580,10 +598,10 @@ After a successful sync, `markSynced()` sets `last_synced_at` to now and compute
 The sync scheduler respects health status. Degraded integrations sync at a reduced frequency, and failing integrations back off heavily:
 
 | Health Status | Interval Multiplier | Example (5-min base) |
-|---|---|---|
-| Healthy | 1x | Every 5 minutes |
-| Degraded | 2x (configurable) | Every 10 minutes |
-| Failing | 10x (configurable) | Every 50 minutes |
+|---------------|---------------------|----------------------|
+| Healthy       | 1x                  | Every 5 minutes      |
+| Degraded      | 2x (configurable)   | Every 10 minutes     |
+| Failing       | 10x (configurable)  | Every 50 minutes     |
 
 ## Health monitoring
 
@@ -680,18 +698,18 @@ $integration->logs()->topLevel()->recent(48)->get(); // top-level logs from last
 
 All events carry the relevant model(s) and use Laravel's standard `Dispatchable` and `SerializesModels` traits.
 
-| Event | Payload | When |
-|---|---|---|
-| `IntegrationCreated` | `$integration` | An integration is created |
-| `IntegrationSynced` | `$integration` | `markSynced()` is called |
-| `IntegrationHealthChanged` | `$integration`, `$previousStatus`, `$newStatus` | Health status transitions |
-| `RequestCompleted` | `$integration`, `$request` | An API request succeeds |
-| `RequestFailed` | `$integration`, `$request` | An API request fails |
-| `OperationCompleted` | `$integration`, `$log` | An operation is logged with status `success` |
-| `OperationFailed` | `$integration`, `$log` | An operation is logged with status `failed` |
-| `WebhookReceived` | `$integration`, `$provider` | A webhook arrives |
-| `OAuthCompleted` | `$integration` | OAuth2 authorization completes |
-| `OAuthRevoked` | `$integration` | OAuth2 authorization is revoked |
+| Event                      | Payload                                         | When                                         |
+|----------------------------|-------------------------------------------------|----------------------------------------------|
+| `IntegrationCreated`       | `$integration`                                  | An integration is created                    |
+| `IntegrationSynced`        | `$integration`                                  | `markSynced()` is called                     |
+| `IntegrationHealthChanged` | `$integration`, `$previousStatus`, `$newStatus` | Health status transitions                    |
+| `RequestCompleted`         | `$integration`, `$request`                      | An API request succeeds                      |
+| `RequestFailed`            | `$integration`, `$request`                      | An API request fails                         |
+| `OperationCompleted`       | `$integration`, `$log`                          | An operation is logged with status `success` |
+| `OperationFailed`          | `$integration`, `$log`                          | An operation is logged with status `failed`  |
+| `WebhookReceived`          | `$integration`, `$provider`                     | A webhook arrives                            |
+| `OAuthCompleted`           | `$integration`                                  | OAuth2 authorization completes               |
+| `OAuthRevoked`             | `$integration`                                  | OAuth2 authorization is revoked              |
 
 Listen for them with attribute-based listeners or in your `EventServiceProvider`:
 
@@ -711,14 +729,14 @@ class NotifyOnHealthDegradation
 
 ## Artisan commands
 
-| Command | Purpose |
-|---|---|
-| `integrations:sync` | Find overdue integrations, dispatch sync jobs |
-| `integrations:list` | Show all integrations with health, last sync, request counts |
-| `integrations:health` | Detailed health report (error rates, response times, top errors) |
-| `integrations:test` | Run `HasHealthCheck` on all supporting integrations |
-| `integrations:prune` | Clean up old request and log records |
-| `integrations:replay-webhook {id}` | Re-dispatch a stored webhook payload |
+| Command                            | Purpose                                                          |
+|------------------------------------|------------------------------------------------------------------|
+| `integrations:sync`                | Find overdue integrations, dispatch sync jobs                    |
+| `integrations:list`                | Show all integrations with health, last sync, request counts     |
+| `integrations:health`              | Detailed health report (error rates, response times, top errors) |
+| `integrations:test`                | Run `HasHealthCheck` on all supporting integrations              |
+| `integrations:prune`               | Clean up old request and log records                             |
+| `integrations:replay-webhook {id}` | Re-dispatch a stored webhook payload                             |
 
 <details>
 <summary><strong>integrations:list</strong> example output</summary>
@@ -863,16 +881,6 @@ return [
     // Provider class registration
     'providers' => [
         // 'zendesk' => App\Integrations\ZendeskProvider::class,
-    ],
-
-    // Spatie LaravelData classes for typed credential access
-    'credential_data_classes' => [
-        // 'zendesk' => App\Data\ZendeskCredentials::class,
-    ],
-
-    // Spatie LaravelData classes for typed metadata access
-    'metadata_data_classes' => [
-        // 'zendesk' => App\Data\ZendeskMetadata::class,
     ],
 ];
 ```

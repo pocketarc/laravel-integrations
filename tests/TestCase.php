@@ -7,12 +7,16 @@ namespace Integrations\Tests;
 use Integrations\IntegrationsServiceProvider;
 use Integrations\Testing\IntegrationRequestFake;
 use Orchestra\Testbench\TestCase as OrchestraTestCase;
+use Spatie\LaravelData\LaravelDataServiceProvider;
 
 abstract class TestCase extends OrchestraTestCase
 {
     protected function getPackageProviders($app): array
     {
-        return [IntegrationsServiceProvider::class];
+        return [
+            LaravelDataServiceProvider::class,
+            IntegrationsServiceProvider::class,
+        ];
     }
 
     protected function defineDatabaseMigrations(): void
@@ -29,7 +33,7 @@ abstract class TestCase extends OrchestraTestCase
             'prefix' => '',
         ]);
 
-        $app['config']->set('app.key', 'base64:'.base64_encode(random_bytes(32)));
+        $app['config']->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     }
 
     protected function tearDown(): void

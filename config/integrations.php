@@ -112,13 +112,4 @@ return [
     // Integrations::register('zendesk', ZendeskProvider::class).
     'providers' => [],
 
-    // Maps provider key to a Spatie LaravelData class for typed credential access.
-    // e.g. 'zendesk' => App\Data\ZendeskCredentials::class
-    // When set, $integration->credentials returns an instance of the Data class
-    // instead of a plain array.
-    'credential_data_classes' => [],
-
-    // Maps provider key to a Spatie LaravelData class for typed metadata access.
-    // e.g. 'zendesk' => App\Data\ZendeskMetadata::class
-    'metadata_data_classes' => [],
 ];
