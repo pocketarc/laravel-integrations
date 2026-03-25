@@ -9,6 +9,7 @@ use Illuminate\Database\Eloquent\Model;
 use Integrations\IntegrationManager;
 use Override;
 use Spatie\LaravelData\Data;
+use Throwable;
 
 /**
  * Handles optional typed casting via Spatie LaravelData for metadata.
@@ -53,16 +54,12 @@ class IntegrationMetadataCast implements CastsAttributes
     private function resolveDataClass(string $provider): ?string
     {
         try {
-            $manager = app(IntegrationManager::class);
+            return app(IntegrationManager::class)->resolveMetadataDataClass($provider);
+        } catch (Throwable $e) {
+            report($e);
 
-            if ($manager->has($provider)) {
-                return $manager->provider($provider)->metadataDataClass();
-            }
-        } catch (\Throwable) {
-            // Provider resolution failed — fall through to plain array.
+            return null;
         }
-
-        return null;
     }
 
     /**

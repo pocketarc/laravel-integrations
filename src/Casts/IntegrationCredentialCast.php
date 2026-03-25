@@ -11,6 +11,7 @@ use Illuminate\Support\Facades\Crypt;
 use Integrations\IntegrationManager;
 use Override;
 use Spatie\LaravelData\Data;
+use Throwable;
 
 /**
  * Handles encryption at rest and optional typed casting via Spatie LaravelData.
@@ -65,16 +66,12 @@ class IntegrationCredentialCast implements CastsAttributes
     private function resolveDataClass(string $provider): ?string
     {
         try {
-            $manager = app(IntegrationManager::class);
+            return app(IntegrationManager::class)->resolveCredentialDataClass($provider);
+        } catch (Throwable $e) {
+            report($e);
 
-            if ($manager->has($provider)) {
-                return $manager->provider($provider)->credentialDataClass();
-            }
-        } catch (\Throwable) {
-            // Provider resolution failed — fall through to plain array.
+            return null;
         }
-
-        return null;
     }
 
     /**

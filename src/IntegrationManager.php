@@ -7,6 +7,7 @@ namespace Integrations;
 use Illuminate\Contracts\Container\Container;
 use Integrations\Contracts\IntegrationProvider;
 use InvalidArgumentException;
+use Spatie\LaravelData\Data;
 
 class IntegrationManager
 {
@@ -51,6 +52,34 @@ class IntegrationManager
     public function has(string $key): bool
     {
         return isset($this->providers[$key]);
+    }
+
+    /**
+     * Resolve the credential Data class for a provider, or null if unregistered / none declared.
+     *
+     * @return class-string<Data>|null
+     */
+    public function resolveCredentialDataClass(string $provider): ?string
+    {
+        if (! $this->has($provider)) {
+            return null;
+        }
+
+        return $this->provider($provider)->credentialDataClass();
+    }
+
+    /**
+     * Resolve the metadata Data class for a provider, or null if unregistered / none declared.
+     *
+     * @return class-string<Data>|null
+     */
+    public function resolveMetadataDataClass(string $provider): ?string
+    {
+        if (! $this->has($provider)) {
+            return null;
+        }
+
+        return $this->provider($provider)->metadataDataClass();
     }
 
     /**
