@@ -39,7 +39,7 @@ class SyncCommand extends Command
                 continue;
             }
 
-            $queue = Config::syncQueue();
+            $queue = Config::syncQueue($integration->provider);
 
             SyncIntegration::dispatch($integration->id)->onQueue($queue);
             $dispatched++;

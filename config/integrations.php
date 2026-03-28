@@ -41,8 +41,13 @@ return [
     ],
 
     'sync' => [
-        // Queue name for dispatched sync jobs.
+        // Default queue name for dispatched sync jobs.
         'queue' => 'default',
+
+        // Per-provider queue overrides. Keys are provider identifiers (matching the
+        // Integration model's `provider` column). Values are queue names. If a provider
+        // is not listed here, sync.queue is used.
+        'queues' => [],
 
         // Maximum time (in seconds) a sync job can hold its WithoutOverlapping lock.
         // Prevents a crashed sync from blocking all future syncs for that integration.
@@ -56,6 +61,12 @@ return [
         // if the provider's rate limit would be exceeded. Disable if you handle rate
         // limiting externally or don't need it.
         'enabled' => true,
+
+        // Maximum seconds to wait for rate limit capacity before throwing
+        // RateLimitExceededException. When set to 0, throws immediately without waiting.
+        // When > 0, sleeps in 1-second intervals and re-checks until capacity is available
+        // or the max wait time is exceeded.
+        'max_wait_seconds' => 0,
     ],
 
     'request_logging' => [

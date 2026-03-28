@@ -54,6 +54,11 @@ class IntegrationsServiceProvider extends ServiceProvider
                 __DIR__.'/../database/migrations' => database_path('migrations'),
             ], 'integrations-migrations');
 
+            $this->publishes([
+                __DIR__.'/Listeners/SendHealthNotification.php' => app_path('Listeners/SendHealthNotification.php'),
+                __DIR__.'/Notifications/IntegrationHealthStatusNotification.php' => app_path('Notifications/IntegrationHealthStatusNotification.php'),
+            ], 'integrations-notifications');
+
             $this->commands([
                 SyncCommand::class,
                 ListCommand::class,
