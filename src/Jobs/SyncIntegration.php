@@ -58,14 +58,14 @@ class SyncIntegration implements ShouldQueue
             $integration->markSynced($result->safeSyncedAt);
             $integration->logOperation(
                 operation: 'sync',
-	            direction: 'inbound',
-	            status: $result->hasFailures() ? 'partial' : 'success',
-	            summary: "Scheduled sync completed: {$result->successCount} succeeded, {$result->failureCount} failed.",
-	            metadata: [
-	                'success_count' => $result->successCount,
-	                'failure_count' => $result->failureCount,
-	            ],
-	            durationMs: $durationMs,
+                direction: 'inbound',
+                status: $result->hasFailures() ? 'partial' : 'success',
+                summary: "Scheduled sync completed: {$result->successCount} succeeded, {$result->failureCount} failed.",
+                metadata: [
+                    'success_count' => $result->successCount,
+                    'failure_count' => $result->failureCount,
+                ],
+                durationMs: $durationMs,
             );
         } catch (\Throwable $e) {
             $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);

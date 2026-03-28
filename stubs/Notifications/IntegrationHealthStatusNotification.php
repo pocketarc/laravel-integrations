@@ -2,7 +2,7 @@
 
 declare(strict_types=1);
 
-namespace Integrations\Notifications;
+namespace App\Notifications;
 
 use Illuminate\Notifications\Messages\MailMessage;
 use Illuminate\Notifications\Notification;

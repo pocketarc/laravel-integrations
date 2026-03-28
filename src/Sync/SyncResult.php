@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Sync;
 
 use Illuminate\Support\Carbon;
+use InvalidArgumentException;
 
 class SyncResult
 {
@@ -12,7 +13,15 @@ class SyncResult
         public readonly int $successCount,
         public readonly int $failureCount,
         public readonly ?Carbon $safeSyncedAt,
-    ) {}
+    ) {
+        if ($successCount < 0) {
+            throw new InvalidArgumentException('Success count must not be negative.');
+        }
+
+        if ($failureCount < 0) {
+            throw new InvalidArgumentException('Failure count must not be negative.');
+        }
+    }
 
     public static function empty(): self
     {
