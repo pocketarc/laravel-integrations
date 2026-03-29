@@ -76,8 +76,15 @@ final class Config
         return is_string($value) ? $value : '/integrations';
     }
 
-    public static function syncQueue(): string
+    public static function syncQueue(?string $provider = null): string
     {
+        if ($provider !== null) {
+            $queues = config('integrations.sync.queues', []);
+            if (is_array($queues) && isset($queues[$provider]) && is_string($queues[$provider]) && $queues[$provider] !== '') {
+                return $queues[$provider];
+            }
+        }
+
         $value = config('integrations.sync.queue', 'default');
 
         return is_string($value) && $value !== '' ? $value : 'default';
@@ -93,6 +100,11 @@ final class Config
         $value = config('integrations.rate_limiting.enabled', true);
 
         return is_bool($value) ? $value : true;
+    }
+
+    public static function rateLimitMaxWaitSeconds(): int
+    {
+        return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 0), 0, 0);
     }
 
     public static function requestLoggingEnabled(): bool

@@ -499,12 +499,24 @@ class Integration extends Model
             return;
         }
 
-        $requestsThisMinute = $this->requests()
-            ->where('created_at', '>=', now()->subMinute())
-            ->count();
+        $maxWait = Config::rateLimitMaxWaitSeconds();
+        $waited = 0;
 
-        if ($requestsThisMinute >= $limit) {
-            throw new RateLimitExceededException($this, $requestsThisMinute, $limit);
+        while (true) {
+            $requestsThisMinute = $this->requests()
+                ->where('created_at', '>=', now()->subMinute())
+                ->count();
+
+            if ($requestsThisMinute < $limit) {
+                return;
+            }
+
+            if ($waited >= $maxWait) {
+                throw new RateLimitExceededException($this, $requestsThisMinute, $limit);
+            }
+
+            sleep(1);
+            $waited++;
         }
     }
 
@@ -598,14 +610,16 @@ class Integration extends Model
         return is_array($credentials) ? $credentials : [];
     }
 
-    public function markSynced(): void
+    public function markSynced(?Carbon $syncedAt = null): void
     {
+        $syncedAt ??= now();
+
         $nextSync = $this->sync_interval_minutes !== null
-            ? now()->addMinutes($this->sync_interval_minutes)
+            ? $syncedAt->copy()->addMinutes($this->sync_interval_minutes)
             : null;
 
         $this->update([
-            'last_synced_at' => now(),
+            'last_synced_at' => $syncedAt,
             'next_sync_at' => $nextSync,
         ]);
 

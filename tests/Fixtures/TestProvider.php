@@ -11,6 +11,7 @@ use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
+use Integrations\Sync\SyncResult;
 
 class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasScheduledSync, IntegrationProvider
 {
@@ -41,9 +42,11 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
         return [];
     }
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
         $this->syncCalled = true;
+
+        return new SyncResult(1, 0, now());
     }
 
     public function defaultSyncInterval(): int
