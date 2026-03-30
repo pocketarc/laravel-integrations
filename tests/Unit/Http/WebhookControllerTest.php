@@ -30,7 +30,7 @@ class WebhookControllerTest extends TestCase
         $response = $this->postJson('/integrations/test/webhook', ['event' => 'created']);
 
         $response->assertOk();
-        $response->assertJson(['handled' => true]);
+        $response->assertJson(['status' => 'queued']);
     }
 
     public function test_404_on_unknown_provider(): void
@@ -66,7 +66,7 @@ class WebhookControllerTest extends TestCase
         $response = $this->postJson("/integrations/test/{$integration->id}/webhook");
 
         $response->assertOk();
-        $response->assertJson(['handled' => true]);
+        $response->assertJson(['status' => 'queued']);
     }
 
     public function test_webhook_with_wrong_provider_for_integration(): void

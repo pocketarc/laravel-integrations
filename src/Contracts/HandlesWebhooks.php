@@ -38,9 +38,4 @@ interface HandlesWebhooks
      * Return null to fall back to payload hash.
      */
     public function webhookDeliveryId(Request $request): ?string;
-
-    /**
-     * Return a queue name for async webhook processing, or null for synchronous processing.
-     */
-    public function webhookQueue(): ?string;
 }

@@ -205,7 +205,7 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        int $maxRetries = 1,
+        int $maxRetries = 3,
     ): mixed {
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -214,14 +214,12 @@ class Integration extends Model
             return $fake->record($this, $endpoint, $method, $encodedData);
         }
 
-        if (Config::rateLimitingEnabled()) {
-            $this->enforceRateLimit();
-        }
+        $this->enforceRateLimit();
 
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
         // Check cache
-        if ($cacheFor !== null && Config::cacheEnabled()) {
+        if ($cacheFor !== null) {
             $cached = $this->findCachedResponse($endpoint, $method, $encodedRequestData);
             if ($cached !== null) {
                 try {
@@ -272,7 +270,8 @@ class Integration extends Model
         $this->lastCreatedRequestId = null;
 
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            $allowStale = $serveStale && $attempt === $maxRetries;
+            $isLastAttempt = $attempt >= $maxRetries;
+            $allowStale = $serveStale && $isLastAttempt;
 
             try {
                 $result = $this->executeRequest(
@@ -289,11 +288,24 @@ class Integration extends Model
 
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
-                if ($attempt >= $maxRetries) {
-                    throw $e;
-                }
+                $willRetry = ! $isLastAttempt && RetryHandler::isRetryable($e);
 
-                if (! RetryHandler::isRetryable($e)) {
+                if (! $willRetry) {
+                    // Not retrying — try stale cache as last resort before giving up
+                    if ($serveStale && ! $allowStale) {
+                        $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
+                        if ($stale !== null) {
+                            try {
+                                $decoded = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
+                                $stale->increment('stale_hits');
+
+                                return $decoded;
+                            } catch (\JsonException) {
+                                // Fall through to throw
+                            }
+                        }
+                    }
+
                     throw $e;
                 }
 
@@ -364,9 +376,7 @@ class Integration extends Model
                 );
                 $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
-                if (Config::requestLoggingEnabled()) {
-                    RequestFailed::dispatch($this, $request);
-                }
+                RequestFailed::dispatch($this, $request);
 
                 throw $e;
             }
@@ -381,12 +391,10 @@ class Integration extends Model
         );
         $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
-        if (Config::requestLoggingEnabled()) {
-            if ($responseSuccess) {
-                RequestCompleted::dispatch($this, $request);
-            } else {
-                RequestFailed::dispatch($this, $request);
-            }
+        if ($responseSuccess) {
+            RequestCompleted::dispatch($this, $request);
+        } else {
+            RequestFailed::dispatch($this, $request);
         }
 
         if ($responseSuccess) {

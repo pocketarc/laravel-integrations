@@ -198,11 +198,6 @@ PHP;
         return null;
     }
 
-    public function webhookQueue(): ?string
-    {
-        return null;
-    }
-
 PHP;
         }
 

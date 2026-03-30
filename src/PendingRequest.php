@@ -24,7 +24,7 @@ class PendingRequest
 
     private ?int $retryOfId = null;
 
-    private int $maxRetries = 1;
+    private int $maxRetries = 3;
 
     public function __construct(
         private readonly Integration $integration,

@@ -14,6 +14,7 @@ use Integrations\IntegrationManager;
 use Integrations\Jobs\ProcessWebhook;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationWebhook;
+use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
 
 class WebhookController extends Controller
@@ -77,9 +78,14 @@ class WebhookController extends Controller
             return new JsonResponse(['error' => 'Invalid signature.'], 403);
         }
 
+        $content = $request->getContent();
+
+        if (strlen($content) > Config::webhookMaxPayloadBytes()) {
+            return new JsonResponse(['error' => 'Payload too large.'], 413);
+        }
+
         IntegrationContext::push($integration, 'webhook');
 
-        $content = $request->getContent();
         $deliveryId = $provider->webhookDeliveryId($request) ?? hash('xxh128', $content);
         $eventType = $provider->resolveWebhookEvent($request);
 
@@ -98,51 +104,9 @@ class WebhookController extends Controller
 
         WebhookReceived::dispatch($integration, $providerKey);
 
-        $queue = $provider->webhookQueue();
-        if ($queue !== null) {
-            ProcessWebhook::dispatch($webhook->id)->onQueue($queue);
+        ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
 
-            return new JsonResponse(['status' => 'queued']);
-        }
-
-        return $this->processSynchronously($integration, $provider, $request, $providerKey, $webhook);
-    }
-
-    private function processSynchronously(
-        Integration $integration,
-        HandlesWebhooks $provider,
-        Request $request,
-        string $providerKey,
-        IntegrationWebhook $webhook,
-    ): JsonResponse {
-        $webhook->markProcessing();
-
-        try {
-            $result = $this->invokeHandler($integration, $provider, $request);
-
-            $webhook->markProcessed();
-
-            $integration->logOperation(
-                operation: 'webhook',
-                direction: 'inbound',
-                status: 'success',
-                summary: "Webhook from {$providerKey} handled successfully.",
-            );
-
-            return new JsonResponse($result ?? ['status' => 'ok']);
-        } catch (\Throwable $e) {
-            $webhook->markFailed($e->getMessage());
-
-            $integration->logOperation(
-                operation: 'webhook',
-                direction: 'inbound',
-                status: 'failed',
-                summary: "Webhook from {$providerKey} failed.",
-                error: $e->getMessage(),
-            );
-
-            throw $e;
-        }
+        return new JsonResponse(['status' => 'queued']);
     }
 
     /**

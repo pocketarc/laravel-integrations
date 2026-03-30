@@ -112,30 +112,9 @@ final class Config
         return self::boundedInt(config('integrations.sync.lock_ttl', 600), 600, 1);
     }
 
-    public static function rateLimitingEnabled(): bool
-    {
-        $value = config('integrations.rate_limiting.enabled', true);
-
-        return is_bool($value) ? $value : true;
-    }
-
     public static function rateLimitMaxWaitSeconds(): int
     {
-        return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 0), 0, 0);
-    }
-
-    public static function requestLoggingEnabled(): bool
-    {
-        $value = config('integrations.request_logging.enabled', true);
-
-        return is_bool($value) ? $value : true;
-    }
-
-    public static function cacheEnabled(): bool
-    {
-        $value = config('integrations.request_logging.cache_enabled', true);
-
-        return is_bool($value) ? $value : true;
+        return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);
     }
 
     public static function degradedAfter(): int
@@ -160,9 +139,18 @@ final class Config
 
     public static function disabledAfter(): ?int
     {
-        $value = config('integrations.health.disabled_after');
+        $value = config('integrations.health.disabled_after', 50);
 
-        return is_int($value) && $value >= 1 ? $value : null;
+        if ($value === null) {
+            return null;
+        }
+
+        return is_int($value) && $value >= 1 ? $value : 50;
+    }
+
+    public static function webhookMaxPayloadBytes(): int
+    {
+        return self::boundedInt(config('integrations.webhook.max_payload_bytes', 1_048_576), 1_048_576, 1);
     }
 
     public static function pruningRequestsDays(): int

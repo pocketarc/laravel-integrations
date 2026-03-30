@@ -13,8 +13,12 @@ return [
         // URL prefix for webhook routes: POST /{prefix}/{provider}/webhook
         'prefix' => 'integrations',
 
-        // Default queue name for async webhook processing jobs.
+        // Queue name for webhook processing jobs. All webhooks are processed asynchronously.
         'queue' => 'default',
+
+        // Maximum webhook payload size in bytes. Payloads exceeding this limit are rejected
+        // with a 413 response. Prevents storage bloat from oversized or malicious payloads.
+        'max_payload_bytes' => 1_048_576, // 1MB
 
         // Additional middleware applied to webhook routes. Webhook routes intentionally
         // have no middleware by default - most webhook providers can't handle CSRF tokens
@@ -66,31 +70,11 @@ return [
     ],
 
     'rate_limiting' => [
-        // When enabled, Integration::request() checks actual request counts from the
-        // integration_requests table before each call, and throws RateLimitExceededException
-        // if the provider's rate limit would be exceeded. Disable if you handle rate
-        // limiting externally or don't need it.
-        'enabled' => true,
-
         // Maximum seconds to wait for rate limit capacity before throwing
         // RateLimitExceededException. When set to 0, throws immediately without waiting.
         // When > 0, sleeps in 1-second intervals and re-checks until capacity is available
         // or the max wait time is exceeded.
-        'max_wait_seconds' => 0,
-    ],
-
-    'request_logging' => [
-        // When enabled, every Integration::request() call is persisted to the
-        // integration_requests table. This powers rate limiting, caching, health tracking,
-        // and the integrations:health command. Disable only if you need to reduce write load
-        // and don't need these features.
-        'enabled' => true,
-
-        // When enabled, Integration::request() checks for a matching unexpired cached response
-        // before making the actual call. Cached responses are identified by matching
-        // integration + endpoint + method + request_data_hash. Only applies when the caller
-        // passes a cacheFor parameter.
-        'cache_enabled' => true,
+        'max_wait_seconds' => 10,
     ],
 
     'health' => [
@@ -114,7 +98,7 @@ return [
         // Number of consecutive failures before an integration is automatically disabled
         // (is_active set to false, health_status set to "disabled"). Set to null to disable
         // this feature. Once disabled, re-enabling requires manual intervention.
-        'disabled_after' => null,
+        'disabled_after' => 50,
     ],
 
     'pruning' => [
