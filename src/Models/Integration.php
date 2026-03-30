@@ -22,6 +22,7 @@ use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
 use Integrations\Events\IntegrationDisabled;
@@ -33,8 +34,10 @@ use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
+use Integrations\PendingRequest;
 use Integrations\RetryHandler;
 use Integrations\Support\Config;
+use Integrations\Support\Redactor;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
@@ -149,6 +152,11 @@ class Integration extends Model
         }
 
         throw new InvalidArgumentException('Model key must be a string or integer.');
+    }
+
+    public function to(string $endpoint): PendingRequest
+    {
+        return new PendingRequest($this, $endpoint);
     }
 
     /**
@@ -375,6 +383,17 @@ class Integration extends Model
         int $durationMs,
         ?CarbonInterface $cacheFor,
     ): IntegrationRequest {
+        $provider = $this->provider();
+
+        if ($provider instanceof RedactsRequestData) {
+            if ($requestData !== null) {
+                $requestData = Redactor::redact($requestData, $provider->sensitiveRequestFields());
+            }
+            if ($responseData !== null) {
+                $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
+            }
+        }
+
         $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
 
         /** @var IntegrationRequest */
