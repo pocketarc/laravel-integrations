@@ -80,10 +80,10 @@ class ReplayWebhookCommand extends Command
         } catch (\Throwable $e) {
             $integration->logOperation(
                 operation: 'webhook_replay',
-	            direction: 'inbound',
-	            status: 'failed',
-	            summary: "Failed to replay IntegrationWebhook #{$webhookId}",
-	            error: $e->getMessage(),
+                direction: 'inbound',
+                status: 'failed',
+                summary: "Failed to replay IntegrationWebhook #{$webhookId}",
+                error: $e->getMessage(),
             );
 
             $this->error("Replay failed: {$e->getMessage()}");

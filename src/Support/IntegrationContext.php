@@ -26,6 +26,6 @@ class IntegrationContext
 
     public static function clear(): void
     {
-        Log::withoutContext();
+        Log::flushSharedContext();
     }
 }

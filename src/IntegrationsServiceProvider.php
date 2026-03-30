@@ -8,6 +8,7 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\ListCommand;
+use Integrations\Console\MakeProviderCommand;
 use Integrations\Console\PruneCommand;
 use Integrations\Console\ReplayWebhookCommand;
 use Integrations\Console\StatsCommand;
@@ -68,6 +69,7 @@ class IntegrationsServiceProvider extends ServiceProvider
                 PruneCommand::class,
                 ReplayWebhookCommand::class,
                 StatsCommand::class,
+                MakeProviderCommand::class,
             ]);
         }
 
