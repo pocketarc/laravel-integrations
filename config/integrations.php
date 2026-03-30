@@ -100,6 +100,11 @@ return [
         // normally syncs every 5 minutes will sync every 50 minutes instead. This prevents
         // hammering a service that's consistently down.
         'failing_backoff' => 10,
+
+        // Number of consecutive failures before an integration is automatically disabled
+        // (is_active set to false, health_status set to "disabled"). Set to null to disable
+        // this feature. Once disabled, re-enabling requires manual intervention.
+        'disabled_after' => null,
     ],
 
     'pruning' => [

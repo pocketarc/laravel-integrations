@@ -141,6 +141,13 @@ final class Config
         return self::boundedInt(config('integrations.health.failing_backoff', 10), 10, 1);
     }
 
+    public static function disabledAfter(): ?int
+    {
+        $value = config('integrations.health.disabled_after');
+
+        return is_int($value) && $value >= 1 ? $value : null;
+    }
+
     public static function pruningRequestsDays(): int
     {
         return self::boundedInt(config('integrations.pruning.requests_days', 90), 90, 1);

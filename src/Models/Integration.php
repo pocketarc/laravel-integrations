@@ -22,6 +22,7 @@ use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
+use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
@@ -524,6 +525,10 @@ class Integration extends Model
     {
         $previousStatus = $this->health_status;
 
+        if ($previousStatus === HealthStatus::Disabled) {
+            return;
+        }
+
         $this->update([
             'consecutive_failures' => 0,
             'health_status' => HealthStatus::Healthy,
@@ -539,17 +544,30 @@ class Integration extends Model
         $previousStatus = $this->health_status;
         $failures = $this->consecutive_failures + 1;
 
+        $disabledAfter = Config::disabledAfter();
+
         $newStatus = match (true) {
+            $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
             $failures >= Config::failingAfter() => HealthStatus::Failing,
             $failures >= Config::degradedAfter() => HealthStatus::Degraded,
             default => $previousStatus,
         };
 
-        $this->update([
+        $updates = [
             'consecutive_failures' => $failures,
             'last_error_at' => now(),
             'health_status' => $newStatus,
-        ]);
+        ];
+
+        if ($newStatus === HealthStatus::Disabled) {
+            $updates['is_active'] = false;
+        }
+
+        $this->update($updates);
+
+        if ($newStatus === HealthStatus::Disabled && $previousStatus !== HealthStatus::Disabled) {
+            IntegrationDisabled::dispatch($this);
+        }
 
         if ($newStatus !== $previousStatus) {
             IntegrationHealthChanged::dispatch($this, $previousStatus, $newStatus);
