@@ -13,6 +13,7 @@ class SyncResult
         public readonly int $successCount,
         public readonly int $failureCount,
         public readonly ?Carbon $safeSyncedAt,
+        public readonly mixed $cursor = null,
     ) {
         if ($successCount < 0) {
             throw new InvalidArgumentException('Success count must not be negative.');

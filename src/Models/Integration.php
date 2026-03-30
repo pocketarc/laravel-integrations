@@ -56,6 +56,7 @@ use Spatie\LaravelData\Data;
  * @property Carbon|null $last_synced_at
  * @property int|null $sync_interval_minutes
  * @property Carbon|null $next_sync_at
+ * @property mixed $sync_cursor
  * @property string|null $owner_type
  * @property int|null $owner_id
  * @property Carbon|null $created_at
@@ -113,6 +114,7 @@ class Integration extends Model
             'last_synced_at' => 'datetime',
             'sync_interval_minutes' => 'integer',
             'next_sync_at' => 'datetime',
+            'sync_cursor' => 'json',
         ];
     }
 
@@ -152,6 +154,29 @@ class Integration extends Model
         }
 
         throw new InvalidArgumentException('Model key must be a string or integer.');
+    }
+
+    private ?int $activeSyncLogId = null;
+
+    /** @var list<int> */
+    private array $syncRequestIds = [];
+
+    public function setSyncContext(int $logId): void
+    {
+        $this->activeSyncLogId = $logId;
+        $this->syncRequestIds = [];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function clearSyncContext(): array
+    {
+        $ids = $this->syncRequestIds;
+        $this->activeSyncLogId = null;
+        $this->syncRequestIds = [];
+
+        return $ids;
     }
 
     public function to(string $endpoint): PendingRequest
@@ -397,7 +422,7 @@ class Integration extends Model
         $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
 
         /** @var IntegrationRequest */
-        return $this->requests()->create([
+        $request = $this->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
             'request_data' => $truncatedRequestData,
@@ -412,6 +437,12 @@ class Integration extends Model
             'duration_ms' => $durationMs,
             'expires_at' => $cacheFor,
         ]);
+
+        if ($this->activeSyncLogId !== null) {
+            $this->syncRequestIds[] = $request->id;
+        }
+
+        return $request;
     }
 
     /**
@@ -686,6 +717,11 @@ class Integration extends Model
     public function syncedSince(): ?Carbon
     {
         return $this->last_synced_at;
+    }
+
+    public function updateSyncCursor(mixed $cursor): void
+    {
+        $this->update(['sync_cursor' => $cursor]);
     }
 
     /**
