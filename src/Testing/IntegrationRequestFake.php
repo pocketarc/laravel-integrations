@@ -7,6 +7,7 @@ namespace Integrations\Testing;
 use Closure;
 use Integrations\Models\Integration;
 use PHPUnit\Framework\Assert;
+use Throwable;
 
 class IntegrationRequestFake
 {
@@ -57,6 +58,14 @@ class IntegrationRequestFake
 
         if (isset($this->fakeResponses[$endpoint])) {
             $response = $this->fakeResponses[$endpoint];
+
+            if ($response instanceof Throwable) {
+                throw $response;
+            }
+
+            if ($response instanceof ResponseSequence) {
+                return $response->next();
+            }
 
             return $response instanceof Closure ? $response() : $response;
         }
@@ -135,5 +144,29 @@ class IntegrationRequestFake
         }
 
         Assert::fail("Endpoint '{$endpoint}' was requested, but no request matched the given callback.");
+    }
+
+    public static function assertRequestCount(int $expected): void
+    {
+        Assert::assertNotNull(self::$instance, 'IntegrationRequest::fake() was not called.');
+
+        $count = count(self::$instance->recorded);
+
+        Assert::assertSame(
+            $expected,
+            $count,
+            "Expected {$expected} request(s) total, but {$count} were recorded.",
+        );
+    }
+
+    public static function assertNothingRequested(): void
+    {
+        Assert::assertNotNull(self::$instance, 'IntegrationRequest::fake() was not called.');
+
+        Assert::assertCount(
+            0,
+            self::$instance->recorded,
+            'Expected no requests, but '.count(self::$instance->recorded).' were recorded.',
+        );
     }
 }

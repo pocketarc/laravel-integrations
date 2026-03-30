@@ -38,6 +38,13 @@ return [
         // maximum time between the user clicking "Connect" and completing the OAuth flow
         // on the provider's site. 10 minutes is generous but prevents stale state attacks.
         'state_ttl' => 600,
+
+        // Lock TTL (seconds) when refreshing OAuth tokens. Prevents concurrent
+        // refresh attempts from multiple queue workers.
+        'refresh_lock_ttl' => 30,
+
+        // Maximum seconds to wait for the refresh lock before throwing LockTimeoutException.
+        'refresh_lock_wait' => 15,
     ],
 
     'sync' => [

@@ -76,6 +76,16 @@ final class Config
         return is_string($value) ? $value : '/integrations';
     }
 
+    public static function oauthRefreshLockTtl(): int
+    {
+        return self::boundedInt(config('integrations.oauth.refresh_lock_ttl', 30), 30, 1);
+    }
+
+    public static function oauthRefreshLockWait(): int
+    {
+        return self::boundedInt(config('integrations.oauth.refresh_lock_wait', 15), 15, 1);
+    }
+
     public static function syncQueue(?string $provider = null): string
     {
         if ($provider !== null) {

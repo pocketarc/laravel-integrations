@@ -7,6 +7,7 @@ namespace Integrations\Models;
 use Carbon\CarbonInterface;
 use Closure;
 use GuzzleHttp\Exception\RequestException;
+use Illuminate\Cache\Lock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -15,6 +16,7 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
@@ -607,10 +609,28 @@ class Integration extends Model
             return;
         }
 
-        $newCredentials = $provider->refreshToken($this);
-        $this->update([
-            'credentials' => array_merge($this->credentialsArray(), $newCredentials),
-        ]);
+        /** @var Lock $lock */
+        $lock = Cache::lock(
+            Config::cachePrefix().":oauth:refresh:{$this->id}",
+            Config::oauthRefreshLockTtl(),
+        );
+
+        try {
+            $lock->block(Config::oauthRefreshLockWait());
+
+            // Another process may have refreshed while we waited for the lock
+            $this->refresh();
+            if (! $this->tokenExpiresSoon()) {
+                return;
+            }
+
+            $newCredentials = $provider->refreshToken($this);
+            $this->update([
+                'credentials' => array_merge($this->credentialsArray(), $newCredentials),
+            ]);
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
