@@ -37,6 +37,13 @@ final class Config
         return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
     }
 
+    public static function webhookQueue(): string
+    {
+        $value = config('integrations.webhook.queue', 'default');
+
+        return is_string($value) && $value !== '' ? $value : 'default';
+    }
+
     public static function oauthRoutePrefix(): string
     {
         $value = config('integrations.oauth.route_prefix', 'integrations');

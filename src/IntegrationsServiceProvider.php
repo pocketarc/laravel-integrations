@@ -10,6 +10,7 @@ use Integrations\Console\HealthCommand;
 use Integrations\Console\ListCommand;
 use Integrations\Console\PruneCommand;
 use Integrations\Console\ReplayWebhookCommand;
+use Integrations\Console\StatsCommand;
 use Integrations\Console\SyncCommand;
 use Integrations\Console\TestCommand;
 use Integrations\Contracts\IntegrationProvider;
@@ -66,6 +67,7 @@ class IntegrationsServiceProvider extends ServiceProvider
                 TestCommand::class,
                 PruneCommand::class,
                 ReplayWebhookCommand::class,
+                StatsCommand::class,
             ]);
         }
 

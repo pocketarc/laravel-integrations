@@ -14,6 +14,7 @@ use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Models\Integration;
 use Integrations\Support\Config;
+use Integrations\Support\IntegrationContext;
 
 class SyncIntegration implements ShouldQueue
 {
@@ -49,6 +50,7 @@ class SyncIntegration implements ShouldQueue
             return;
         }
 
+        IntegrationContext::push($integration, 'sync');
         $startTime = hrtime(true);
 
         try {
@@ -109,6 +111,8 @@ class SyncIntegration implements ShouldQueue
             ]);
 
             throw $e;
+        } finally {
+            IntegrationContext::clear();
         }
     }
 }

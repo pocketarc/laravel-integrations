@@ -13,6 +13,9 @@ return [
         // URL prefix for webhook routes: POST /{prefix}/{provider}/webhook
         'prefix' => 'integrations',
 
+        // Default queue name for async webhook processing jobs.
+        'queue' => 'default',
+
         // Additional middleware applied to webhook routes. Webhook routes intentionally
         // have no middleware by default - most webhook providers can't handle CSRF tokens
         // or session-based auth. Add signature verification middleware here if needed.

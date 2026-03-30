@@ -136,6 +136,12 @@ class Integration extends Model
         return $this->hasMany(IntegrationMapping::class);
     }
 
+    /** @return HasMany<IntegrationWebhook, $this> */
+    public function webhooks(): HasMany
+    {
+        return $this->hasMany(IntegrationWebhook::class);
+    }
+
     /** @return MorphTo<Model, $this> */
     public function owner(): MorphTo
     {

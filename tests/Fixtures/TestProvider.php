@@ -74,6 +74,26 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
         return $this->webhookVerified;
     }
 
+    public function resolveWebhookEvent(Request $request): ?string
+    {
+        return null;
+    }
+
+    public function webhookHandlers(): array
+    {
+        return [];
+    }
+
+    public function webhookDeliveryId(Request $request): ?string
+    {
+        return null;
+    }
+
+    public function webhookQueue(): ?string
+    {
+        return null;
+    }
+
     public function authorizationUrl(Integration $integration, string $redirectUri, string $state): string
     {
         $query = http_build_query(['redirect_uri' => $redirectUri, 'state' => $state]);
