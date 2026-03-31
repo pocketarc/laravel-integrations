@@ -24,7 +24,7 @@ class PendingRequest
 
     private ?int $retryOfId = null;
 
-    private int $maxRetries = 3;
+    private ?int $maxRetries = null;
 
     public function __construct(
         private readonly Integration $integration,
@@ -119,15 +119,17 @@ class PendingRequest
      */
     private function buildHttpCallback(string $method, string $url): Closure
     {
-        $data = is_array($this->requestData) ? $this->requestData : [];
+        return function () use ($method, $url): Response {
+            $response = match (true) {
+                strtoupper($method) === 'GET' => Http::get($url, is_array($this->requestData) ? $this->requestData : []),
+                is_array($this->requestData) => Http::send($method, $url, ['json' => $this->requestData]),
+                is_string($this->requestData) => Http::send($method, $url, ['body' => $this->requestData]),
+                default => Http::send($method, $url),
+            };
 
-        return match (strtoupper($method)) {
-            'GET' => fn () => Http::get($url, $data),
-            'POST' => fn () => Http::post($url, $data),
-            'PUT' => fn () => Http::put($url, $data),
-            'PATCH' => fn () => Http::patch($url, $data),
-            'DELETE' => fn () => Http::delete($url, $data),
-            default => fn () => Http::send($method, $url, ['json' => $data]),
+            $response->throw();
+
+            return $response;
         };
     }
 }

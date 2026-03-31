@@ -86,27 +86,31 @@ class WebhookController extends Controller
 
         IntegrationContext::push($integration, 'webhook');
 
-        $deliveryId = $provider->webhookDeliveryId($request) ?? hash('xxh128', $content);
-        $eventType = $provider->resolveWebhookEvent($request);
-
         try {
-            $webhook = IntegrationWebhook::create([
-                'integration_id' => $integration->id,
-                'delivery_id' => $deliveryId,
-                'event_type' => $eventType,
-                'payload' => $content,
-                'headers' => $this->relevantHeaders($request),
-                'status' => 'pending',
-            ]);
-        } catch (UniqueConstraintViolationException) {
-            return new JsonResponse(['status' => 'duplicate']);
+            $deliveryId = $provider->webhookDeliveryId($request) ?? hash('xxh128', $content);
+            $eventType = $provider->resolveWebhookEvent($request);
+
+            try {
+                $webhook = IntegrationWebhook::create([
+                    'integration_id' => $integration->id,
+                    'delivery_id' => $deliveryId,
+                    'event_type' => $eventType,
+                    'payload' => $content,
+                    'headers' => $this->allHeaders($request),
+                    'status' => 'pending',
+                ]);
+            } catch (UniqueConstraintViolationException) {
+                return new JsonResponse(['status' => 'duplicate']);
+            }
+
+            WebhookReceived::dispatch($integration, $providerKey);
+
+            ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
+
+            return new JsonResponse(['status' => 'queued']);
+        } finally {
+            IntegrationContext::clear();
         }
-
-        WebhookReceived::dispatch($integration, $providerKey);
-
-        ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
-
-        return new JsonResponse(['status' => 'queued']);
     }
 
     /**
@@ -142,16 +146,12 @@ class WebhookController extends Controller
     /**
      * @return array<string, string>
      */
-    private function relevantHeaders(Request $request): array
+    private function allHeaders(Request $request): array
     {
         $headers = [];
-        $relevant = ['content-type', 'user-agent', 'x-signature', 'x-hub-signature', 'x-hub-signature-256'];
 
         foreach ($request->headers->all() as $key => $values) {
-            $lower = strtolower($key);
-            if (in_array($lower, $relevant, true) || str_starts_with($lower, 'x-')) {
-                $headers[$key] = $values[0] ?? '';
-            }
+            $headers[$key] = $values[0] ?? '';
         }
 
         return $headers;

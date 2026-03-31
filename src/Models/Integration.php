@@ -7,7 +7,6 @@ namespace Integrations\Models;
 use Carbon\CarbonInterface;
 use Closure;
 use GuzzleHttp\Exception\RequestException;
-use Illuminate\Cache\Lock;
 use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
@@ -205,8 +204,10 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        int $maxRetries = 3,
+        ?int $maxRetries = null,
     ): mixed {
+        $maxRetries ??= strtoupper($method) === 'GET' ? 3 : 1;
+
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
             $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
@@ -673,7 +674,6 @@ class Integration extends Model
             return;
         }
 
-        /** @var Lock $lock */
         $lock = Cache::lock(
             Config::cachePrefix().":oauth:refresh:{$this->id}",
             Config::oauthRefreshLockTtl(),

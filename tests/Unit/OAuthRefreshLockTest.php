@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
-use Illuminate\Support\Facades\Cache;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Tests\Fixtures\TestProvider;
@@ -82,10 +81,9 @@ class OAuthRefreshLockTest extends TestCase
         ]);
         $integration->refresh();
 
-        // Pre-acquire the lock to verify the key format
-        $lock = Cache::lock("custom:oauth:refresh:{$integration->id}", 30);
-        $acquired = $lock->get();
-        $this->assertTrue($acquired);
-        $lock->release();
+        $integration->refreshTokenIfNeeded();
+        $integration->refresh();
+
+        $this->assertSame('refreshed-token', $integration->credentialsArray()['access_token']);
     }
 }

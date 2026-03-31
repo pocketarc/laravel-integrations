@@ -165,7 +165,7 @@ $result = $integration->request(
     requestData: ['status' => 'open'], // optional - logged (auto-captured for HTTP responses)
     cacheFor: now()->addHour(),        // optional - cache the response
     serveStale: true,                  // optional - return expired cache on error
-    maxRetries: 3,                     // optional - retry on transient errors (default: 1, no retries)
+    maxRetries: 3,                     // optional - retry on transient errors (default: 3)
 );
 ```
 
@@ -217,7 +217,7 @@ Cache hits and stale hits are tracked per-response via `cache_hits` and `stale_h
 <details>
 <summary><strong>Retries</strong></summary>
 
-Set `maxRetries` to automatically retry on transient errors (429, 5xx, connection errors):
+Requests retry up to 3 times by default on transient errors (429, 5xx, connection errors). Override per-request:
 
 ```php
 $result = $integration->request(
@@ -338,7 +338,7 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
 {
     // ... name(), credentialRules(), metadataRules() ...
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
         $tickets = $integration->request(
             endpoint: '/api/v2/tickets.json',
@@ -346,11 +346,13 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
             callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
         );
 
+        $count = 0;
         foreach ($tickets['tickets'] as $ticket) {
             // Process each ticket...
+            $count++;
         }
 
-        $integration->markSynced();
+        return new SyncResult($count, 0, now());
     }
 
     public function defaultSyncInterval(): int
@@ -382,7 +384,6 @@ interface HandlesWebhooks
     public function resolveWebhookEvent(Request $request): ?string;
     public function webhookHandlers(): array;
     public function webhookDeliveryId(Request $request): ?string;
-    public function webhookQueue(): ?string;
 }
 ```
 
@@ -647,8 +648,8 @@ When a webhook arrives:
 2. Signature is verified via `verifyWebhookSignature()`
 3. The webhook is persisted to `integration_webhooks`
 4. A `WebhookReceived` event is dispatched
-5. If `webhookQueue()` returns non-null, a `ProcessWebhook` job is dispatched for async processing
-6. Otherwise, your `handleWebhook()` (or routed handler) is called synchronously
+5. A `ProcessWebhook` job is dispatched to the configured `webhook.queue`
+6. The job calls your `handleWebhook()` (or routed handler)
 7. The result is logged in `IntegrationLog`
 
 Webhook routes have no middleware by default (most providers can't handle CSRF or session auth). Add signature verification middleware via config if needed.
@@ -694,9 +695,9 @@ public function webhookDeliveryId(Request $request): ?string
 
 When a duplicate is detected, the webhook is stored but not processed.
 
-### Async queue processing
+### Queue processing
 
-By default, webhooks are processed synchronously. Providers can opt into async processing by returning a queue name from `webhookQueue()`. Configure the default queue in `config/integrations.php`:
+All webhooks are processed asynchronously via the `ProcessWebhook` job. Configure the queue in `config/integrations.php`:
 
 ```php
 'webhook' => [
@@ -704,14 +705,7 @@ By default, webhooks are processed synchronously. Providers can opt into async p
 ],
 ```
 
-Providers can override the queue per-provider:
-
-```php
-public function webhookQueue(): ?string
-{
-    return 'stripe-webhooks';
-}
-```
+Payloads exceeding `webhook.max_payload_bytes` (default 1MB) are rejected with a 413 response.
 
 ### Replaying webhooks
 
@@ -785,7 +779,7 @@ Integration health is tracked automatically based on request outcomes, using a c
 
 Each successful request resets `consecutive_failures` to 0 and sets `health_status` to `healthy`. Each failure increments `consecutive_failures` and updates `last_error_at`. After 5 consecutive failures (configurable), status transitions to `degraded`; after 20, to `failing`. Any subsequent success resets back to `healthy`.
 
-If `health.disabled_after` is configured, integrations that exceed that threshold are automatically set to `disabled` status and stop syncing entirely. Disabled integrations require manual re-enabling. An `IntegrationDisabled` event is dispatched when this occurs.
+By default, integrations that exceed 50 consecutive failures are automatically set to `disabled` status and stop syncing entirely. This threshold is configurable via `health.disabled_after` (set to `null` to disable). Disabled integrations require manual re-enabling. An `IntegrationDisabled` event is dispatched when this occurs.
 
 Every health transition dispatches an `IntegrationHealthChanged` event with the previous and new status.
 
@@ -1065,9 +1059,10 @@ return [
     'cache_prefix' => 'integrations',
 
     'webhook' => [
-        'prefix' => 'integrations',     // URL prefix: POST /{prefix}/{provider}/webhook
-        'middleware' => [],              // no CSRF by default; webhooks can't carry tokens
-        'queue' => 'default',           // queue for ProcessWebhook jobs
+        'prefix' => 'integrations',          // URL prefix: POST /{prefix}/{provider}/webhook
+        'queue' => 'default',                // queue for ProcessWebhook jobs
+        'max_payload_bytes' => 1_048_576,    // reject payloads larger than 1MB
+        'middleware' => [],                  // no CSRF by default; webhooks can't carry tokens
     ],
 
     'oauth' => [
@@ -1086,18 +1081,13 @@ return [
     ],
 
     'rate_limiting' => [
-        'enabled' => true,      // check request counts before each call
-    ],
-
-    'request_logging' => [
-        'enabled' => true,      // persist every request to integration_requests
-        'cache_enabled' => true, // enable response caching via cacheFor parameter
+        'max_wait_seconds' => 10, // wait for capacity before throwing (0 = immediate)
     ],
 
     'health' => [
         'degraded_after' => 5,    // consecutive failures -> degraded
         'failing_after' => 20,    // consecutive failures -> failing
-        'disabled_after' => null, // consecutive failures -> disabled (null = never)
+        'disabled_after' => 50,   // consecutive failures -> disabled (null = never)
         'degraded_backoff' => 2,  // sync interval multiplier when degraded
         'failing_backoff' => 10,  // sync interval multiplier when failing
     ],

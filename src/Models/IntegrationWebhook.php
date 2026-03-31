@@ -62,15 +62,27 @@ class IntegrationWebhook extends Model
         return $this->belongsTo(Integration::class);
     }
 
-    public function markProcessing(): void
+    public function markProcessing(): bool
     {
-        $this->update(['status' => 'processing']);
+        $claimed = $this->newQuery()
+            ->where('id', $this->id)
+            ->where('status', 'pending')
+            ->update(['status' => 'processing', 'error' => null, 'processed_at' => null]);
+
+        if ($claimed > 0) {
+            $this->fill(['status' => 'processing', 'error' => null, 'processed_at' => null]);
+
+            return true;
+        }
+
+        return false;
     }
 
     public function markProcessed(): void
     {
         $this->update([
             'status' => 'processed',
+            'error' => null,
             'processed_at' => now(),
         ]);
     }

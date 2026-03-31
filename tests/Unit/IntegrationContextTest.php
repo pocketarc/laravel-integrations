@@ -45,7 +45,8 @@ class IntegrationContextTest extends TestCase
         $context = Log::sharedContext();
 
         $this->assertArrayHasKey('integration_id', $context);
-        $this->assertArrayNotHasKey('integration_operation', $context);
+        $this->assertArrayHasKey('integration_operation', $context);
+        $this->assertNull($context['integration_operation']);
 
         IntegrationContext::clear();
     }

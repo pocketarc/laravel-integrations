@@ -56,7 +56,7 @@ class RedactionTest extends TestCase
         $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
         $integration->refresh();
 
-        $result = $integration->request(
+        $integration->request(
             endpoint: '/api/login',
             method: 'POST',
             callback: fn () => ['token' => 'secret-jwt-token', 'user' => 'admin'],

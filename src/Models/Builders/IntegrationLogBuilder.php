@@ -15,17 +15,23 @@ class IntegrationLogBuilder extends Builder
 {
     public function successful(): static
     {
-        return $this->where('status', 'success');
+        $this->where('status', 'success');
+
+        return $this;
     }
 
     public function failed(): static
     {
-        return $this->where('status', 'failed');
+        $this->where('status', 'failed');
+
+        return $this;
     }
 
     public function forOperation(string $operation): static
     {
-        return $this->where('operation', $operation);
+        $this->where('operation', $operation);
+
+        return $this;
     }
 
     public function topLevel(): static
@@ -37,6 +43,8 @@ class IntegrationLogBuilder extends Builder
 
     public function recent(int $hours = 24): static
     {
-        return $this->where('created_at', '>=', now()->subHours($hours));
+        $this->where('created_at', '>=', now()->subHours($hours));
+
+        return $this;
     }
 }

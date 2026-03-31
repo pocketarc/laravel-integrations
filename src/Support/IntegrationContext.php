@@ -17,9 +17,7 @@ class IntegrationContext
             'integration_name' => $integration->name,
         ];
 
-        if ($operation !== null) {
-            $context['integration_operation'] = $operation;
-        }
+        $context['integration_operation'] = $operation;
 
         Log::shareContext($context);
     }

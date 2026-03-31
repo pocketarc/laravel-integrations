@@ -36,10 +36,9 @@ class StatsCommand extends Command
             $avgLatency = $integration->requests()->recent(24)->successful()->avg('duration_ms');
             $avgLatencyStr = is_numeric($avgLatency) ? round((float) $avgLatency).'ms' : 'N/A';
 
-            $totalWithHits = $integration->requests()->recent(24)->count();
             $cacheHits = (int) $integration->requests()->recent(24)->sum('cache_hits');
-            $cacheRatio = ($totalWithHits + $cacheHits) > 0
-                ? round(($cacheHits / ($totalWithHits + $cacheHits)) * 100, 1).'%'
+            $cacheRatio = ($requests24h + $cacheHits) > 0
+                ? round(($cacheHits / ($requests24h + $cacheHits)) * 100, 1).'%'
                 : 'N/A';
 
             $syncLogs = $integration->logs()->forOperation('sync')->recent(168);

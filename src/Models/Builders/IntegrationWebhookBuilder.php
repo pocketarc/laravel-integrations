@@ -15,21 +15,29 @@ class IntegrationWebhookBuilder extends Builder
 {
     public function pending(): static
     {
-        return $this->where('status', 'pending');
+        $this->where('status', 'pending');
+
+        return $this;
     }
 
     public function failed(): static
     {
-        return $this->where('status', 'failed');
+        $this->where('status', 'failed');
+
+        return $this;
     }
 
     public function forEventType(string $eventType): static
     {
-        return $this->where('event_type', $eventType);
+        $this->where('event_type', $eventType);
+
+        return $this;
     }
 
     public function recent(int $hours = 24): static
     {
-        return $this->where('created_at', '>=', now()->subHours($hours));
+        $this->where('created_at', '>=', now()->subHours($hours));
+
+        return $this;
     }
 }

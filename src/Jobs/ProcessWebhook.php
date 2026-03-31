@@ -36,17 +36,24 @@ class ProcessWebhook implements ShouldQueue
         $integration = $webhook->integration;
 
         if ($integration === null) {
+            $webhook->markFailed('Integration not found.');
+
             return;
         }
 
         $provider = $integration->provider();
 
         if (! $provider instanceof HandlesWebhooks) {
+            $webhook->markFailed('Provider does not support webhooks.');
+
+            return;
+        }
+
+        if (! $webhook->markProcessing()) {
             return;
         }
 
         IntegrationContext::push($integration, 'webhook');
-        $webhook->markProcessing();
 
         $request = Request::create(
             uri: '/',
