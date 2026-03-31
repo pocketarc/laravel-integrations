@@ -55,39 +55,47 @@ class ProcessWebhook implements ShouldQueue
 
         IntegrationContext::push($integration, 'webhook');
 
-        $request = Request::create(
-            uri: '/',
-            method: 'POST',
-            content: $webhook->payload,
-        );
-
-        foreach ($webhook->headers as $key => $value) {
-            if (is_string($value)) {
-                $request->headers->set($key, $value);
-            }
-        }
-
         try {
+            $request = Request::create(
+                uri: '/',
+                method: 'POST',
+                content: $webhook->payload,
+            );
+
+            foreach ($webhook->headers as $key => $value) {
+                if (is_string($value)) {
+                    $request->headers->set($key, $value);
+                }
+            }
+
             WebhookController::invokeHandler($integration, $provider, $request);
 
             $webhook->markProcessed();
 
-            $integration->logOperation(
-                operation: 'webhook',
-                direction: 'inbound',
-                status: 'success',
-                summary: "Queued webhook from {$integration->provider} processed successfully.",
-            );
+            try {
+                $integration->logOperation(
+                    operation: 'webhook',
+                    direction: 'inbound',
+                    status: 'success',
+                    summary: "Queued webhook from {$integration->provider} processed successfully.",
+                );
+            } catch (\Throwable $logException) {
+                Log::warning("Failed to log successful webhook operation for '{$integration->name}': {$logException->getMessage()}");
+            }
         } catch (\Throwable $e) {
             $webhook->markFailed($e->getMessage());
 
-            $integration->logOperation(
-                operation: 'webhook',
-                direction: 'inbound',
-                status: 'failed',
-                summary: "Queued webhook from {$integration->provider} failed.",
-                error: $e->getMessage(),
-            );
+            try {
+                $integration->logOperation(
+                    operation: 'webhook',
+                    direction: 'inbound',
+                    status: 'failed',
+                    summary: "Queued webhook from {$integration->provider} failed.",
+                    error: $e->getMessage(),
+                );
+            } catch (\Throwable $logException) {
+                Log::warning("Failed to log failed webhook operation for '{$integration->name}': {$logException->getMessage()}");
+            }
 
             Log::error("Webhook processing failed for '{$integration->name}': {$e->getMessage()}", [
                 'integration_id' => $integration->id,

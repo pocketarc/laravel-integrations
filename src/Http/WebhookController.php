@@ -131,6 +131,10 @@ class WebhookController extends Controller
                 $handler = app($handler);
             }
 
+            if (is_array($handler) && isset($handler[0]) && is_string($handler[0]) && class_exists($handler[0])) {
+                $handler = [app($handler[0]), $handler[1]];
+            }
+
             if (is_callable($handler)) {
                 return $handler($integration, $request);
             }

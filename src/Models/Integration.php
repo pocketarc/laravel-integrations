@@ -16,6 +16,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
@@ -608,29 +609,53 @@ class Integration extends Model
 
     public function recordFailure(): void
     {
-        $previousStatus = $this->health_status;
-        $failures = $this->consecutive_failures + 1;
+        $previousStatus = null;
+        $newStatus = null;
 
-        $disabledAfter = Config::disabledAfter();
+        DB::transaction(function () use (&$previousStatus, &$newStatus): void {
+            /** @var Integration|null $locked */
+            $locked = Integration::lockForUpdate()->find($this->id);
 
-        $newStatus = match (true) {
-            $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
-            $failures >= Config::failingAfter() => HealthStatus::Failing,
-            $failures >= Config::degradedAfter() => HealthStatus::Degraded,
-            default => $previousStatus,
-        };
+            if ($locked === null) {
+                return;
+            }
 
-        $updates = [
-            'consecutive_failures' => $failures,
-            'last_error_at' => now(),
-            'health_status' => $newStatus,
-        ];
+            $previousStatus = $locked->health_status;
+            $failures = $locked->consecutive_failures + 1;
 
-        if ($newStatus === HealthStatus::Disabled) {
-            $updates['is_active'] = false;
+            $disabledAfter = Config::disabledAfter();
+
+            $newStatus = match (true) {
+                $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
+                $failures >= Config::failingAfter() => HealthStatus::Failing,
+                $failures >= Config::degradedAfter() => HealthStatus::Degraded,
+                default => $previousStatus,
+            };
+
+            $updates = [
+                'consecutive_failures' => $failures,
+                'last_error_at' => now(),
+                'health_status' => $newStatus,
+            ];
+
+            if ($newStatus === HealthStatus::Disabled) {
+                $updates['is_active'] = false;
+            }
+
+            $locked->update($updates);
+
+            $this->fill($locked->only([
+                'consecutive_failures',
+                'last_error_at',
+                'health_status',
+                'is_active',
+            ]));
+            $this->syncOriginal();
+        });
+
+        if ($previousStatus === null || $newStatus === null) {
+            return;
         }
-
-        $this->update($updates);
 
         if ($newStatus === HealthStatus::Disabled && $previousStatus !== HealthStatus::Disabled) {
             IntegrationDisabled::dispatch($this);
@@ -683,14 +708,14 @@ class Integration extends Model
             $lock->block(Config::oauthRefreshLockWait());
 
             // Another process may have refreshed while we waited for the lock
-            $this->refresh();
-            if (! $this->tokenExpiresSoon()) {
+            $freshCopy = $this->fresh();
+            if ($freshCopy === null || ! $freshCopy->tokenExpiresSoon()) {
                 return;
             }
 
             $newCredentials = $provider->refreshToken($this);
             $this->update([
-                'credentials' => array_merge($this->credentialsArray(), $newCredentials),
+                'credentials' => array_merge($freshCopy->credentialsArray(), $newCredentials),
             ]);
         } finally {
             $lock->release();

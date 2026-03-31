@@ -54,16 +54,16 @@ class SyncIntegration implements ShouldQueue
 
         IntegrationContext::push($integration, 'sync');
         $startTime = hrtime(true);
-
-        $parentLog = $integration->logOperation(
-            operation: 'sync',
-            direction: 'inbound',
-            status: 'processing',
-        );
-
-        $integration->setSyncContext($parentLog->id);
+        $parentLog = null;
 
         try {
+            $parentLog = $integration->logOperation(
+                operation: 'sync',
+                direction: 'inbound',
+                status: 'processing',
+            );
+
+            $integration->setSyncContext($parentLog->id);
 
             $result = $provider instanceof HasIncrementalSync
                 ? $provider->syncIncremental($integration, $integration->sync_cursor)
@@ -92,11 +92,13 @@ class SyncIntegration implements ShouldQueue
             $integration->clearSyncContext();
             $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-            $parentLog->update([
-                'status' => 'failed',
-                'error' => $e->getMessage(),
-                'duration_ms' => $durationMs,
-            ]);
+            if ($parentLog !== null) {
+                $parentLog->update([
+                    'status' => 'failed',
+                    'error' => $e->getMessage(),
+                    'duration_ms' => $durationMs,
+                ]);
+            }
 
             Log::error("Integration sync failed for '{$integration->name}': {$e->getMessage()}", [
                 'integration_id' => $integration->id,
