@@ -151,4 +151,90 @@ class IntegrationWebhookTest extends TestCase
 
         $this->assertSame(1, $this->integration->webhooks()->count());
     }
+
+    public function test_mark_processing_sets_updated_at(): void
+    {
+        $webhook = IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => 'ts-1',
+            'payload' => '{}',
+            'headers' => [],
+            'status' => 'pending',
+        ]);
+
+        // Backdate updated_at.
+        $webhook->newQuery()->where('id', $webhook->id)->update([
+            'updated_at' => now()->subHour(),
+        ]);
+        $webhook->refresh();
+        $before = $webhook->updated_at;
+
+        $webhook->markProcessing();
+        $webhook->refresh();
+
+        $this->assertSame('processing', $webhook->status);
+        $this->assertTrue($webhook->updated_at->greaterThan($before));
+    }
+
+    public function test_reset_to_pending(): void
+    {
+        $webhook = IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => 'reset-1',
+            'payload' => '{}',
+            'headers' => [],
+            'status' => 'processing',
+        ]);
+
+        $result = $webhook->resetToPending();
+        $webhook->refresh();
+
+        $this->assertTrue($result);
+        $this->assertSame('pending', $webhook->status);
+        $this->assertNull($webhook->error);
+        $this->assertNull($webhook->processed_at);
+    }
+
+    public function test_reset_to_pending_only_from_processing(): void
+    {
+        foreach (['pending', 'processed', 'failed'] as $status) {
+            $webhook = IntegrationWebhook::create([
+                'integration_id' => $this->integration->id,
+                'delivery_id' => "reset-{$status}",
+                'payload' => '{}',
+                'headers' => [],
+                'status' => $status,
+            ]);
+
+            $this->assertFalse($webhook->resetToPending());
+        }
+    }
+
+    public function test_stale_processing_scope(): void
+    {
+        $stale = IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => 'stale-1',
+            'payload' => '{}',
+            'headers' => [],
+            'status' => 'processing',
+        ]);
+
+        $stale->newQuery()->where('id', $stale->id)->update([
+            'updated_at' => now()->subHours(2),
+        ]);
+
+        IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => 'fresh-1',
+            'payload' => '{}',
+            'headers' => [],
+            'status' => 'processing',
+        ]);
+
+        $results = IntegrationWebhook::query()->staleProcessing(1800)->get();
+
+        $this->assertCount(1, $results);
+        $this->assertSame($stale->id, $results->first()->id);
+    }
 }

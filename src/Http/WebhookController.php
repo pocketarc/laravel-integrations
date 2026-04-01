@@ -16,6 +16,7 @@ use Integrations\Models\Integration;
 use Integrations\Models\IntegrationWebhook;
 use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
+use Throwable;
 
 class WebhookController extends Controller
 {
@@ -106,8 +107,12 @@ class WebhookController extends Controller
             try {
                 WebhookReceived::dispatch($integration, $providerKey);
                 ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
-            } catch (\Throwable $e) {
-                $webhook->delete();
+            } catch (Throwable $e) {
+                $webhook->refresh();
+
+                if ($webhook->status === 'pending') {
+                    $webhook->delete();
+                }
 
                 throw $e;
             }

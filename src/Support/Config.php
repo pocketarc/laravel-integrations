@@ -153,6 +153,11 @@ final class Config
         return self::boundedInt(config('integrations.webhook.max_payload_bytes', 1_048_576), 1_048_576, 1);
     }
 
+    public static function webhookProcessingTimeout(): int
+    {
+        return self::boundedInt(config('integrations.webhook.processing_timeout', 1800), 1800, 60);
+    }
+
     public static function pruningRequestsDays(): int
     {
         return self::boundedInt(config('integrations.pruning.requests_days', 90), 90, 1);

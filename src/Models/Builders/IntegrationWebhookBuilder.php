@@ -40,4 +40,12 @@ class IntegrationWebhookBuilder extends Builder
 
         return $this;
     }
+
+    public function staleProcessing(int $timeoutSeconds): static
+    {
+        $this->where('status', 'processing')
+            ->where('updated_at', '<', now()->subSeconds($timeoutSeconds));
+
+        return $this;
+    }
 }

@@ -20,6 +20,12 @@ return [
         // with a 413 response. Prevents storage bloat from oversized or malicious payloads.
         'max_payload_bytes' => 1_048_576, // 1MB
 
+        // Maximum time (in seconds) a webhook can remain in "processing" status before
+        // it is considered stale and eligible for recovery by integrations:recover-webhooks.
+        // If a queue worker dies mid-processing, the webhook gets stuck — this timeout
+        // allows automatic recovery. Minimum 60 seconds.
+        'processing_timeout' => 1800, // 30 minutes
+
         // Additional middleware applied to webhook routes. Webhook routes intentionally
         // have no middleware by default - most webhook providers can't handle CSRF tokens
         // or session-based auth. Add signature verification middleware here if needed.

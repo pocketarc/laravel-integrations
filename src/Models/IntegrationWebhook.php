@@ -30,6 +30,7 @@ use Integrations\Support\Config;
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook failed()
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook forEventType(string $eventType)
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook recent(int $hours = 24)
+ * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook staleProcessing(int $timeoutSeconds)
  *
  * @property-read Integration|null $integration
  *
@@ -64,13 +65,33 @@ class IntegrationWebhook extends Model
 
     public function markProcessing(): bool
     {
+        $now = now();
+
         $claimed = $this->newQuery()
             ->where('id', $this->id)
             ->where('status', 'pending')
-            ->update(['status' => 'processing', 'error' => null, 'processed_at' => null]);
+            ->update(['status' => 'processing', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
 
         if ($claimed > 0) {
-            $this->fill(['status' => 'processing', 'error' => null, 'processed_at' => null]);
+            $this->fill(['status' => 'processing', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
+
+            return true;
+        }
+
+        return false;
+    }
+
+    public function resetToPending(): bool
+    {
+        $now = now();
+
+        $reset = $this->newQuery()
+            ->where('id', $this->id)
+            ->where('status', 'processing')
+            ->update(['status' => 'pending', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
+
+        if ($reset > 0) {
+            $this->fill(['status' => 'pending', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
 
             return true;
         }

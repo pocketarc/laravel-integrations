@@ -717,6 +717,22 @@ php artisan integrations:replay-webhook {webhookId}
 
 This reconstructs the request from stored data and re-dispatches it through `handleWebhook()`. Useful when a handler had a bug that's since been fixed.
 
+### Recovering stale webhooks
+
+If a queue worker dies mid-processing, a webhook can get stuck in `processing` status. The recovery command finds these and re-queues them:
+
+```bash
+php artisan integrations:recover-webhooks
+```
+
+Add to your scheduler for automatic recovery:
+
+```php
+Schedule::command('integrations:recover-webhooks')->hourly();
+```
+
+A webhook is considered stale after `webhook.processing_timeout` seconds (default 1800 / 30 minutes). Set this higher if your handlers are long-running.
+
 ## Scheduled syncs
 
 Providers that implement `HasScheduledSync` get automated sync scheduling.
@@ -907,6 +923,7 @@ class NotifyOnHealthDegradation
 | `integrations:health`              | Detailed health report (error rates, response times, top errors)       |
 | `integrations:test`                | Run `HasHealthCheck` on all supporting integrations                    |
 | `integrations:prune`               | Clean up old request and log records                                   |
+| `integrations:recover-webhooks`    | Reset stale processing webhooks to pending and re-dispatch them        |
 | `integrations:replay-webhook {id}` | Re-dispatch a stored webhook payload                                   |
 | `integrations:stats`               | Show request counts, error rates, and cache hit ratios per integration |
 
@@ -1062,6 +1079,7 @@ return [
         'prefix' => 'integrations',          // URL prefix: POST /{prefix}/{provider}/webhook
         'queue' => 'default',                // queue for ProcessWebhook jobs
         'max_payload_bytes' => 1_048_576,    // reject payloads larger than 1MB
+        'processing_timeout' => 1800,       // seconds before a processing webhook is considered stale
         'middleware' => [],                  // no CSRF by default; webhooks can't carry tokens
     ],
 
