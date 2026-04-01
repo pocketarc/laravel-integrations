@@ -65,6 +65,9 @@ class ProcessWebhook implements ShouldQueue
             foreach ($webhook->headers as $key => $value) {
                 if (is_string($value)) {
                     $request->headers->set($key, $value);
+                } elseif (is_array($value)) {
+                    $filtered = array_filter($value, 'is_string');
+                    $request->headers->set($key, array_values($filtered));
                 }
             }
 

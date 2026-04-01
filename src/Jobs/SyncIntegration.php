@@ -72,11 +72,11 @@ class SyncIntegration implements ShouldQueue
             $requestIds = $integration->clearSyncContext();
             $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 
-            $integration->markSynced($result->safeSyncedAt);
-
             if ($result->cursor !== null) {
                 $integration->updateSyncCursor($result->cursor);
             }
+
+            $integration->markSynced($result->safeSyncedAt);
 
             $parentLog->update([
                 'status' => $result->hasFailures() ? 'partial' : 'success',

@@ -714,9 +714,11 @@ class Integration extends Model
             }
 
             $newCredentials = $provider->refreshToken($this);
-            $this->update([
-                'credentials' => array_merge($freshCopy->credentialsArray(), $newCredentials),
-            ]);
+            $mergedCredentials = array_merge($freshCopy->credentialsArray(), $newCredentials);
+
+            $freshCopy->update(['credentials' => $mergedCredentials]);
+
+            $this->fill(['credentials' => $mergedCredentials]);
         } finally {
             $lock->release();
         }

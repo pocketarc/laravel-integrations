@@ -8,7 +8,6 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
-use Illuminate\Support\Facades\DB;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Events\WebhookReceived;
 use Integrations\IntegrationManager;
@@ -92,24 +91,25 @@ class WebhookController extends Controller
             $eventType = $provider->resolveWebhookEvent($request);
 
             try {
-                DB::transaction(function () use ($integration, $providerKey, $deliveryId, $eventType, $content, $request): void {
-                    $webhook = IntegrationWebhook::create([
-                        'integration_id' => $integration->id,
-                        'delivery_id' => $deliveryId,
-                        'event_type' => $eventType,
-                        'payload' => $content,
-                        'headers' => $this->allHeaders($request),
-                        'status' => 'pending',
-                    ]);
-
-                    WebhookReceived::dispatch($integration, $providerKey);
-
-                    ProcessWebhook::dispatch($webhook->id)
-                        ->onQueue(Config::webhookQueue())
-                        ->afterCommit();
-                });
+                $webhook = IntegrationWebhook::create([
+                    'integration_id' => $integration->id,
+                    'delivery_id' => $deliveryId,
+                    'event_type' => $eventType,
+                    'payload' => $content,
+                    'headers' => $this->allHeaders($request),
+                    'status' => 'pending',
+                ]);
             } catch (UniqueConstraintViolationException) {
                 return new JsonResponse(['status' => 'duplicate']);
+            }
+
+            try {
+                WebhookReceived::dispatch($integration, $providerKey);
+                ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
+            } catch (\Throwable $e) {
+                $webhook->delete();
+
+                throw $e;
             }
 
             return new JsonResponse(['status' => 'queued']);
@@ -153,14 +153,14 @@ class WebhookController extends Controller
     }
 
     /**
-     * @return array<string, string>
+     * @return array<string, list<string>>
      */
     private function allHeaders(Request $request): array
     {
         $headers = [];
 
         foreach ($request->headers->all() as $key => $values) {
-            $headers[$key] = $values[0] ?? '';
+            $headers[$key] = array_values(array_filter($values, 'is_string'));
         }
 
         return $headers;
