@@ -8,6 +8,7 @@ use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Http\Request;
 use Illuminate\Routing\Controller;
+use Illuminate\Support\Facades\DB;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Events\WebhookReceived;
 use Integrations\IntegrationManager;
@@ -91,21 +92,25 @@ class WebhookController extends Controller
             $eventType = $provider->resolveWebhookEvent($request);
 
             try {
-                $webhook = IntegrationWebhook::create([
-                    'integration_id' => $integration->id,
-                    'delivery_id' => $deliveryId,
-                    'event_type' => $eventType,
-                    'payload' => $content,
-                    'headers' => $this->allHeaders($request),
-                    'status' => 'pending',
-                ]);
+                DB::transaction(function () use ($integration, $providerKey, $deliveryId, $eventType, $content, $request): void {
+                    $webhook = IntegrationWebhook::create([
+                        'integration_id' => $integration->id,
+                        'delivery_id' => $deliveryId,
+                        'event_type' => $eventType,
+                        'payload' => $content,
+                        'headers' => $this->allHeaders($request),
+                        'status' => 'pending',
+                    ]);
+
+                    WebhookReceived::dispatch($integration, $providerKey);
+
+                    ProcessWebhook::dispatch($webhook->id)
+                        ->onQueue(Config::webhookQueue())
+                        ->afterCommit();
+                });
             } catch (UniqueConstraintViolationException) {
                 return new JsonResponse(['status' => 'duplicate']);
             }
-
-            WebhookReceived::dispatch($integration, $providerKey);
-
-            ProcessWebhook::dispatch($webhook->id)->onQueue(Config::webhookQueue());
 
             return new JsonResponse(['status' => 'queued']);
         } finally {
