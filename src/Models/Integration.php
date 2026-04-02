@@ -15,13 +15,17 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use Illuminate\Support\Carbon;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\DB;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\RedactsRequestData;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
+use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
@@ -30,8 +34,10 @@ use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
+use Integrations\PendingRequest;
 use Integrations\RetryHandler;
 use Integrations\Support\Config;
+use Integrations\Support\Redactor;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
@@ -50,6 +56,7 @@ use Spatie\LaravelData\Data;
  * @property Carbon|null $last_synced_at
  * @property int|null $sync_interval_minutes
  * @property Carbon|null $next_sync_at
+ * @property mixed $sync_cursor
  * @property string|null $owner_type
  * @property int|null $owner_id
  * @property Carbon|null $created_at
@@ -107,6 +114,7 @@ class Integration extends Model
             'last_synced_at' => 'datetime',
             'sync_interval_minutes' => 'integer',
             'next_sync_at' => 'datetime',
+            'sync_cursor' => 'json',
         ];
     }
 
@@ -126,6 +134,12 @@ class Integration extends Model
     public function mappings(): HasMany
     {
         return $this->hasMany(IntegrationMapping::class);
+    }
+
+    /** @return HasMany<IntegrationWebhook, $this> */
+    public function webhooks(): HasMany
+    {
+        return $this->hasMany(IntegrationWebhook::class);
     }
 
     /** @return MorphTo<Model, $this> */
@@ -148,6 +162,34 @@ class Integration extends Model
         throw new InvalidArgumentException('Model key must be a string or integer.');
     }
 
+    private ?int $activeSyncLogId = null;
+
+    /** @var list<int> */
+    private array $syncRequestIds = [];
+
+    public function setSyncContext(int $logId): void
+    {
+        $this->activeSyncLogId = $logId;
+        $this->syncRequestIds = [];
+    }
+
+    /**
+     * @return list<int>
+     */
+    public function clearSyncContext(): array
+    {
+        $ids = $this->syncRequestIds;
+        $this->activeSyncLogId = null;
+        $this->syncRequestIds = [];
+
+        return $ids;
+    }
+
+    public function to(string $endpoint): PendingRequest
+    {
+        return new PendingRequest($this, $endpoint);
+    }
+
     /**
      * Execute a callback against this integration, logging the request.
      *
@@ -163,8 +205,10 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        int $maxRetries = 1,
+        ?int $maxRetries = null,
     ): mixed {
+        $maxRetries ??= strtoupper($method) === 'GET' ? 3 : 1;
+
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
             $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
@@ -172,14 +216,12 @@ class Integration extends Model
             return $fake->record($this, $endpoint, $method, $encodedData);
         }
 
-        if (Config::rateLimitingEnabled()) {
-            $this->enforceRateLimit();
-        }
+        $this->enforceRateLimit();
 
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
         // Check cache
-        if ($cacheFor !== null && Config::cacheEnabled()) {
+        if ($cacheFor !== null) {
             $cached = $this->findCachedResponse($endpoint, $method, $encodedRequestData);
             if ($cached !== null) {
                 try {
@@ -230,7 +272,8 @@ class Integration extends Model
         $this->lastCreatedRequestId = null;
 
         for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            $allowStale = $serveStale && $attempt === $maxRetries;
+            $isLastAttempt = $attempt >= $maxRetries;
+            $allowStale = $serveStale && $isLastAttempt;
 
             try {
                 $result = $this->executeRequest(
@@ -247,11 +290,24 @@ class Integration extends Model
 
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
-                if ($attempt >= $maxRetries) {
-                    throw $e;
-                }
+                $willRetry = ! $isLastAttempt && RetryHandler::isRetryable($e);
 
-                if (! RetryHandler::isRetryable($e)) {
+                if (! $willRetry) {
+                    // Not retrying — try stale cache as last resort before giving up
+                    if ($serveStale && ! $allowStale) {
+                        $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
+                        if ($stale !== null) {
+                            try {
+                                $decoded = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
+                                $stale->increment('stale_hits');
+
+                                return $decoded;
+                            } catch (\JsonException) {
+                                // Fall through to throw
+                            }
+                        }
+                    }
+
                     throw $e;
                 }
 
@@ -322,9 +378,7 @@ class Integration extends Model
                 );
                 $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
-                if (Config::requestLoggingEnabled()) {
-                    RequestFailed::dispatch($this, $request);
-                }
+                RequestFailed::dispatch($this, $request);
 
                 throw $e;
             }
@@ -339,12 +393,10 @@ class Integration extends Model
         );
         $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
-        if (Config::requestLoggingEnabled()) {
-            if ($responseSuccess) {
-                RequestCompleted::dispatch($this, $request);
-            } else {
-                RequestFailed::dispatch($this, $request);
-            }
+        if ($responseSuccess) {
+            RequestCompleted::dispatch($this, $request);
+        } else {
+            RequestFailed::dispatch($this, $request);
         }
 
         if ($responseSuccess) {
@@ -372,10 +424,21 @@ class Integration extends Model
         int $durationMs,
         ?CarbonInterface $cacheFor,
     ): IntegrationRequest {
+        $provider = $this->provider();
+
+        if ($provider instanceof RedactsRequestData) {
+            if ($requestData !== null) {
+                $requestData = Redactor::redact($requestData, $provider->sensitiveRequestFields());
+            }
+            if ($responseData !== null) {
+                $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
+            }
+        }
+
         $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
 
         /** @var IntegrationRequest */
-        return $this->requests()->create([
+        $request = $this->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
             'request_data' => $truncatedRequestData,
@@ -390,6 +453,12 @@ class Integration extends Model
             'duration_ms' => $durationMs,
             'expires_at' => $cacheFor,
         ]);
+
+        if ($this->activeSyncLogId !== null) {
+            $this->syncRequestIds[] = $request->id;
+        }
+
+        return $request;
     }
 
     /**
@@ -524,6 +593,10 @@ class Integration extends Model
     {
         $previousStatus = $this->health_status;
 
+        if ($previousStatus === HealthStatus::Disabled) {
+            return;
+        }
+
         $this->update([
             'consecutive_failures' => 0,
             'health_status' => HealthStatus::Healthy,
@@ -536,20 +609,57 @@ class Integration extends Model
 
     public function recordFailure(): void
     {
-        $previousStatus = $this->health_status;
-        $failures = $this->consecutive_failures + 1;
+        $previousStatus = null;
+        $newStatus = null;
 
-        $newStatus = match (true) {
-            $failures >= Config::failingAfter() => HealthStatus::Failing,
-            $failures >= Config::degradedAfter() => HealthStatus::Degraded,
-            default => $previousStatus,
-        };
+        DB::transaction(function () use (&$previousStatus, &$newStatus): void {
+            /** @var Integration|null $locked */
+            $locked = Integration::lockForUpdate()->find($this->id);
 
-        $this->update([
-            'consecutive_failures' => $failures,
-            'last_error_at' => now(),
-            'health_status' => $newStatus,
-        ]);
+            if ($locked === null) {
+                return;
+            }
+
+            $previousStatus = $locked->health_status;
+            $failures = $locked->consecutive_failures + 1;
+
+            $disabledAfter = Config::disabledAfter();
+
+            $newStatus = match (true) {
+                $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
+                $failures >= Config::failingAfter() => HealthStatus::Failing,
+                $failures >= Config::degradedAfter() => HealthStatus::Degraded,
+                default => $previousStatus,
+            };
+
+            $updates = [
+                'consecutive_failures' => $failures,
+                'last_error_at' => now(),
+                'health_status' => $newStatus,
+            ];
+
+            if ($newStatus === HealthStatus::Disabled) {
+                $updates['is_active'] = false;
+            }
+
+            $locked->update($updates);
+
+            $this->fill($locked->only([
+                'consecutive_failures',
+                'last_error_at',
+                'health_status',
+                'is_active',
+            ]));
+            $this->syncOriginal();
+        });
+
+        if ($previousStatus === null || $newStatus === null) {
+            return;
+        }
+
+        if ($newStatus === HealthStatus::Disabled && $previousStatus !== HealthStatus::Disabled) {
+            IntegrationDisabled::dispatch($this);
+        }
 
         if ($newStatus !== $previousStatus) {
             IntegrationHealthChanged::dispatch($this, $previousStatus, $newStatus);
@@ -589,10 +699,33 @@ class Integration extends Model
             return;
         }
 
-        $newCredentials = $provider->refreshToken($this);
-        $this->update([
-            'credentials' => array_merge($this->credentialsArray(), $newCredentials),
-        ]);
+        $lock = Cache::lock(
+            Config::cachePrefix().":oauth:refresh:{$this->id}",
+            Config::oauthRefreshLockTtl(),
+        );
+
+        try {
+            $lock->block(Config::oauthRefreshLockWait());
+
+            // Another process may have refreshed while we waited for the lock
+            $freshCopy = $this->fresh();
+            if ($freshCopy === null || ! $freshCopy->tokenExpiresSoon()) {
+                if ($freshCopy !== null) {
+                    $this->fill(['credentials' => $freshCopy->credentialsArray()]);
+                }
+
+                return;
+            }
+
+            $newCredentials = $provider->refreshToken($this);
+            $mergedCredentials = array_merge($freshCopy->credentialsArray(), $newCredentials);
+
+            $freshCopy->update(['credentials' => $mergedCredentials]);
+
+            $this->fill(['credentials' => $mergedCredentials]);
+        } finally {
+            $lock->release();
+        }
     }
 
     /**
@@ -629,6 +762,11 @@ class Integration extends Model
     public function syncedSince(): ?Carbon
     {
         return $this->last_synced_at;
+    }
+
+    public function updateSyncCursor(mixed $cursor): void
+    {
+        $this->update(['sync_cursor' => $cursor]);
     }
 
     /**

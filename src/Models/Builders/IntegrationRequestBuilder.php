@@ -15,21 +15,29 @@ class IntegrationRequestBuilder extends Builder
 {
     public function successful(): static
     {
-        return $this->where('response_success', true);
+        $this->where('response_success', true);
+
+        return $this;
     }
 
     public function failed(): static
     {
-        return $this->where('response_success', false);
+        $this->where('response_success', false);
+
+        return $this;
     }
 
     public function forEndpoint(string $endpoint): static
     {
-        return $this->where('endpoint', $endpoint);
+        $this->where('endpoint', $endpoint);
+
+        return $this;
     }
 
     public function recent(int $hours = 24): static
     {
-        return $this->where('created_at', '>=', now()->subHours($hours));
+        $this->where('created_at', '>=', now()->subHours($hours));
+
+        return $this;
     }
 }

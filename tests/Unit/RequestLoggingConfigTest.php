@@ -27,26 +27,23 @@ class RequestLoggingConfigTest extends TestCase
         $this->integration->refresh();
     }
 
-    public function test_disabling_logging_skips_event_dispatch(): void
+    public function test_successful_request_dispatches_event(): void
     {
         Event::fake();
-        config(['integrations.request_logging.enabled' => false]);
 
-        $result = $this->integration->request(
+        $this->integration->request(
             endpoint: '/api/data',
             method: 'GET',
             callback: fn () => ['ok' => true],
         );
 
-        $this->assertSame(['ok' => true], $result);
         $this->assertDatabaseCount('integration_requests', 1);
-        Event::assertNotDispatched(RequestCompleted::class);
+        Event::assertDispatched(RequestCompleted::class);
     }
 
-    public function test_disabling_logging_skips_failed_event_dispatch(): void
+    public function test_failed_request_dispatches_event(): void
     {
         Event::fake();
-        config(['integrations.request_logging.enabled' => false]);
 
         $this->assertThrows(function (): void {
             $this->integration->request(
@@ -57,13 +54,11 @@ class RequestLoggingConfigTest extends TestCase
         }, \RuntimeException::class);
 
         $this->assertDatabaseCount('integration_requests', 1);
-        Event::assertNotDispatched(RequestFailed::class);
+        Event::assertDispatched(RequestFailed::class);
     }
 
-    public function test_health_tracking_works_with_logging_disabled(): void
+    public function test_health_tracking_works_alongside_logging(): void
     {
-        config(['integrations.request_logging.enabled' => false]);
-
         $this->integration->update(['consecutive_failures' => 3]);
 
         $this->integration->request(

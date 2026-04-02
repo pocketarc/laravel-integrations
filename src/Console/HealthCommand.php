@@ -33,6 +33,7 @@ class HealthCommand extends Command
                 HealthStatus::Healthy => 'green',
                 HealthStatus::Degraded => 'yellow',
                 HealthStatus::Failing => 'red',
+                HealthStatus::Disabled => 'magenta',
             };
 
             $this->line("  Health: <fg={$healthColor}>{$integration->health_status->value}</>");

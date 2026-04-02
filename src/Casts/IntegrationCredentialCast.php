@@ -39,7 +39,9 @@ class IntegrationCredentialCast implements CastsAttributes
 
         try {
             $decrypted = Crypt::decryptString($value);
-        } catch (DecryptException) {
+        } catch (DecryptException $e) {
+            report($e);
+
             return null;
         }
 

@@ -16,18 +16,24 @@ class IntegrationBuilder extends Builder
 {
     public function active(): static
     {
-        return $this->where('is_active', true);
+        $this->where('is_active', true);
+
+        return $this;
     }
 
     public function forProvider(string $provider): static
     {
-        return $this->where('provider', $provider);
+        $this->where('provider', $provider);
+
+        return $this;
     }
 
     public function ownedBy(Model $owner): static
     {
-        return $this->where('owner_type', $owner->getMorphClass())
+        $this->where('owner_type', $owner->getMorphClass())
             ->where('owner_id', $owner->getKey());
+
+        return $this;
     }
 
     public function dueForSync(): static

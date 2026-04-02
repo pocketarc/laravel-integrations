@@ -58,13 +58,17 @@ class SyncCommand extends Command
             return false;
         }
 
+        if ($integration->health_status === HealthStatus::Disabled) {
+            return true;
+        }
+
         if ($integration->sync_interval_minutes === null || $integration->last_synced_at === null) {
             return false;
         }
 
         $multiplier = match ($integration->health_status) {
             HealthStatus::Degraded => Config::degradedBackoff(),
-            HealthStatus::Failing => Config::failingBackoff(),
+            default => Config::failingBackoff(),
         };
 
         $effectiveInterval = $integration->sync_interval_minutes * $multiplier;

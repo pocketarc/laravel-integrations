@@ -8,8 +8,11 @@ use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\ListCommand;
+use Integrations\Console\MakeProviderCommand;
 use Integrations\Console\PruneCommand;
+use Integrations\Console\RecoverWebhooksCommand;
 use Integrations\Console\ReplayWebhookCommand;
+use Integrations\Console\StatsCommand;
 use Integrations\Console\SyncCommand;
 use Integrations\Console\TestCommand;
 use Integrations\Contracts\IntegrationProvider;
@@ -65,7 +68,10 @@ class IntegrationsServiceProvider extends ServiceProvider
                 HealthCommand::class,
                 TestCommand::class,
                 PruneCommand::class,
+                RecoverWebhooksCommand::class,
                 ReplayWebhookCommand::class,
+                StatsCommand::class,
+                MakeProviderCommand::class,
             ]);
         }
 

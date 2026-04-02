@@ -65,26 +65,4 @@ class RateLimitingTest extends TestCase
 
         $this->assertSame(['ok' => true], $result);
     }
-
-    public function test_rate_limiting_can_be_disabled(): void
-    {
-        config(['integrations.rate_limiting.enabled' => false]);
-
-        for ($i = 0; $i < 100; $i++) {
-            IntegrationRequest::create([
-                'integration_id' => $this->integration->id,
-                'endpoint' => '/api/bulk',
-                'method' => 'GET',
-                'created_at' => now()->subSeconds(30),
-            ]);
-        }
-
-        $result = $this->integration->request(
-            endpoint: '/api/next',
-            method: 'GET',
-            callback: fn () => ['ok' => true],
-        );
-
-        $this->assertSame(['ok' => true], $result);
-    }
 }

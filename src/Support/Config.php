@@ -37,6 +37,13 @@ final class Config
         return is_array($value) ? array_values(array_filter($value, 'is_string')) : [];
     }
 
+    public static function webhookQueue(): string
+    {
+        $value = config('integrations.webhook.queue', 'default');
+
+        return is_string($value) && $value !== '' ? $value : 'default';
+    }
+
     public static function oauthRoutePrefix(): string
     {
         $value = config('integrations.oauth.route_prefix', 'integrations');
@@ -76,6 +83,16 @@ final class Config
         return is_string($value) ? $value : '/integrations';
     }
 
+    public static function oauthRefreshLockTtl(): int
+    {
+        return self::boundedInt(config('integrations.oauth.refresh_lock_ttl', 30), 30, 1);
+    }
+
+    public static function oauthRefreshLockWait(): int
+    {
+        return self::boundedInt(config('integrations.oauth.refresh_lock_wait', 15), 15, 1);
+    }
+
     public static function syncQueue(?string $provider = null): string
     {
         if ($provider !== null) {
@@ -95,30 +112,9 @@ final class Config
         return self::boundedInt(config('integrations.sync.lock_ttl', 600), 600, 1);
     }
 
-    public static function rateLimitingEnabled(): bool
-    {
-        $value = config('integrations.rate_limiting.enabled', true);
-
-        return is_bool($value) ? $value : true;
-    }
-
     public static function rateLimitMaxWaitSeconds(): int
     {
-        return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 0), 0, 0);
-    }
-
-    public static function requestLoggingEnabled(): bool
-    {
-        $value = config('integrations.request_logging.enabled', true);
-
-        return is_bool($value) ? $value : true;
-    }
-
-    public static function cacheEnabled(): bool
-    {
-        $value = config('integrations.request_logging.cache_enabled', true);
-
-        return is_bool($value) ? $value : true;
+        return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);
     }
 
     public static function degradedAfter(): int
@@ -139,6 +135,27 @@ final class Config
     public static function failingBackoff(): int
     {
         return self::boundedInt(config('integrations.health.failing_backoff', 10), 10, 1);
+    }
+
+    public static function disabledAfter(): ?int
+    {
+        $value = config('integrations.health.disabled_after', 50);
+
+        if ($value === null) {
+            return null;
+        }
+
+        return is_int($value) && $value >= 1 ? $value : 50;
+    }
+
+    public static function webhookMaxPayloadBytes(): int
+    {
+        return self::boundedInt(config('integrations.webhook.max_payload_bytes', 1_048_576), 1_048_576, 1);
+    }
+
+    public static function webhookProcessingTimeout(): int
+    {
+        return self::boundedInt(config('integrations.webhook.processing_timeout', 1800), 1800, 60);
     }
 
     public static function pruningRequestsDays(): int

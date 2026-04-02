@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Testing\ResponseSequence;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -121,6 +122,63 @@ class IntegrationRequestFakeTest extends TestCase
 
         $this->assertSame(['count' => 1], $result1);
         $this->assertSame(['count' => 2], $result2);
+    }
+
+    public function test_sequence_returns_different_responses(): void
+    {
+        IntegrationRequest::fake([
+            '/api/items' => new ResponseSequence('first', 'second', 'third'),
+        ]);
+
+        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+        $r3 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+
+        $this->assertSame('first', $r1);
+        $this->assertSame('second', $r2);
+        $this->assertSame('third', $r3);
+    }
+
+    public function test_sequence_returns_null_when_exhausted(): void
+    {
+        IntegrationRequest::fake([
+            '/api/items' => new ResponseSequence('only'),
+        ]);
+
+        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+
+        $this->assertSame('only', $r1);
+        $this->assertNull($r2);
+    }
+
+    public function test_exception_faking_throws(): void
+    {
+        IntegrationRequest::fake([
+            '/api/fail' => new \RuntimeException('API is down'),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+        $this->expectExceptionMessage('API is down');
+
+        $this->integration->request(endpoint: '/api/fail', method: 'GET');
+    }
+
+    public function test_assert_request_count(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->request(endpoint: '/api/a', method: 'GET');
+        $this->integration->request(endpoint: '/api/b', method: 'GET');
+
+        IntegrationRequest::assertRequestCount(2);
+    }
+
+    public function test_assert_nothing_requested(): void
+    {
+        IntegrationRequest::fake();
+
+        IntegrationRequest::assertNothingRequested();
     }
 
     public function test_stop_faking_resumes_real_calls(): void

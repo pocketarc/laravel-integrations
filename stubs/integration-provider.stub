@@ -1,0 +1,36 @@
+<?php
+
+declare(strict_types=1);
+
+namespace {{ namespace }};
+
+{{ uses }}
+
+class {{ class }} implements {{ implements }}
+{
+    public function name(): string
+    {
+        return '{{ name }}';
+    }
+
+    public function credentialRules(): array
+    {
+        return [];
+    }
+
+    public function metadataRules(): array
+    {
+        return [];
+    }
+
+    public function credentialDataClass(): ?string
+    {
+        return null;
+    }
+
+    public function metadataDataClass(): ?string
+    {
+        return null;
+    }
+{{ methods }}
+}

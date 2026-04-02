@@ -143,4 +143,14 @@ class IntegrationRequest extends Model
     {
         IntegrationRequestFake::assertRequestedWith($endpoint, $callback);
     }
+
+    public static function assertRequestCount(int $expected): void
+    {
+        IntegrationRequestFake::assertRequestCount($expected);
+    }
+
+    public static function assertNothingRequested(): void
+    {
+        IntegrationRequestFake::assertNothingRequested();
+    }
 }

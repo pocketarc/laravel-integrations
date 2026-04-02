@@ -33,6 +33,14 @@ php artisan migrate
 
 ### 1. Create a provider
 
+You can scaffold a provider with the Artisan command:
+
+```bash
+php artisan make:integration-provider Zendesk --sync --webhooks --oauth --health-check
+```
+
+Or run it without flags for interactive prompts. Use `--all` to include all interfaces.
+
 A provider defines how your app talks to an external service. At minimum, implement `IntegrationProvider`:
 
 ```php
@@ -137,6 +145,7 @@ $result = $integration->request(
 - [Health monitoring](#health-monitoring)
 - [ID mapping](#id-mapping)
 - [Operation logging](#operation-logging)
+- [Structured logging](#structured-logging)
 - [Events](#events)
 - [Artisan commands](#artisan-commands)
 - [Testing](#testing)
@@ -156,7 +165,7 @@ $result = $integration->request(
     requestData: ['status' => 'open'], // optional - logged (auto-captured for HTTP responses)
     cacheFor: now()->addHour(),        // optional - cache the response
     serveStale: true,                  // optional - return expired cache on error
-    maxRetries: 3,                     // optional - retry on transient errors (default: 1, no retries)
+    maxRetries: 3,                     // optional - retry on transient errors (default: 3)
 );
 ```
 
@@ -208,7 +217,7 @@ Cache hits and stale hits are tracked per-response via `cache_hits` and `stale_h
 <details>
 <summary><strong>Retries</strong></summary>
 
-Set `maxRetries` to automatically retry on transient errors (429, 5xx, connection errors):
+Requests retry up to 3 times by default on transient errors (429, 5xx, connection errors). Override per-request:
 
 ```php
 $result = $integration->request(
@@ -252,6 +261,29 @@ $result = RetryHandler::execute(
 
 </details>
 
+<details>
+<summary><strong>Fluent request builder</strong></summary>
+
+A chainable API is available via `Integration::to()`:
+
+```php
+// With a callback
+$result = $integration->to('/api/v2/tickets.json')
+    ->withCache(3600, serveStale: true)
+    ->withRetries(3)
+    ->relatedTo($ticket)
+    ->get(fn () => Http::get($url));
+
+// With a URL (uses Laravel's HTTP client automatically)
+$result = $integration->to('/api/v2/tickets.json')
+    ->withData(['status' => 'open'])
+    ->get("https://api.example.com/tickets");
+```
+
+Available methods: `withCache(int|CarbonInterface $ttl, bool $serveStale)`, `withRetries(int $max)`, `relatedTo(Model $model)`, `withData(string|array $data)`, `retryOf(int $id)`. Terminal methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `execute(string $method, Closure $callback)`.
+
+</details>
+
 ## Provider contracts
 
 Every provider must implement `IntegrationProvider`. Optional interfaces add capabilities:
@@ -263,6 +295,8 @@ Every provider must implement `IntegrationProvider`. Optional interfaces add cap
 | `HandlesWebhooks`     | Inbound webhook handling with signature verification.           |
 | `HasOAuth2`           | OAuth2 authorization flow with token refresh.                   |
 | `HasHealthCheck`      | Lightweight connection testing.                                 |
+| `RedactsRequestData`  | Redact sensitive fields from stored request/response data.      |
+| `HasIncrementalSync`  | Delta sync with cursor support (extends `HasScheduledSync`).    |
 
 <details>
 <summary><strong>IntegrationProvider</strong> (required)</summary>
@@ -291,7 +325,7 @@ use Integrations\Models\Integration;
 
 interface HasScheduledSync
 {
-    public function sync(Integration $integration): void;
+    public function sync(Integration $integration): SyncResult;
     public function defaultSyncInterval(): int;  // minutes
     public function defaultRateLimit(): ?int;     // requests/minute, null = unlimited
 }
@@ -304,7 +338,7 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
 {
     // ... name(), credentialRules(), metadataRules() ...
 
-    public function sync(Integration $integration): void
+    public function sync(Integration $integration): SyncResult
     {
         $tickets = $integration->request(
             endpoint: '/api/v2/tickets.json',
@@ -312,11 +346,13 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
             callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
         );
 
+        $count = 0;
         foreach ($tickets['tickets'] as $ticket) {
             // Process each ticket...
+            $count++;
         }
 
-        $integration->markSynced();
+        return new SyncResult($count, 0, now());
     }
 
     public function defaultSyncInterval(): int
@@ -345,6 +381,9 @@ interface HandlesWebhooks
 {
     public function handleWebhook(Integration $integration, Request $request): mixed;
     public function verifyWebhookSignature(Integration $integration, Request $request): bool;
+    public function resolveWebhookEvent(Request $request): ?string;
+    public function webhookHandlers(): array;
+    public function webhookDeliveryId(Request $request): ?string;
 }
 ```
 
@@ -445,6 +484,70 @@ class ZendeskProvider implements IntegrationProvider, HasHealthCheck
 
 </details>
 
+<details>
+<summary><strong>RedactsRequestData</strong></summary>
+
+Providers handling sensitive data can declare fields to redact before persistence:
+
+```php
+use Integrations\Contracts\RedactsRequestData;
+
+class StripeProvider implements IntegrationProvider, RedactsRequestData
+{
+    public function sensitiveRequestFields(): array
+    {
+        return ['card.number', 'card.cvc', 'password'];
+    }
+
+    public function sensitiveResponseFields(): array
+    {
+        return ['token', 'secret_key'];
+    }
+}
+```
+
+Fields use dot-notation and are replaced with `[REDACTED]` in stored request and response data.
+
+</details>
+
+<details>
+<summary><strong>HasIncrementalSync</strong></summary>
+
+For providers that support fetching only changed records since a cursor or timestamp:
+
+```php
+use Integrations\Contracts\HasIncrementalSync;
+
+class ZendeskProvider implements IntegrationProvider, HasIncrementalSync
+{
+    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+    {
+        $startTime = $cursor ?? now()->subDay()->toIso8601String();
+
+        $tickets = $integration->request(
+            endpoint: '/api/v2/incremental/tickets.json',
+            method: 'GET',
+            callback: fn () => Http::get($url, ['start_time' => $startTime]),
+        );
+
+        // Process tickets...
+
+        return new SyncResult(
+            successCount: count($tickets),
+            failureCount: 0,
+            safeSyncedAt: now(),
+            cursor: $tickets['end_time'], // stored for next sync
+        );
+    }
+
+    // Also requires sync(), defaultSyncInterval(), defaultRateLimit() from HasScheduledSync
+}
+```
+
+The cursor is stored as JSON in the `sync_cursor` column and passed to `syncIncremental()` on the next sync. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
+
+</details>
+
 ## Typed credentials and metadata
 
 By default, `$integration->credentials` returns a plain array. Providers can declare a [Laravel Data](https://spatie.be/docs/laravel-data/v4/introduction) class for typed access via `credentialDataClass()` and `metadataDataClass()`:
@@ -537,13 +640,17 @@ Webhook routes are registered automatically:
 | `GET\|POST /integrations/{provider}/webhook`      | `integrations.webhook`          | Generic provider webhook     |
 | `GET\|POST /integrations/{provider}/{id}/webhook` | `integrations.webhook.specific` | Integration-specific webhook |
 
+Incoming webhooks are stored in the `integration_webhooks` table with full payload, headers, and processing status.
+
 When a webhook arrives:
 
 1. The provider is resolved from the URL
 2. Signature is verified via `verifyWebhookSignature()`
-3. A `WebhookReceived` event is dispatched
-4. Your `handleWebhook()` implementation is called
-5. The request and result are logged as an `IntegrationRequest` and `IntegrationLog`
+3. The webhook is persisted to `integration_webhooks`
+4. A `WebhookReceived` event is dispatched
+5. A `ProcessWebhook` job is dispatched to the configured `webhook.queue`
+6. The job calls your `handleWebhook()` (or routed handler)
+7. The result is logged in `IntegrationLog`
 
 Webhook routes have no middleware by default (most providers can't handle CSRF or session auth). Add signature verification middleware via config if needed.
 
@@ -553,15 +660,78 @@ https://yourapp.com/integrations/zendesk/webhook
 https://yourapp.com/integrations/zendesk/42/webhook  # for a specific integration
 ```
 
+### Event type routing
+
+Providers can declare how to extract the event type from the payload and route to specific handlers:
+
+```php
+class StripeProvider implements IntegrationProvider, HandlesWebhooks
+{
+    public function resolveWebhookEvent(Request $request): ?string
+    {
+        return $request->input('type'); // e.g. 'invoice.paid'
+    }
+
+    public function webhookHandlers(): array
+    {
+        return [
+            'invoice.paid' => HandleInvoicePaid::class,
+            'customer.created' => HandleCustomerCreated::class,
+        ];
+    }
+}
+```
+
+### Deduplication
+
+Providers can declare a deduplication key to prevent processing the same webhook twice:
+
+```php
+public function webhookDeliveryId(Request $request): ?string
+{
+    return $request->header('X-Webhook-Id');
+}
+```
+
+When a duplicate is detected, the webhook is stored but not processed.
+
+### Queue processing
+
+All webhooks are processed asynchronously via the `ProcessWebhook` job. Configure the queue in `config/integrations.php`:
+
+```php
+'webhook' => [
+    'queue' => 'webhooks',
+],
+```
+
+Payloads exceeding `webhook.max_payload_bytes` (default 1MB) are rejected with a 413 response.
+
 ### Replaying webhooks
 
-Since the full webhook payload is stored in `IntegrationRequest`, you can replay it:
+Stored webhooks can be replayed by their webhook ID:
 
 ```bash
-php artisan integrations:replay-webhook {requestId}
+php artisan integrations:replay-webhook {webhookId}
 ```
 
 This reconstructs the request from stored data and re-dispatches it through `handleWebhook()`. Useful when a handler had a bug that's since been fixed.
+
+### Recovering stale webhooks
+
+If a queue worker dies mid-processing, a webhook can get stuck in `processing` status. The recovery command finds these and re-queues them:
+
+```bash
+php artisan integrations:recover-webhooks
+```
+
+Add to your scheduler for automatic recovery:
+
+```php
+Schedule::command('integrations:recover-webhooks')->hourly();
+```
+
+A webhook is considered stale after `webhook.processing_timeout` seconds (default 1800 / 30 minutes). Set this higher if your handlers are long-running.
 
 ## Scheduled syncs
 
@@ -597,11 +767,25 @@ After a successful sync, `markSynced()` sets `last_synced_at` to now and compute
 
 The sync scheduler respects health status. Degraded integrations sync at a reduced frequency, and failing integrations back off heavily:
 
-| Health Status | Interval Multiplier | Example (5-min base) |
-|---------------|---------------------|----------------------|
-| Healthy       | 1x                  | Every 5 minutes      |
-| Degraded      | 2x (configurable)   | Every 10 minutes     |
-| Failing       | 10x (configurable)  | Every 50 minutes     |
+| Health Status | Interval Multiplier | Example (5-min base)      |
+|---------------|---------------------|---------------------------|
+| Healthy       | 1x                  | Every 5 minutes           |
+| Degraded      | 2x (configurable)   | Every 10 minutes          |
+| Failing       | 10x (configurable)  | Every 50 minutes          |
+| Disabled      | Not synced          | Requires manual re-enable |
+
+<details>
+<summary><strong>Sync timeline</strong></summary>
+
+During a sync, all API requests made via `$integration->request()` are tracked and their IDs stored in the parent sync log's metadata. This allows post-sync analysis:
+
+```php
+$syncLog = $integration->logs()->forOperation('sync')->latest()->first();
+$requestIds = $syncLog->metadata['request_ids'] ?? [];
+$requests = IntegrationRequest::whereIn('id', $requestIds)->get();
+```
+
+</details>
 
 ## Health monitoring
 
@@ -610,6 +794,8 @@ Integration health is tracked automatically based on request outcomes, using a c
 ### How it works
 
 Each successful request resets `consecutive_failures` to 0 and sets `health_status` to `healthy`. Each failure increments `consecutive_failures` and updates `last_error_at`. After 5 consecutive failures (configurable), status transitions to `degraded`; after 20, to `failing`. Any subsequent success resets back to `healthy`.
+
+By default, integrations that exceed 50 consecutive failures are automatically set to `disabled` status and stop syncing entirely. This threshold is configurable via `health.disabled_after` (set to `null` to disable). Disabled integrations require manual re-enabling. An `IntegrationDisabled` event is dispatched when this occurs.
 
 Every health transition dispatches an `IntegrationHealthChanged` event with the previous and new status.
 
@@ -709,6 +895,7 @@ All events carry the relevant model(s) and use Laravel's standard `Dispatchable`
 | `OperationFailed`          | `$integration`, `$log`                          | An operation is logged with status `failed`  |
 | `WebhookReceived`          | `$integration`, `$provider`                     | A webhook arrives                            |
 | `OAuthCompleted`           | `$integration`                                  | OAuth2 authorization completes               |
+| `IntegrationDisabled`      | `$integration`                                  | Integration auto-disabled after threshold    |
 | `OAuthRevoked`             | `$integration`                                  | OAuth2 authorization is revoked              |
 
 Listen for them with attribute-based listeners or in your `EventServiceProvider`:
@@ -729,14 +916,16 @@ class NotifyOnHealthDegradation
 
 ## Artisan commands
 
-| Command                            | Purpose                                                          |
-|------------------------------------|------------------------------------------------------------------|
-| `integrations:sync`                | Find overdue integrations, dispatch sync jobs                    |
-| `integrations:list`                | Show all integrations with health, last sync, request counts     |
-| `integrations:health`              | Detailed health report (error rates, response times, top errors) |
-| `integrations:test`                | Run `HasHealthCheck` on all supporting integrations              |
-| `integrations:prune`               | Clean up old request and log records                             |
-| `integrations:replay-webhook {id}` | Re-dispatch a stored webhook payload                             |
+| Command                                   | Purpose                                                                |
+|-------------------------------------------|------------------------------------------------------------------------|
+| `integrations:sync`                       | Find overdue integrations, dispatch sync jobs                          |
+| `integrations:list`                       | Show all integrations with health, last sync, request counts           |
+| `integrations:health`                     | Detailed health report (error rates, response times, top errors)       |
+| `integrations:test`                       | Run `HasHealthCheck` on all supporting integrations                    |
+| `integrations:prune`                      | Clean up old request and log records                                   |
+| `integrations:recover-webhooks`           | Reset stale processing webhooks to pending and re-dispatch them        |
+| `integrations:replay-webhook {webhookId}` | Re-dispatch a stored webhook payload                                   |
+| `integrations:stats`                      | Show request counts, error rates, and cache hit ratios per integration |
 
 <details>
 <summary><strong>integrations:list</strong> example output</summary>
@@ -802,6 +991,30 @@ IntegrationRequest::stopFaking();
 
 When the fake is active, `Integration::request()` skips rate limiting, caching, health tracking, and database persistence entirely. It records requests in memory and returns your fake responses (or `null` for unmatched endpoints).
 
+### Sequences and exceptions
+
+```php
+use Integrations\Testing\ResponseSequence;
+
+IntegrationRequest::fake([
+    '/api/items' => new ResponseSequence('first', 'second', 'third'),
+    '/api/fail' => new \RuntimeException('Service unavailable'),
+]);
+
+// Returns 'first', 'second', 'third', then null
+$r1 = $integration->request(endpoint: '/api/items', method: 'GET');
+
+// Throws RuntimeException
+$integration->request(endpoint: '/api/fail', method: 'GET');
+```
+
+Additional assertions:
+
+```php
+IntegrationRequest::assertRequestCount(5);
+IntegrationRequest::assertNothingRequested();
+```
+
 ## Multi-tenancy
 
 The `Integration` model has optional polymorphic `owner_type`/`owner_id` columns for multi-tenant setups:
@@ -825,6 +1038,30 @@ $integration->owner; // returns the Team model
 
 If you don't need multi-tenancy, leave these columns null.
 
+## Structured logging
+
+During sync and webhook processing, the package automatically adds integration context to Laravel's shared log context:
+
+```php
+// Automatically added by SyncIntegration and ProcessWebhook jobs:
+Log::shareContext([
+    'integration_id' => 42,
+    'integration_provider' => 'zendesk',
+    'integration_name' => 'Production Zendesk',
+    'integration_operation' => 'sync',
+]);
+```
+
+Use `IntegrationContext` directly in your own code:
+
+```php
+use Integrations\Support\IntegrationContext;
+
+IntegrationContext::push($integration, 'custom-operation');
+// ... your code, all Log:: calls include the context ...
+IntegrationContext::clear();
+```
+
 ## Configuration reference
 
 <details>
@@ -839,8 +1076,11 @@ return [
     'cache_prefix' => 'integrations',
 
     'webhook' => [
-        'prefix' => 'integrations',     // URL prefix: POST /{prefix}/{provider}/webhook
-        'middleware' => [],              // no CSRF by default; webhooks can't carry tokens
+        'prefix' => 'integrations',          // URL prefix: POST /{prefix}/{provider}/webhook
+        'queue' => 'default',                // queue for ProcessWebhook jobs
+        'max_payload_bytes' => 1_048_576,    // reject payloads larger than 1MB
+        'processing_timeout' => 1800,       // seconds before a processing webhook is considered stale
+        'middleware' => [],                  // no CSRF by default; webhooks can't carry tokens
     ],
 
     'oauth' => [
@@ -849,6 +1089,8 @@ return [
         'callback_middleware' => ['web'],        // callback route (redirect from provider)
         'success_redirect' => '/integrations',   // where to redirect after OAuth completes
         'state_ttl' => 600,                      // state token validity in seconds (10 min)
+        'refresh_lock_ttl' => 30,                // cache lock TTL for token refresh (seconds)
+        'refresh_lock_wait' => 15,               // max wait for refresh lock (seconds)
     ],
 
     'sync' => [
@@ -857,17 +1099,13 @@ return [
     ],
 
     'rate_limiting' => [
-        'enabled' => true,      // check request counts before each call
-    ],
-
-    'request_logging' => [
-        'enabled' => true,      // persist every request to integration_requests
-        'cache_enabled' => true, // enable response caching via cacheFor parameter
+        'max_wait_seconds' => 10, // wait for capacity before throwing (0 = immediate)
     ],
 
     'health' => [
         'degraded_after' => 5,    // consecutive failures -> degraded
         'failing_after' => 20,    // consecutive failures -> failing
+        'disabled_after' => 50,   // consecutive failures -> disabled (null = never)
         'degraded_backoff' => 2,  // sync interval multiplier when degraded
         'failing_backoff' => 10,  // sync interval multiplier when failing
     ],

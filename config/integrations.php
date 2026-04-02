@@ -13,6 +13,19 @@ return [
         // URL prefix for webhook routes: POST /{prefix}/{provider}/webhook
         'prefix' => 'integrations',
 
+        // Queue name for webhook processing jobs. All webhooks are processed asynchronously.
+        'queue' => 'default',
+
+        // Maximum webhook payload size in bytes. Payloads exceeding this limit are rejected
+        // with a 413 response. Prevents storage bloat from oversized or malicious payloads.
+        'max_payload_bytes' => 1_048_576, // 1MB
+
+        // Maximum time (in seconds) a webhook can remain in "processing" status before
+        // it is considered stale and eligible for recovery by integrations:recover-webhooks.
+        // If a queue worker dies mid-processing, the webhook gets stuck — this timeout
+        // allows automatic recovery. Minimum 60 seconds.
+        'processing_timeout' => 1800, // 30 minutes
+
         // Additional middleware applied to webhook routes. Webhook routes intentionally
         // have no middleware by default - most webhook providers can't handle CSRF tokens
         // or session-based auth. Add signature verification middleware here if needed.
@@ -38,6 +51,13 @@ return [
         // maximum time between the user clicking "Connect" and completing the OAuth flow
         // on the provider's site. 10 minutes is generous but prevents stale state attacks.
         'state_ttl' => 600,
+
+        // Lock TTL (seconds) when refreshing OAuth tokens. Prevents concurrent
+        // refresh attempts from multiple queue workers.
+        'refresh_lock_ttl' => 30,
+
+        // Maximum seconds to wait for the refresh lock before throwing LockTimeoutException.
+        'refresh_lock_wait' => 15,
     ],
 
     'sync' => [
@@ -56,31 +76,11 @@ return [
     ],
 
     'rate_limiting' => [
-        // When enabled, Integration::request() checks actual request counts from the
-        // integration_requests table before each call, and throws RateLimitExceededException
-        // if the provider's rate limit would be exceeded. Disable if you handle rate
-        // limiting externally or don't need it.
-        'enabled' => true,
-
         // Maximum seconds to wait for rate limit capacity before throwing
         // RateLimitExceededException. When set to 0, throws immediately without waiting.
         // When > 0, sleeps in 1-second intervals and re-checks until capacity is available
         // or the max wait time is exceeded.
-        'max_wait_seconds' => 0,
-    ],
-
-    'request_logging' => [
-        // When enabled, every Integration::request() call is persisted to the
-        // integration_requests table. This powers rate limiting, caching, health tracking,
-        // and the integrations:health command. Disable only if you need to reduce write load
-        // and don't need these features.
-        'enabled' => true,
-
-        // When enabled, Integration::request() checks for a matching unexpired cached response
-        // before making the actual call. Cached responses are identified by matching
-        // integration + endpoint + method + request_data_hash. Only applies when the caller
-        // passes a cacheFor parameter.
-        'cache_enabled' => true,
+        'max_wait_seconds' => 10,
     ],
 
     'health' => [
@@ -100,6 +100,11 @@ return [
         // normally syncs every 5 minutes will sync every 50 minutes instead. This prevents
         // hammering a service that's consistently down.
         'failing_backoff' => 10,
+
+        // Number of consecutive failures before an integration is automatically disabled
+        // (is_active set to false, health_status set to "disabled"). Set to null to disable
+        // this feature. Once disabled, re-enabling requires manual intervention.
+        'disabled_after' => 50,
     ],
 
     'pruning' => [
