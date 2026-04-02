@@ -710,6 +710,10 @@ class Integration extends Model
             // Another process may have refreshed while we waited for the lock
             $freshCopy = $this->fresh();
             if ($freshCopy === null || ! $freshCopy->tokenExpiresSoon()) {
+                if ($freshCopy !== null) {
+                    $this->fill(['credentials' => $freshCopy->credentialsArray()]);
+                }
+
                 return;
             }
 

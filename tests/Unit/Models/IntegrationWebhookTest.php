@@ -137,6 +137,13 @@ class IntegrationWebhookTest extends TestCase
             'status' => 'failed',
             'error' => 'Error',
         ]);
+        IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => 'pending-2',
+            'payload' => '{}',
+            'headers' => [],
+            'status' => 'pending',
+        ]);
 
         $this->assertSame(1, IntegrationWebhook::query()->failed()->count());
     }
