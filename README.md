@@ -916,16 +916,16 @@ class NotifyOnHealthDegradation
 
 ## Artisan commands
 
-| Command                            | Purpose                                                                |
-|------------------------------------|------------------------------------------------------------------------|
-| `integrations:sync`                | Find overdue integrations, dispatch sync jobs                          |
-| `integrations:list`                | Show all integrations with health, last sync, request counts           |
-| `integrations:health`              | Detailed health report (error rates, response times, top errors)       |
-| `integrations:test`                | Run `HasHealthCheck` on all supporting integrations                    |
-| `integrations:prune`               | Clean up old request and log records                                   |
-| `integrations:recover-webhooks`    | Reset stale processing webhooks to pending and re-dispatch them        |
-| `integrations:replay-webhook {id}` | Re-dispatch a stored webhook payload                                   |
-| `integrations:stats`               | Show request counts, error rates, and cache hit ratios per integration |
+| Command                                   | Purpose                                                                |
+|-------------------------------------------|------------------------------------------------------------------------|
+| `integrations:sync`                       | Find overdue integrations, dispatch sync jobs                          |
+| `integrations:list`                       | Show all integrations with health, last sync, request counts           |
+| `integrations:health`                     | Detailed health report (error rates, response times, top errors)       |
+| `integrations:test`                       | Run `HasHealthCheck` on all supporting integrations                    |
+| `integrations:prune`                      | Clean up old request and log records                                   |
+| `integrations:recover-webhooks`           | Reset stale processing webhooks to pending and re-dispatch them        |
+| `integrations:replay-webhook {webhookId}` | Re-dispatch a stored webhook payload                                   |
+| `integrations:stats`                      | Show request counts, error rates, and cache hit ratios per integration |
 
 <details>
 <summary><strong>integrations:list</strong> example output</summary>

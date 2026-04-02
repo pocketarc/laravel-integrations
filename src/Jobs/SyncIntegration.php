@@ -15,6 +15,7 @@ use Integrations\Contracts\HasScheduledSync;
 use Integrations\Models\Integration;
 use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
+use Throwable;
 
 class SyncIntegration implements ShouldQueue
 {
@@ -78,17 +79,21 @@ class SyncIntegration implements ShouldQueue
 
             $integration->markSynced($result->safeSyncedAt);
 
-            $parentLog->update([
-                'status' => $result->hasFailures() ? 'partial' : 'success',
-                'summary' => "Scheduled sync completed: {$result->successCount} succeeded, {$result->failureCount} failed.",
-                'metadata' => [
-                    'success_count' => $result->successCount,
-                    'failure_count' => $result->failureCount,
-                    'request_ids' => $requestIds,
-                ],
-                'duration_ms' => $durationMs,
-            ]);
-        } catch (\Throwable $e) {
+            try {
+                $parentLog->update([
+                    'status' => $result->hasFailures() ? 'partial' : 'success',
+                    'summary' => "Scheduled sync completed: {$result->successCount} succeeded, {$result->failureCount} failed.",
+                    'metadata' => [
+                        'success_count' => $result->successCount,
+                        'failure_count' => $result->failureCount,
+                        'request_ids' => $requestIds,
+                    ],
+                    'duration_ms' => $durationMs,
+                ]);
+            } catch (Throwable $logException) {
+                Log::warning("Failed to update sync log for '{$integration->name}': {$logException->getMessage()}");
+            }
+        } catch (Throwable $e) {
             $integration->clearSyncContext();
             $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
 

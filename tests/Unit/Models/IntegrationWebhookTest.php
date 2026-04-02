@@ -51,10 +51,25 @@ class IntegrationWebhookTest extends TestCase
             'status' => 'pending',
         ]);
 
-        $webhook->markProcessing();
+        $this->assertTrue($webhook->markProcessing());
         $webhook->refresh();
 
         $this->assertSame('processing', $webhook->status);
+    }
+
+    public function test_mark_processing_only_from_pending(): void
+    {
+        foreach (['processing', 'processed', 'failed'] as $status) {
+            $webhook = IntegrationWebhook::create([
+                'integration_id' => $this->integration->id,
+                'delivery_id' => "claim-{$status}",
+                'payload' => '{}',
+                'headers' => [],
+                'status' => $status,
+            ]);
+
+            $this->assertFalse($webhook->markProcessing());
+        }
     }
 
     public function test_mark_processed(): void
