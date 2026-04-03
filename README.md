@@ -1,4 +1,8 @@
 # Laravel Integrations
+
+[![CI](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml)
+[![Latest Version on Packagist](https://img.shields.io/packagist/v/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
+[![Total Downloads](https://img.shields.io/packagist/dt/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A Laravel 11-13 package for production-ready third-party integrations. 
@@ -1124,6 +1128,10 @@ return [
 ```
 
 </details>
+
+## Contributing
+
+Bug fixes and maintenance PRs are welcome. For new features, please open an issue first so we can discuss the approach before you put in the work.
 
 ## License
 
