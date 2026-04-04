@@ -68,7 +68,7 @@ class SyncCommand extends Command
 
         $multiplier = match ($integration->health_status) {
             HealthStatus::Degraded => Config::degradedBackoff(),
-            default => Config::failingBackoff(),
+            HealthStatus::Failing => Config::failingBackoff(),
         };
 
         $effectiveInterval = $integration->sync_interval_minutes * $multiplier;

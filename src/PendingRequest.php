@@ -70,31 +70,37 @@ class PendingRequest
         return $this;
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function get(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('GET', $callbackOrUrl);
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function post(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('POST', $callbackOrUrl);
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function put(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('PUT', $callbackOrUrl);
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function patch(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('PATCH', $callbackOrUrl);
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function delete(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('DELETE', $callbackOrUrl);
     }
 
+    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
     public function execute(string $method, Closure|string $callbackOrUrl): mixed
     {
         $callback = is_string($callbackOrUrl)
@@ -121,7 +127,7 @@ class PendingRequest
     {
         return function () use ($method, $url): Response {
             $response = match (true) {
-                strtoupper($method) === 'GET' => Http::get($url, is_array($this->requestData) ? $this->requestData : []),
+                mb_strtoupper($method) === 'GET' => Http::get($url, is_array($this->requestData) ? $this->requestData : []),
                 is_array($this->requestData) => Http::send($method, $url, ['json' => $this->requestData]),
                 is_string($this->requestData) => Http::send($method, $url, ['body' => $this->requestData]),
                 default => Http::send($method, $url),

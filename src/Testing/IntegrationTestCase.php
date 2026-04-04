@@ -18,6 +18,7 @@ abstract class IntegrationTestCase extends TestCase
      * @param  Application  $app
      * @return list<class-string<ServiceProvider>>
      */
+    #[\Override]
     protected function getPackageProviders($app): array
     {
         return array_merge(
@@ -40,6 +41,7 @@ abstract class IntegrationTestCase extends TestCase
         return [];
     }
 
+    #[\Override]
     protected function defineDatabaseMigrations(): void
     {
         $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
@@ -48,6 +50,7 @@ abstract class IntegrationTestCase extends TestCase
     /**
      * @param  Application  $app
      */
+    #[\Override]
     protected function getEnvironmentSetUp($app): void
     {
         $app['config']->set('database.default', 'testing');
@@ -60,6 +63,7 @@ abstract class IntegrationTestCase extends TestCase
         $app['config']->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     }
 
+    #[\Override]
     protected function tearDown(): void
     {
         IntegrationRequestFake::deactivate();

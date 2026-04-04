@@ -1,0 +1,11 @@
+/.github/            export-ignore
+/docker/             export-ignore
+/tests/              export-ignore
+/.gitignore          export-ignore
+/.coderabbit.yaml    export-ignore
+/captainhook.json    export-ignore
+/docker-compose.yml  export-ignore
+/phpstan.neon        export-ignore
+/phpunit.xml         export-ignore
+/pint.json           export-ignore
+/_ide_helper.php     export-ignore

@@ -43,6 +43,9 @@ use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Spatie\LaravelData\Data;
 
+use function Safe\json_decode;
+use function Safe\json_encode;
+
 /**
  * @property int $id
  * @property string $provider
@@ -87,6 +90,7 @@ class Integration extends Model
 
     private ?int $lastCreatedRequestId = null;
 
+    #[\Override]
     protected static function booted(): void
     {
         static::created(function (Integration $integration): void {
@@ -94,6 +98,7 @@ class Integration extends Model
         });
     }
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'s';
@@ -102,6 +107,7 @@ class Integration extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [
@@ -207,7 +213,7 @@ class Integration extends Model
         ?int $retryOfId = null,
         ?int $maxRetries = null,
     ): mixed {
-        $maxRetries ??= strtoupper($method) === 'GET' ? 3 : 1;
+        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -334,7 +340,7 @@ class Integration extends Model
         bool $serveStale,
         ?int $retryOfId = null,
     ): mixed {
-        $startTime = hrtime(true);
+        $startTime = microtime(true);
         $responseSuccess = false;
         $responseCode = null;
         $responseData = null;
@@ -369,7 +375,7 @@ class Integration extends Model
 
             if ($result === null) {
                 $this->recordFailure();
-                $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+                $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
                 $request = $this->persistRequest(
                     $endpoint, $method, $encodedRequestData, $retryOfId,
@@ -384,7 +390,7 @@ class Integration extends Model
             }
         }
 
-        $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+        $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
         $request = $this->persistRequest(
             $endpoint, $method, $encodedRequestData, $retryOfId,

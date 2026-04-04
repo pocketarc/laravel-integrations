@@ -49,6 +49,7 @@ class IntegrationLog extends Model
     /** @var array<string> */
     protected $guarded = [];
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'_logs';
@@ -57,6 +58,7 @@ class IntegrationLog extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [

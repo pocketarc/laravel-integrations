@@ -22,6 +22,7 @@ use Integrations\Testing\IntegrationRequestFake;
  * @property string $endpoint
  * @property string $method
  * @property string|null $request_data
+ * @property string|null $request_data_hash
  * @property int|null $retry_of
  * @property int|null $response_code
  * @property string|null $response_data
@@ -57,6 +58,7 @@ class IntegrationRequest extends Model
     /** @var array<string> */
     protected $guarded = [];
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'_requests';
@@ -65,6 +67,7 @@ class IntegrationRequest extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [
@@ -114,7 +117,7 @@ class IntegrationRequest extends Model
     }
 
     /**
-     * @param  array<string, mixed|\Closure>  $fakeResponses
+     * @param  array<string, mixed>  $fakeResponses
      */
     public static function fake(array $fakeResponses = []): IntegrationRequestFake
     {

@@ -41,6 +41,7 @@ class IntegrationWebhook extends Model
     /** @var array<string> */
     protected $guarded = [];
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'_webhooks';
@@ -49,6 +50,7 @@ class IntegrationWebhook extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [

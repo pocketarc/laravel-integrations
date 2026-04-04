@@ -62,6 +62,7 @@ class HealthCommand extends Command
                 ->groupByRaw("{$jsonExpr}")
                 ->orderByDesc('count')
                 ->limit(3)
+                ->toBase()
                 ->pluck('count', 'error_message');
 
             if ($topErrors->isNotEmpty()) {

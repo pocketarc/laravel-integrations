@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Model;
 use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Support\Config;
@@ -41,7 +40,7 @@ class PruneCommand extends Command
     }
 
     /**
-     * @param  class-string<Model>  $modelClass
+     * @param  class-string<IntegrationRequest|IntegrationLog>  $modelClass
      */
     private function pruneTable(string $modelClass, int $days, int $chunkSize): int
     {

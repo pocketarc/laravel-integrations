@@ -1,17 +1,90 @@
+# bleedingEdge.neon is intentional; CI may break when new PHPStan releases arrive.
 includes:
-    - vendor/larastan/larastan/extension.neon
-    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - phar://phpstan.phar/conf/bleedingEdge.neon
 
 parameters:
+    level: 10
+
     paths:
         - src
-    level: 10
-    ignoreErrors:
-        # Eloquent's fluent interface triggers this incorrectly
-        - identifier: staticMethod.dynamicCall
-        # ide-helper generates incomplete stubs for Request
-        -
-            message: '#Call to an undefined method Illuminate\\Http\\Request::(query|merge)\(\)#'
-            reportUnmatched: false
+
     scanFiles:
         - _ide_helper.php
+
+    ergebnis:
+        # Named arguments improve readability for methods with many parameters (e.g. Integration::logOperation(), Integration::request()).
+        noNamedArgument:
+            enabled: false
+        # Laravel requires extending framework base classes (Command, Model, ServiceProvider, etc.).
+        noExtends:
+            enabled: false
+        # Nullable parameters are standard PHP for optional args; public API already uses builder pattern (PendingRequest).
+        noParameterWithNullableTypeDeclaration:
+            enabled: false
+        noParameterWithNullDefaultValue:
+            enabled: false
+        # Nullable returns are idiomatic PHP/Laravel for "not found" / optional semantics.
+        noNullableReturnTypeDeclaration:
+            enabled: false
+        # Reasonable defaults in constructors (e.g. exception $previous, empty arrays) are idiomatic PHP.
+        noConstructorParameterWithDefaultValue:
+            enabled: false
+        # Library package; consumers should be free to extend any class.
+        final:
+            enabled: false
+        finalInAbstractClass:
+            enabled: false
+
+    # Larastan checks
+    checkModelProperties: true
+    checkOctaneCompatibility: true
+    noEnvCallsOutsideOfConfig: true
+    checkModelAppends: true
+
+    # PHPStan strictness
+    checkTooWideReturnTypesInProtectedAndPublicMethods: true
+    checkUninitializedProperties: true
+    checkImplicitMixed: true
+    checkBenevolentUnionTypes: true
+    reportPossiblyNonexistentGeneralArrayOffset: true
+    reportPossiblyNonexistentConstantArrayOffset: true
+    reportAlwaysTrueInLastCondition: true
+    reportAnyTypeWideningInVarTag: true
+    checkMissingOverrideMethodAttribute: true
+    checkMissingCallableSignature: true
+
+    ignoreErrors:
+        # #[\Override] on properties is a PHPStan bleeding edge feature that breaks PHP 8.3 at runtime.
+        -
+            identifier: property.missingOverride
+            reportUnmatched: false
+        # Eloquent's fluent interface triggers this incorrectly.
+        - identifier: staticMethod.dynamicCall
+
+        # IntegrationManager needs the container to lazily resolve provider classes via $container->make().
+        -
+            rawMessage: 'Method Integrations\IntegrationManager::__construct() has a parameter $container with a type declaration of Illuminate\Contracts\Container\Container, but containers should not be injected.'
+            identifier: ergebnis.noParameterWithContainerTypeDeclaration
+            count: 1
+            path: src/IntegrationManager.php
+
+        # These closures (bind, Route::group) are immediately invoked by Laravel; exceptions propagate correctly.
+        -
+            rawMessage: Throwing checked exception InvalidArgumentException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 7
+            path: src/IntegrationsServiceProvider.php
+
+        # DB::transaction() closure is immediately invoked; MassAssignmentException propagates correctly.
+        -
+            rawMessage: Throwing checked exception Illuminate\Database\Eloquent\MassAssignmentException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 1
+            path: src/Models/Integration.php
+
+        # HTTP callback closure is immediately invoked; RequestException propagates correctly.
+        -
+            rawMessage: Throwing checked exception Illuminate\Http\Client\RequestException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 1
+            path: src/PendingRequest.php

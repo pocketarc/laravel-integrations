@@ -18,10 +18,14 @@ class ResponseSequence
 
     public function next(): mixed
     {
-        if ($this->index >= count($this->responses)) {
+        $index = $this->index;
+
+        if (! array_key_exists($index, $this->responses)) {
             return null;
         }
 
-        return $this->responses[$this->index++];
+        $this->index++;
+
+        return $this->responses[$index];
     }
 }

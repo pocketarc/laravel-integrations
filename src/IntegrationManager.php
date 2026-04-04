@@ -33,7 +33,7 @@ class IntegrationManager
      */
     public function provider(string $key): IntegrationProvider
     {
-        if (! isset($this->providers[$key])) {
+        if (! array_key_exists($key, $this->providers)) {
             throw new InvalidArgumentException("Integration provider '{$key}' is not registered.");
         }
 
@@ -51,7 +51,7 @@ class IntegrationManager
      */
     public function has(string $key): bool
     {
-        return isset($this->providers[$key]);
+        return array_key_exists($key, $this->providers);
     }
 
     /**

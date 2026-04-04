@@ -20,11 +20,13 @@ class MakeProviderCommand extends GeneratorCommand
 
     protected $type = 'Integration Provider';
 
+    #[\Override]
     protected function getStub(): string
     {
         return __DIR__.'/../../stubs/integration-provider.stub';
     }
 
+    #[\Override]
     protected function getDefaultNamespace($rootNamespace): string
     {
         return $rootNamespace.'\\Integrations';
@@ -34,6 +36,7 @@ class MakeProviderCommand extends GeneratorCommand
      * @param  string  $stub
      * @param  string  $name
      */
+    #[\Override]
     protected function replaceClass($stub, $name): string
     {
         $stub = parent::replaceClass($stub, $name);
@@ -95,7 +98,7 @@ class MakeProviderCommand extends GeneratorCommand
         ];
 
         foreach ($capabilities as $capability) {
-            if (isset($map[$capability])) {
+            if (array_key_exists($capability, $map)) {
                 $uses[] = $map[$capability];
             }
         }
@@ -129,7 +132,7 @@ class MakeProviderCommand extends GeneratorCommand
         ];
 
         foreach ($capabilities as $capability) {
-            if (isset($map[$capability])) {
+            if (array_key_exists($capability, $map)) {
                 $interfaces[] = $map[$capability];
             }
         }
