@@ -56,7 +56,7 @@ class IntegrationRequestFake
             'request_data' => $requestData,
         ];
 
-        if (isset($this->fakeResponses[$endpoint])) {
+        if (array_key_exists($endpoint, $this->fakeResponses)) {
             $response = $this->fakeResponses[$endpoint];
 
             if ($response instanceof Throwable) {

@@ -41,8 +41,8 @@ class OAuthController extends Controller
 
     public function callback(Request $request): RedirectResponse
     {
-        $state = $request->query('state');
-        $code = $request->query('code');
+        $state = $request->query->get('state');
+        $code = $request->query->get('code');
 
         if (! is_string($state) || ! is_string($code)) {
             throw new BadRequestHttpException('Missing state or code parameter.');

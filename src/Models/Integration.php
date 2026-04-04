@@ -341,7 +341,7 @@ class Integration extends Model
         bool $serveStale,
         ?int $retryOfId = null,
     ): mixed {
-        $startTime = hrtime(true);
+        $startTime = microtime(true);
         $responseSuccess = false;
         $responseCode = null;
         $responseData = null;
@@ -376,7 +376,7 @@ class Integration extends Model
 
             if ($result === null) {
                 $this->recordFailure();
-                $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+                $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
                 $request = $this->persistRequest(
                     $endpoint, $method, $encodedRequestData, $retryOfId,
@@ -391,7 +391,7 @@ class Integration extends Model
             }
         }
 
-        $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+        $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
         $request = $this->persistRequest(
             $endpoint, $method, $encodedRequestData, $retryOfId,

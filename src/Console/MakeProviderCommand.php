@@ -101,7 +101,7 @@ class MakeProviderCommand extends GeneratorCommand
         ];
 
         foreach ($capabilities as $capability) {
-            if (isset($map[$capability])) {
+            if (array_key_exists($capability, $map)) {
                 $uses[] = $map[$capability];
             }
         }
@@ -135,7 +135,7 @@ class MakeProviderCommand extends GeneratorCommand
         ];
 
         foreach ($capabilities as $capability) {
-            if (isset($map[$capability])) {
+            if (array_key_exists($capability, $map)) {
                 $interfaces[] = $map[$capability];
             }
         }

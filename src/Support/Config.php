@@ -97,7 +97,7 @@ final class Config
     {
         if ($provider !== null) {
             $queues = config('integrations.sync.queues', []);
-            if (is_array($queues) && isset($queues[$provider]) && is_string($queues[$provider]) && $queues[$provider] !== '') {
+            if (is_array($queues) && array_key_exists($provider, $queues) && is_string($queues[$provider]) && $queues[$provider] !== '') {
                 return $queues[$provider];
             }
         }

@@ -134,14 +134,14 @@ class WebhookController extends Controller
         $eventType = $provider->resolveWebhookEvent($request);
         $handlers = $provider->webhookHandlers();
 
-        if ($eventType !== null && isset($handlers[$eventType])) {
+        if ($eventType !== null && array_key_exists($eventType, $handlers)) {
             $handler = $handlers[$eventType];
 
             if (is_string($handler) && class_exists($handler)) {
                 $handler = app($handler);
             }
 
-            if (is_array($handler) && isset($handler[0], $handler[1]) && is_string($handler[0]) && class_exists($handler[0])) {
+            if (is_array($handler) && array_key_exists(0, $handler) && array_key_exists(1, $handler) && is_string($handler[0]) && class_exists($handler[0])) {
                 $handler = [app($handler[0]), $handler[1]];
             }
 
@@ -150,7 +150,7 @@ class WebhookController extends Controller
             }
         }
 
-        if ($eventType !== null && $handlers !== [] && ! isset($handlers[$eventType])) {
+        if ($eventType !== null && $handlers !== [] && ! array_key_exists($eventType, $handlers)) {
             return ['status' => 'ignored'];
         }
 

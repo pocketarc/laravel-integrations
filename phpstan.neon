@@ -7,57 +7,31 @@ parameters:
     paths:
         - src
 
-    ignoreErrors:
-        # Eloquent's fluent interface triggers this incorrectly
-        - identifier: staticMethod.dynamicCall
-        # ide-helper generates incomplete stubs for Request
-        -
-            message: '#Call to an undefined method Illuminate\\Http\\Request::(query|merge)\(\)#'
-            reportUnmatched: false
-        # IntegrationManager needs the container to resolve providers
-        - identifier: ergebnis.noParameterWithContainerTypeDeclaration
-        # IntegrationManager is intentionally a singleton
-        -
-            identifier: larastan.octaneCompatibility
-            path: src/IntegrationsServiceProvider.php
-        # PruneCommand operates on base Model class-strings; Larastan can't infer concrete model
-        -
-            identifier: argument.type
-            path: src/Console/PruneCommand.php
-        # HealthCommand uses raw SQL aliases that aren't model properties
-        -
-            identifier: argument.type
-            path: src/Console/HealthCommand.php
-        # hrtime(true) never returns false; Safe wrapper lacks proper overloaded types
-        -
-            message: '#Function hrtime is unsafe to use#'
-            identifier: theCodingMachineSafe.function
-
     scanFiles:
         - _ide_helper.php
 
     ergebnis:
+        # Named arguments improve readability for methods with many parameters (e.g. Integration::logOperation(), Integration::request()).
         noNamedArgument:
             enabled: false
+        # Laravel requires extending framework base classes (Command, Model, ServiceProvider, etc.).
         noExtends:
             enabled: false
+        # Nullable parameters are standard PHP for optional args; public API already uses builder pattern (PendingRequest).
         noParameterWithNullableTypeDeclaration:
             enabled: false
         noParameterWithNullDefaultValue:
             enabled: false
+        # Nullable returns are idiomatic PHP/Laravel for "not found" / optional semantics.
         noNullableReturnTypeDeclaration:
             enabled: false
-        noIsset:
-            enabled: false
+        # Reasonable defaults in constructors (e.g. exception $previous, empty arrays) are idiomatic PHP.
         noConstructorParameterWithDefaultValue:
             enabled: false
+        # Library package; consumers should be free to extend any class.
         final:
             enabled: false
         finalInAbstractClass:
-            enabled: false
-
-    shipmonkRules:
-        forbidCheckedExceptionInCallable:
             enabled: false
 
     # Larastan checks
@@ -77,3 +51,35 @@ parameters:
     reportAnyTypeWideningInVarTag: true
     checkMissingOverrideMethodAttribute: true
     checkMissingCallableSignature: true
+
+    ignoreErrors:
+        # Eloquent's fluent interface triggers this incorrectly.
+        - identifier: staticMethod.dynamicCall
+
+        # IntegrationManager needs the container to lazily resolve provider classes via $container->make().
+        -
+            rawMessage: 'Method Integrations\IntegrationManager::__construct() has a parameter $container with a type declaration of Illuminate\Contracts\Container\Container, but containers should not be injected.'
+            identifier: ergebnis.noParameterWithContainerTypeDeclaration
+            count: 1
+            path: src/IntegrationManager.php
+
+        # These closures (bind, Route::group) are immediately invoked by Laravel; exceptions propagate correctly.
+        -
+            rawMessage: Throwing checked exception InvalidArgumentException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 7
+            path: src/IntegrationsServiceProvider.php
+
+        # DB::transaction() closure is immediately invoked; MassAssignmentException propagates correctly.
+        -
+            rawMessage: Throwing checked exception Illuminate\Database\Eloquent\MassAssignmentException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 1
+            path: src/Models/Integration.php
+
+        # HTTP callback closure is immediately invoked; RequestException propagates correctly.
+        -
+            rawMessage: Throwing checked exception Illuminate\Http\Client\RequestException in closure!
+            identifier: shipmonk.checkedExceptionInCallable
+            count: 1
+            path: src/PendingRequest.php

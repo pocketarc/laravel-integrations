@@ -20,7 +20,7 @@ class ResponseSequence
     {
         $index = $this->index;
 
-        if (! isset($this->responses[$index])) {
+        if (! array_key_exists($index, $this->responses)) {
             return null;
         }
 

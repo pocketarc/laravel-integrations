@@ -53,7 +53,7 @@ class SyncIntegration implements ShouldQueue
         }
 
         IntegrationContext::push($integration, 'sync');
-        $startTime = hrtime(true);
+        $startTime = microtime(true);
         $parentLog = null;
 
         try {
@@ -70,7 +70,7 @@ class SyncIntegration implements ShouldQueue
                 : $provider->sync($integration);
 
             $requestIds = $integration->clearSyncContext();
-            $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+            $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
             if ($result->cursor !== null) {
                 $integration->updateSyncCursor($result->cursor);
@@ -94,7 +94,7 @@ class SyncIntegration implements ShouldQueue
             }
         } catch (Throwable $e) {
             $integration->clearSyncContext();
-            $durationMs = (int) ((hrtime(true) - $startTime) / 1_000_000);
+            $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
             if ($parentLog !== null) {
                 $parentLog->update([

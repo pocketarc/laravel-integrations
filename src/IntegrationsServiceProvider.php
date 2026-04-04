@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations;
 
+use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Console\HealthCommand;
@@ -28,8 +29,8 @@ class IntegrationsServiceProvider extends ServiceProvider
     {
         $this->mergeConfigFrom(__DIR__.'/../config/integrations.php', 'integrations');
 
-        $this->app->singleton(IntegrationManager::class, function (): IntegrationManager {
-            $manager = new IntegrationManager($this->app);
+        $this->app->scoped(IntegrationManager::class, function (Container $app): IntegrationManager {
+            $manager = new IntegrationManager($app);
 
             foreach (Config::providers() as $key => $class) {
                 if (! class_exists($class)) {
