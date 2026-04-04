@@ -55,7 +55,9 @@ parameters:
 
     ignoreErrors:
         # #[\Override] on properties is a PHPStan bleeding edge feature that breaks PHP 8.3 at runtime.
-        - identifier: property.missingOverride
+        -
+            identifier: property.missingOverride
+            reportUnmatched: false
         # Eloquent's fluent interface triggers this incorrectly.
         - identifier: staticMethod.dynamicCall
 
