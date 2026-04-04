@@ -1,3 +1,4 @@
+# bleedingEdge.neon is intentional; CI may break when new PHPStan releases arrive.
 includes:
     - phar://phpstan.phar/conf/bleedingEdge.neon
 
