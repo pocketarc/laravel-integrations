@@ -135,15 +135,7 @@ class WebhookController extends Controller
         $handlers = $provider->webhookHandlers();
 
         if ($eventType !== null && array_key_exists($eventType, $handlers)) {
-            $handler = $handlers[$eventType];
-
-            if (is_string($handler) && class_exists($handler)) {
-                $handler = app($handler);
-            }
-
-            if (is_array($handler) && array_key_exists(0, $handler) && array_key_exists(1, $handler) && is_string($handler[0]) && class_exists($handler[0])) {
-                $handler = [app($handler[0]), $handler[1]];
-            }
+            $handler = self::resolveHandler($handlers[$eventType]);
 
             if (is_callable($handler)) {
                 return $handler($integration, $request);
@@ -155,6 +147,19 @@ class WebhookController extends Controller
         }
 
         return $provider->handleWebhook($integration, $request);
+    }
+
+    private static function resolveHandler(mixed $handler): mixed
+    {
+        if (is_string($handler) && class_exists($handler)) {
+            return app($handler);
+        }
+
+        if (is_array($handler) && array_key_exists(0, $handler) && array_key_exists(1, $handler) && is_string($handler[0]) && class_exists($handler[0])) {
+            return [app($handler[0]), $handler[1]];
+        }
+
+        return $handler;
     }
 
     /**

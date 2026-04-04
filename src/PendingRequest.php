@@ -70,37 +70,61 @@ class PendingRequest
         return $this;
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function get(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('GET', $callbackOrUrl);
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function post(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('POST', $callbackOrUrl);
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function put(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('PUT', $callbackOrUrl);
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function patch(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('PATCH', $callbackOrUrl);
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function delete(Closure|string $callbackOrUrl): mixed
     {
         return $this->execute('DELETE', $callbackOrUrl);
     }
 
-    /** @param  (Closure(): mixed)|string  $callbackOrUrl */
+    /**
+     * @param  (Closure(): mixed)|string  $callbackOrUrl
+     *
+     * @param-immediately-invoked-callable $callbackOrUrl
+     */
     public function execute(string $method, Closure|string $callbackOrUrl): mixed
     {
         $callback = is_string($callbackOrUrl)

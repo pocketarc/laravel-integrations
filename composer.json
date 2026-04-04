@@ -31,7 +31,9 @@
         "phpstan/phpstan-strict-rules": "^2.0",
         "phpunit/phpunit": "^11.0|^12.0",
         "shipmonk/phpstan-rules": "^4.1",
-        "thecodingmachine/phpstan-safe-rule": "^1.4"
+        "spaze/phpstan-disallowed-calls": "^4.9",
+        "thecodingmachine/phpstan-safe-rule": "^1.4",
+        "tomasvotruba/cognitive-complexity": "^1.1"
     },
     "autoload": {
         "psr-4": {
