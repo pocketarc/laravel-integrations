@@ -184,7 +184,7 @@ final class Config
             return [];
         }
 
-        /** @var array<string, class-string> */
+        /** @var array<non-empty-string, class-string> */
         return array_filter($value, static function (mixed $class, mixed $key): bool {
             return is_string($key) && $key !== '' && is_string($class) && $class !== '';
         }, ARRAY_FILTER_USE_BOTH);

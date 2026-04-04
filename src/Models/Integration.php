@@ -43,6 +43,9 @@ use InvalidArgumentException;
 use Psr\Http\Message\ResponseInterface;
 use Spatie\LaravelData\Data;
 
+use function Safe\json_decode;
+use function Safe\json_encode;
+
 /**
  * @property int $id
  * @property string $provider
@@ -83,10 +86,12 @@ use Spatie\LaravelData\Data;
 class Integration extends Model
 {
     /** @var array<string> */
+    #[\Override]
     protected $guarded = [];
 
     private ?int $lastCreatedRequestId = null;
 
+    #[\Override]
     protected static function booted(): void
     {
         static::created(function (Integration $integration): void {
@@ -94,6 +99,7 @@ class Integration extends Model
         });
     }
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'s';
@@ -102,6 +108,7 @@ class Integration extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [
@@ -207,7 +214,7 @@ class Integration extends Model
         ?int $retryOfId = null,
         ?int $maxRetries = null,
     ): mixed {
-        $maxRetries ??= strtoupper($method) === 'GET' ? 3 : 1;
+        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {

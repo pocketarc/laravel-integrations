@@ -11,6 +11,9 @@ use Override;
 use Spatie\LaravelData\Data;
 use Throwable;
 
+use function Safe\json_decode;
+use function Safe\json_encode;
+
 /**
  * Handles optional typed casting via Spatie LaravelData for metadata.
  *
@@ -73,13 +76,13 @@ class IntegrationMetadataCast implements CastsAttributes
         }
 
         if ($value instanceof Data) {
-            $value = $value->toArray();
-        }
-
-        if (! is_array($value)) {
+            $arrayValue = $value->toArray();
+        } elseif (is_array($value)) {
+            $arrayValue = $value;
+        } else {
             return null;
         }
 
-        return json_encode($value, JSON_THROW_ON_ERROR);
+        return json_encode($arrayValue, JSON_THROW_ON_ERROR);
     }
 }

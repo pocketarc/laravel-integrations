@@ -12,8 +12,10 @@ use Integrations\Support\Config;
 
 class PruneCommand extends Command
 {
+    #[\Override]
     protected $signature = 'integrations:prune';
 
+    #[\Override]
     protected $description = 'Delete old integration requests and logs based on retention settings.';
 
     public function handle(): int

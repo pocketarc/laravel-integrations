@@ -16,11 +16,11 @@ class IntegrationRequestFake
     /** @var list<array{integration_id: int, endpoint: string, method: string, request_data: string|null}> */
     private array $recorded = [];
 
-    /** @var array<string, mixed|Closure> */
+    /** @var array<string, mixed> */
     private array $fakeResponses;
 
     /**
-     * @param  array<string, mixed|Closure>  $fakeResponses
+     * @param  array<string, mixed>  $fakeResponses
      */
     public function __construct(array $fakeResponses = [])
     {
@@ -28,7 +28,7 @@ class IntegrationRequestFake
     }
 
     /**
-     * @param  array<string, mixed|Closure>  $fakeResponses
+     * @param  array<string, mixed>  $fakeResponses
      */
     public static function activate(array $fakeResponses = []): self
     {

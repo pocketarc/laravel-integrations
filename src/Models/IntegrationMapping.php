@@ -32,8 +32,10 @@ use Integrations\Support\Config;
 class IntegrationMapping extends Model
 {
     /** @var array<string> */
+    #[\Override]
     protected $guarded = [];
 
+    #[\Override]
     public function getTable(): string
     {
         return Config::tablePrefix().'_mappings';
@@ -42,6 +44,7 @@ class IntegrationMapping extends Model
     /**
      * @return array<string, string>
      */
+    #[\Override]
     protected function casts(): array
     {
         return [

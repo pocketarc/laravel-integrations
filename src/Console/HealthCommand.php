@@ -11,8 +11,10 @@ use Integrations\Models\Integration;
 
 class HealthCommand extends Command
 {
+    #[\Override]
     protected $signature = 'integrations:health';
 
+    #[\Override]
     protected $description = 'Show detailed health report for all integrations.';
 
     public function handle(): int

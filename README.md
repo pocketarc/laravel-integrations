@@ -3,6 +3,7 @@
 [![CI](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml)
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
 [![Total Downloads](https://img.shields.io/packagist/dt/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
+[![PHP 8.3+](https://img.shields.io/badge/PHP-8.3%2B-8892BF?logo=php)](https://www.php.net/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 A Laravel 11-13 package for production-ready third-party integrations. 

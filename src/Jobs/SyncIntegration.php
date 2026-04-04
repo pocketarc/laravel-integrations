@@ -23,10 +23,9 @@ class SyncIntegration implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
 
-    public int $timeout = 600;
-
     public function __construct(
         public readonly int $integrationId,
+        public readonly int $timeout = 600,
     ) {}
 
     /**

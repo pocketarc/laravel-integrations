@@ -4,6 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Support;
 
+use function Safe\json_decode;
+use function Safe\json_encode;
+
 class Redactor
 {
     /**

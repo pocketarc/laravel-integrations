@@ -9,6 +9,7 @@ use Illuminate\Support\Str;
 
 class MakeProviderCommand extends GeneratorCommand
 {
+    #[\Override]
     protected $signature = 'make:integration-provider {name : The provider class name}
         {--oauth : Include OAuth2 support}
         {--sync : Include scheduled sync support}
@@ -16,15 +17,19 @@ class MakeProviderCommand extends GeneratorCommand
         {--health-check : Include health check support}
         {--all : Include all optional interfaces}';
 
+    #[\Override]
     protected $description = 'Create a new integration provider class.';
 
+    #[\Override]
     protected $type = 'Integration Provider';
 
+    #[\Override]
     protected function getStub(): string
     {
         return __DIR__.'/../../stubs/integration-provider.stub';
     }
 
+    #[\Override]
     protected function getDefaultNamespace($rootNamespace): string
     {
         return $rootNamespace.'\\Integrations';
@@ -34,6 +39,7 @@ class MakeProviderCommand extends GeneratorCommand
      * @param  string  $stub
      * @param  string  $name
      */
+    #[\Override]
     protected function replaceClass($stub, $name): string
     {
         $stub = parent::replaceClass($stub, $name);

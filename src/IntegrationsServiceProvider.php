@@ -23,6 +23,7 @@ use InvalidArgumentException;
 
 class IntegrationsServiceProvider extends ServiceProvider
 {
+    #[\Override]
     public function register(): void
     {
         $this->mergeConfigFrom(__DIR__.'/../config/integrations.php', 'integrations');

@@ -15,6 +15,7 @@ use Integrations\IntegrationManager;
  */
 class Integrations extends Facade
 {
+    #[\Override]
     protected static function getFacadeAccessor(): string
     {
         return IntegrationManager::class;

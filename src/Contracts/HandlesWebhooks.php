@@ -29,7 +29,7 @@ interface HandlesWebhooks
      * Map webhook event types to handler callables.
      * Return an empty array to use handleWebhook() for all events.
      *
-     * @return array<string, class-string|callable|array{class-string, string}>
+     * @return array<string, class-string|callable(Integration, Request): mixed|array{class-string, string}>
      */
     public function webhookHandlers(): array;
 

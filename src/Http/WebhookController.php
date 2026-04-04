@@ -81,7 +81,7 @@ class WebhookController extends Controller
 
         $content = $request->getContent();
 
-        if (strlen($content) > Config::webhookMaxPayloadBytes()) {
+        if (mb_strlen($content, '8bit') > Config::webhookMaxPayloadBytes()) {
             return new JsonResponse(['error' => 'Payload too large.'], 413);
         }
 
@@ -141,7 +141,7 @@ class WebhookController extends Controller
                 $handler = app($handler);
             }
 
-            if (is_array($handler) && isset($handler[0]) && is_string($handler[0]) && class_exists($handler[0])) {
+            if (is_array($handler) && isset($handler[0], $handler[1]) && is_string($handler[0]) && class_exists($handler[0])) {
                 $handler = [app($handler[0]), $handler[1]];
             }
 

@@ -9,8 +9,10 @@ use Integrations\Models\Integration;
 
 class ListCommand extends Command
 {
+    #[\Override]
     protected $signature = 'integrations:list';
 
+    #[\Override]
     protected $description = 'List all integrations with their health and sync status.';
 
     public function handle(): int

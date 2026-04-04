@@ -1,11 +1,12 @@
 includes:
-    - vendor/larastan/larastan/extension.neon
-    - vendor/phpstan/phpstan-strict-rules/rules.neon
+    - phar://phpstan.phar/conf/bleedingEdge.neon
 
 parameters:
+    level: 10
+
     paths:
         - src
-    level: 10
+
     ignoreErrors:
         # Eloquent's fluent interface triggers this incorrectly
         - identifier: staticMethod.dynamicCall
@@ -13,5 +14,66 @@ parameters:
         -
             message: '#Call to an undefined method Illuminate\\Http\\Request::(query|merge)\(\)#'
             reportUnmatched: false
+        # IntegrationManager needs the container to resolve providers
+        - identifier: ergebnis.noParameterWithContainerTypeDeclaration
+        # IntegrationManager is intentionally a singleton
+        -
+            identifier: larastan.octaneCompatibility
+            path: src/IntegrationsServiceProvider.php
+        # PruneCommand operates on base Model class-strings; Larastan can't infer concrete model
+        -
+            identifier: argument.type
+            path: src/Console/PruneCommand.php
+        # HealthCommand uses raw SQL aliases that aren't model properties
+        -
+            identifier: argument.type
+            path: src/Console/HealthCommand.php
+        # hrtime(true) never returns false; Safe wrapper lacks proper overloaded types
+        -
+            message: '#Function hrtime is unsafe to use#'
+            identifier: theCodingMachineSafe.function
+
     scanFiles:
         - _ide_helper.php
+
+    ergebnis:
+        noNamedArgument:
+            enabled: false
+        noExtends:
+            enabled: false
+        noParameterWithNullableTypeDeclaration:
+            enabled: false
+        noParameterWithNullDefaultValue:
+            enabled: false
+        noNullableReturnTypeDeclaration:
+            enabled: false
+        noIsset:
+            enabled: false
+        noConstructorParameterWithDefaultValue:
+            enabled: false
+        final:
+            enabled: false
+        finalInAbstractClass:
+            enabled: false
+
+    shipmonkRules:
+        forbidCheckedExceptionInCallable:
+            enabled: false
+
+    # Larastan checks
+    checkModelProperties: true
+    checkOctaneCompatibility: true
+    noEnvCallsOutsideOfConfig: true
+    checkModelAppends: true
+
+    # PHPStan strictness
+    checkTooWideReturnTypesInProtectedAndPublicMethods: true
+    checkUninitializedProperties: true
+    checkImplicitMixed: true
+    checkBenevolentUnionTypes: true
+    reportPossiblyNonexistentGeneralArrayOffset: true
+    reportPossiblyNonexistentConstantArrayOffset: true
+    reportAlwaysTrueInLastCondition: true
+    reportAnyTypeWideningInVarTag: true
+    checkMissingOverrideMethodAttribute: true
+    checkMissingCallableSignature: true
