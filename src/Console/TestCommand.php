@@ -11,10 +11,8 @@ use Integrations\Models\Integration;
 
 class TestCommand extends Command
 {
-    #[\Override]
     protected $signature = 'integrations:test';
 
-    #[\Override]
     protected $description = 'Run health checks on all integrations that support it.';
 
     public function handle(IntegrationManager $manager): int

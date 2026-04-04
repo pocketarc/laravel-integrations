@@ -14,10 +14,8 @@ use Integrations\Support\Config;
 
 class SyncCommand extends Command
 {
-    #[\Override]
     protected $signature = 'integrations:sync';
 
-    #[\Override]
     protected $description = 'Dispatch sync jobs for integrations that are due.';
 
     public function handle(IntegrationManager $manager): int

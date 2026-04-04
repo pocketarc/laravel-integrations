@@ -32,7 +32,6 @@ use Integrations\Support\Config;
 class IntegrationMapping extends Model
 {
     /** @var array<string> */
-    #[\Override]
     protected $guarded = [];
 
     #[\Override]

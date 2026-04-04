@@ -39,7 +39,6 @@ use Integrations\Support\Config;
 class IntegrationWebhook extends Model
 {
     /** @var array<string> */
-    #[\Override]
     protected $guarded = [];
 
     #[\Override]

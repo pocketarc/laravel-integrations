@@ -47,7 +47,6 @@ use Integrations\Support\Config;
 class IntegrationLog extends Model
 {
     /** @var array<string> */
-    #[\Override]
     protected $guarded = [];
 
     #[\Override]

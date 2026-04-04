@@ -56,7 +56,6 @@ use Integrations\Testing\IntegrationRequestFake;
 class IntegrationRequest extends Model
 {
     /** @var array<string> */
-    #[\Override]
     protected $guarded = [];
 
     #[\Override]

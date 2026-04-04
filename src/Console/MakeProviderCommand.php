@@ -9,7 +9,6 @@ use Illuminate\Support\Str;
 
 class MakeProviderCommand extends GeneratorCommand
 {
-    #[\Override]
     protected $signature = 'make:integration-provider {name : The provider class name}
         {--oauth : Include OAuth2 support}
         {--sync : Include scheduled sync support}
@@ -17,10 +16,8 @@ class MakeProviderCommand extends GeneratorCommand
         {--health-check : Include health check support}
         {--all : Include all optional interfaces}';
 
-    #[\Override]
     protected $description = 'Create a new integration provider class.';
 
-    #[\Override]
     protected $type = 'Integration Provider';
 
     #[\Override]

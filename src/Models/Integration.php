@@ -86,7 +86,6 @@ use function Safe\json_encode;
 class Integration extends Model
 {
     /** @var array<string> */
-    #[\Override]
     protected $guarded = [];
 
     private ?int $lastCreatedRequestId = null;

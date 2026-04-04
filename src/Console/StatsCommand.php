@@ -9,10 +9,8 @@ use Integrations\Models\Integration;
 
 class StatsCommand extends Command
 {
-    #[\Override]
     protected $signature = 'integrations:stats';
 
-    #[\Override]
     protected $description = 'Show request and sync metrics for all integrations.';
 
     public function handle(): int

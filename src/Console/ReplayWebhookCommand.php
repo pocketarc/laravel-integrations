@@ -12,10 +12,8 @@ use Integrations\Models\IntegrationWebhook;
 
 class ReplayWebhookCommand extends Command
 {
-    #[\Override]
     protected $signature = 'integrations:replay-webhook {webhookId : The ID of the IntegrationWebhook to replay}';
 
-    #[\Override]
     protected $description = 'Re-dispatch a stored webhook payload through its handler.';
 
     public function handle(): int

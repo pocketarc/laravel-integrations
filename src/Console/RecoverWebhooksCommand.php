@@ -11,10 +11,8 @@ use Integrations\Support\Config;
 
 class RecoverWebhooksCommand extends Command
 {
-    #[\Override]
     protected $signature = 'integrations:recover-webhooks';
 
-    #[\Override]
     protected $description = 'Recover webhooks stuck in processing status and re-dispatch them.';
 
     public function handle(): int
