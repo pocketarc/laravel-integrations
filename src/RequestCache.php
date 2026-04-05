@@ -47,7 +47,7 @@ final class RequestCache
 
     private function findCached(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
+        $hash = $this->computeRequestHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -62,7 +62,7 @@ final class RequestCache
 
     private function findStale(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
+        $hash = $this->computeRequestHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -72,6 +72,11 @@ final class RequestCache
             ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
             ->latest()
             ->first();
+    }
+
+    private function computeRequestHash(?string $requestData): ?string
+    {
+        return $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
     }
 
     /**
