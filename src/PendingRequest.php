@@ -10,7 +10,11 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
 use Integrations\Models\Integration;
+use Spatie\LaravelData\Data;
 
+/**
+ * @template TResponse of Data
+ */
 class PendingRequest
 {
     private ?Model $relatedTo = null;
@@ -26,11 +30,16 @@ class PendingRequest
 
     private ?int $maxRetries = null;
 
+    /**
+     * @param  class-string<TResponse>|null  $responseClass
+     */
     public function __construct(
         private readonly Integration $integration,
         private readonly string $endpoint,
+        private readonly ?string $responseClass = null,
     ) {}
 
+    /** @return self<TResponse> */
     public function withCache(CarbonInterface|int $ttl, bool $serveStale = false): self
     {
         $this->cacheFor = is_int($ttl) ? now()->addSeconds($ttl) : $ttl;
@@ -39,6 +48,7 @@ class PendingRequest
         return $this;
     }
 
+    /** @return self<TResponse> */
     public function withRetries(int $max): self
     {
         $this->maxRetries = $max;
@@ -46,6 +56,7 @@ class PendingRequest
         return $this;
     }
 
+    /** @return self<TResponse> */
     public function relatedTo(Model $model): self
     {
         $this->relatedTo = $model;
@@ -55,6 +66,7 @@ class PendingRequest
 
     /**
      * @param  string|array<string, mixed>  $data
+     * @return self<TResponse>
      */
     public function withData(string|array $data): self
     {
@@ -63,6 +75,7 @@ class PendingRequest
         return $this;
     }
 
+    /** @return self<TResponse> */
     public function retryOf(int $id): self
     {
         $this->retryOfId = $id;
@@ -130,6 +143,21 @@ class PendingRequest
         $callback = is_string($callbackOrUrl)
             ? $this->buildHttpCallback($method, $callbackOrUrl)
             : $callbackOrUrl;
+
+        if ($this->responseClass !== null) {
+            return $this->integration->requestAs(
+                endpoint: $this->endpoint,
+                method: $method,
+                responseClass: $this->responseClass,
+                callback: $callback,
+                relatedTo: $this->relatedTo,
+                requestData: $this->requestData,
+                cacheFor: $this->cacheFor,
+                serveStale: $this->serveStale,
+                retryOfId: $this->retryOfId,
+                maxRetries: $this->maxRetries,
+            );
+        }
 
         return $this->integration->request(
             endpoint: $this->endpoint,

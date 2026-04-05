@@ -6,6 +6,7 @@ namespace Integrations\Tests\Unit\Commands;
 
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -23,9 +24,10 @@ class StatsCommandTest extends TestCase
         $integration = Integration::create(['provider' => 'test', 'name' => 'Stats Test']);
         $integration->refresh();
 
-        $integration->request(
+        $integration->requestAs(
             endpoint: '/api/success',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 

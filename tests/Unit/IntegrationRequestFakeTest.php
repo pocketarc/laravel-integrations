@@ -8,6 +8,8 @@ use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Testing\ResponseSequence;
+use Integrations\Tests\Fixtures\TestDataResponse;
+use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -33,9 +35,10 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/tickets',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => throw new \RuntimeException('Should not be called'),
         );
 
@@ -45,25 +48,28 @@ class IntegrationRequestFakeTest extends TestCase
     public function test_fake_returns_configured_response(): void
     {
         IntegrationRequest::fake([
-            'customers.create' => ['id' => 'cus_123', 'email' => 'test@example.com'],
+            'customers.create' => ['ok' => true],
         ]);
 
-        $result = $this->integration->request(
+        $result = $this->integration->requestAs(
             endpoint: 'customers.create',
             method: 'POST',
+            responseClass: TestOkResponse::class,
             callback: fn () => throw new \RuntimeException('Should not be called'),
         );
 
-        $this->assertSame(['id' => 'cus_123', 'email' => 'test@example.com'], $result);
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
     }
 
     public function test_fake_returns_null_for_unconfigured_endpoint(): void
     {
         IntegrationRequest::fake();
 
-        $result = $this->integration->request(
+        $result = $this->integration->requestAs(
             endpoint: '/api/unknown',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => throw new \RuntimeException('Should not be called'),
         );
 
@@ -74,8 +80,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->request(endpoint: '/api/tickets', method: 'GET');
-        $this->integration->request(endpoint: '/api/tickets', method: 'GET');
+        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('/api/tickets');
         IntegrationRequest::assertRequested('/api/tickets', times: 2);
@@ -85,7 +91,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->request(endpoint: '/api/tickets', method: 'GET');
+        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertNotRequested('/api/users');
     }
@@ -94,9 +100,11 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: 'customers.create',
             method: 'POST',
+            responseClass: TestOkResponse::class,
+            callback: fn () => null,
             requestData: ['email' => 'test@example.com'],
         );
 
@@ -113,42 +121,42 @@ class IntegrationRequestFakeTest extends TestCase
             '/api/counter' => function () use (&$callCount) {
                 $callCount++;
 
-                return ['count' => $callCount];
+                return ['data' => (string) $callCount];
             },
         ]);
 
-        $result1 = $this->integration->request(endpoint: '/api/counter', method: 'GET');
-        $result2 = $this->integration->request(endpoint: '/api/counter', method: 'GET');
+        $result1 = $this->integration->requestAs(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $result2 = $this->integration->requestAs(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
-        $this->assertSame(['count' => 1], $result1);
-        $this->assertSame(['count' => 2], $result2);
+        $this->assertSame('1', $result1->data);
+        $this->assertSame('2', $result2->data);
     }
 
     public function test_sequence_returns_different_responses(): void
     {
         IntegrationRequest::fake([
-            '/api/items' => new ResponseSequence('first', 'second', 'third'),
+            '/api/items' => new ResponseSequence(['data' => 'first'], ['data' => 'second'], ['data' => 'third']),
         ]);
 
-        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET');
-        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET');
-        $r3 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+        $r1 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r2 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r3 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
-        $this->assertSame('first', $r1);
-        $this->assertSame('second', $r2);
-        $this->assertSame('third', $r3);
+        $this->assertSame('first', $r1->data);
+        $this->assertSame('second', $r2->data);
+        $this->assertSame('third', $r3->data);
     }
 
     public function test_sequence_returns_null_when_exhausted(): void
     {
         IntegrationRequest::fake([
-            '/api/items' => new ResponseSequence('only'),
+            '/api/items' => new ResponseSequence(['data' => 'only']),
         ]);
 
-        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET');
-        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET');
+        $r1 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r2 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
-        $this->assertSame('only', $r1);
+        $this->assertSame('only', $r1->data);
         $this->assertNull($r2);
     }
 
@@ -161,15 +169,15 @@ class IntegrationRequestFakeTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('API is down');
 
-        $this->integration->request(endpoint: '/api/fail', method: 'GET');
+        $this->integration->requestAs(endpoint: '/api/fail', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
     }
 
     public function test_assert_request_count(): void
     {
         IntegrationRequest::fake();
 
-        $this->integration->request(endpoint: '/api/a', method: 'GET');
-        $this->integration->request(endpoint: '/api/b', method: 'GET');
+        $this->integration->requestAs(endpoint: '/api/a', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: '/api/b', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequestCount(2);
     }
@@ -184,15 +192,16 @@ class IntegrationRequestFakeTest extends TestCase
     public function test_stop_faking_resumes_real_calls(): void
     {
         IntegrationRequest::fake();
-        $this->integration->request(endpoint: '/api/fake', method: 'GET');
+        $this->integration->requestAs(endpoint: '/api/fake', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
         $this->assertDatabaseCount('integration_requests', 0);
 
         IntegrationRequest::stopFaking();
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/real',
             method: 'GET',
-            callback: fn () => ['real' => true],
+            responseClass: TestOkResponse::class,
+            callback: fn () => ['ok' => true],
         );
 
         $this->assertDatabaseCount('integration_requests', 1);

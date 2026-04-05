@@ -57,7 +57,7 @@ parameters:
     checkMissingOverrideMethodAttribute: true
     checkMissingCallableSignature: true
 
-    # Cognitive complexity thresholds (defaults: function 9, class 40, dependency_tree 150).
+    # Cognitive complexity thresholds
     cognitive_complexity:
         function: 10
         class: 50

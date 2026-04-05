@@ -8,6 +8,7 @@ use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Support\Redactor;
 use Integrations\Tests\Fixtures\RedactingProvider;
+use Integrations\Tests\Fixtures\TestTokenResponse;
 use Integrations\Tests\TestCase;
 
 class RedactionTest extends TestCase
@@ -56,9 +57,10 @@ class RedactionTest extends TestCase
         $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
         $integration->refresh();
 
-        $integration->request(
+        $integration->requestAs(
             endpoint: '/api/login',
             method: 'POST',
+            responseClass: TestTokenResponse::class,
             callback: fn () => ['token' => 'secret-jwt-token', 'user' => 'admin'],
             requestData: json_encode(['password' => 'my-secret', 'username' => 'admin']),
         );

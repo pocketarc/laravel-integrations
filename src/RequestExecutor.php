@@ -7,6 +7,8 @@ namespace Integrations;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Facades\Cache;
+use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Events\RequestCompleted;
@@ -18,6 +20,7 @@ use Integrations\Support\Config;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
+use Spatie\LaravelData\Data;
 
 final class RequestExecutor
 {
@@ -34,12 +37,16 @@ final class RequestExecutor
     /**
      * Execute a request against the integration, with caching, retries, and logging.
      *
-     * @param  (Closure(): mixed)|null  $callback
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>|null  $responseClass
+     * @param  Closure(): mixed  $callback
      */
     public function execute(
         string $endpoint,
         string $method,
-        ?Closure $callback,
+        ?string $responseClass,
+        Closure $callback,
         ?Model $relatedTo,
         ?string $encodedRequestData,
         ?CarbonInterface $cacheFor,
@@ -49,36 +56,38 @@ final class RequestExecutor
     ): mixed {
         $this->enforceRateLimit();
 
+        $encodedRequestData = $this->redactRequestData($encodedRequestData);
+
         if ($cacheFor !== null) {
-            $cached = $this->cache->serve($endpoint, $method, $encodedRequestData);
+            $cached = $this->cache->serve($endpoint, $method, $encodedRequestData, $responseClass);
             if ($cached !== null) {
                 return $cached;
             }
         }
 
-        if ($callback === null) {
-            return null;
-        }
-
         if ($maxRetries > 1) {
             return $this->requestWithRetries(
-                $endpoint, $method, $callback, $relatedTo,
+                $endpoint, $method, $responseClass, $callback, $relatedTo,
                 $encodedRequestData, $cacheFor, $serveStale, $maxRetries, $retryOfId,
             );
         }
 
         return $this->executeRequest(
-            $endpoint, $method, $callback, $relatedTo,
+            $endpoint, $method, $responseClass, $callback, $relatedTo,
             $encodedRequestData, $cacheFor, $serveStale, $retryOfId,
         );
     }
 
     /**
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>|null  $responseClass
      * @param  Closure(): mixed  $callback
      */
     private function requestWithRetries(
         string $endpoint,
         string $method,
+        ?string $responseClass,
         Closure $callback,
         ?Model $relatedTo,
         ?string $encodedRequestData,
@@ -97,7 +106,7 @@ final class RequestExecutor
 
             try {
                 $result = $this->executeRequest(
-                    $endpoint, $method, $callback, $relatedTo,
+                    $endpoint, $method, $responseClass, $callback, $relatedTo,
                     $encodedRequestData, $cacheFor, $allowStale,
                     retryOfId: $firstRequestId,
                 );
@@ -109,7 +118,7 @@ final class RequestExecutor
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
                 if (! RetryHandler::isRetryable($e) || $isLastAttempt) {
-                    return $this->serveStaleOrRethrow($e, $serveStale && ! $allowStale, $endpoint, $method, $encodedRequestData);
+                    return $this->serveStaleOrRethrow($e, $serveStale && ! $allowStale, $endpoint, $method, $encodedRequestData, $responseClass);
                 }
 
                 usleep(RetryHandler::calculateDelayMs($e, $attempt) * 1000);
@@ -120,11 +129,15 @@ final class RequestExecutor
     }
 
     /**
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>|null  $responseClass
      * @param  Closure(): mixed  $callback
      */
     private function executeRequest(
         string $endpoint,
         string $method,
+        ?string $responseClass,
         Closure $callback,
         ?Model $relatedTo,
         ?string $encodedRequestData,
@@ -140,10 +153,11 @@ final class RequestExecutor
         $result = null;
 
         try {
-            $result = $callback();
+            $raw = $callback();
             $responseSuccess = true;
 
-            [$responseCode, $responseData, $result] = ResponseHelper::normalize($result);
+            [$responseCode, $responseData, $parsed] = ResponseHelper::normalize($raw);
+            $result = $this->convertResponse($parsed, $responseClass, $endpoint, $cacheFor);
         } catch (\Throwable $e) {
             $error = [
                 'class' => $e::class,
@@ -155,7 +169,7 @@ final class RequestExecutor
             $responseCode = ResponseHelper::extractStatusCode($e);
 
             if ($serveStale) {
-                $result = $this->cache->serveStale($endpoint, $method, $encodedRequestData);
+                $result = $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass);
             }
 
             if ($result === null) {
@@ -213,13 +227,8 @@ final class RequestExecutor
     ): IntegrationRequest {
         $provider = $this->integration->provider();
 
-        if ($provider instanceof RedactsRequestData) {
-            if ($requestData !== null) {
-                $requestData = Redactor::redact($requestData, $provider->sensitiveRequestFields());
-            }
-            if ($responseData !== null) {
-                $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
-            }
+        if ($provider instanceof RedactsRequestData && $responseData !== null) {
+            $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
         }
 
         $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
@@ -249,6 +258,10 @@ final class RequestExecutor
     /**
      * Attempt to serve a stale cached response; rethrow the original exception if unavailable.
      *
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>|null  $responseClass
+     *
      * @throws \Throwable
      */
     private function serveStaleOrRethrow(
@@ -257,15 +270,29 @@ final class RequestExecutor
         string $endpoint,
         string $method,
         ?string $encodedRequestData,
+        ?string $responseClass,
     ): mixed {
         if ($tryStale) {
-            $stale = $this->cache->serveStale($endpoint, $method, $encodedRequestData);
+            $stale = $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass);
             if ($stale !== null) {
                 return $stale;
             }
         }
 
         throw $e;
+    }
+
+    private function convertResponse(mixed $parsed, ?string $responseClass, string $endpoint, ?CarbonInterface $cacheFor): mixed
+    {
+        if ($responseClass !== null && (is_array($parsed) || is_object($parsed))) {
+            return $responseClass::from($parsed);
+        }
+
+        if ($cacheFor !== null && $responseClass === null && is_object($parsed)) {
+            Log::warning("Caching response for '{$endpoint}' without a responseClass — cached responses will be returned as arrays, not ".get_class($parsed).'. Pass responseClass: to request() or to() for type-consistent caching.');
+        }
+
+        return $parsed;
     }
 
     private function enforceRateLimit(): void
@@ -285,21 +312,55 @@ final class RequestExecutor
         $waited = 0;
 
         while (true) {
-            $requestsThisMinute = $this->integration->requests()
-                ->where('created_at', '>=', now()->subMinute())
-                ->count();
+            $now = now();
+            $currentKey = $this->rateLimitKey($now);
+            $previousKey = $this->rateLimitKey($now->copy()->subMinute());
 
-            if ($requestsThisMinute < $limit) {
+            $elapsedFraction = ((int) $now->format('s') + (int) $now->format('u') / 1_000_000) / 60.0;
+
+            Cache::add($currentKey, 0, 120);
+            Cache::add($previousKey, 0, 120);
+
+            $rawCurrent = Cache::get($currentKey, 0);
+            $rawPrevious = Cache::get($previousKey, 0);
+            $currentCount = is_numeric($rawCurrent) ? (int) $rawCurrent : 0;
+            $previousCount = is_numeric($rawPrevious) ? (int) $rawPrevious : 0;
+
+            $estimate = (int) ceil($currentCount + $previousCount * (1.0 - $elapsedFraction));
+
+            if ($estimate < $limit) {
+                Cache::increment($currentKey);
+
                 return;
             }
 
             if ($waited >= $maxWait) {
-                throw new RateLimitExceededException($this->integration, $requestsThisMinute, $limit);
+                throw new RateLimitExceededException($this->integration, $estimate, $limit);
             }
 
             sleep(1);
             $waited++;
         }
+    }
+
+    private function rateLimitKey(CarbonInterface $time): string
+    {
+        return Config::cachePrefix().':rate:'.$this->integration->id.':'.$time->format('Y-m-d-H-i');
+    }
+
+    private function redactRequestData(?string $requestData): ?string
+    {
+        if ($requestData === null) {
+            return null;
+        }
+
+        $provider = $this->integration->provider();
+
+        if ($provider instanceof RedactsRequestData) {
+            return Redactor::redact($requestData, $provider->sensitiveRequestFields());
+        }
+
+        return $requestData;
     }
 
     private static function keyToString(mixed $key): string

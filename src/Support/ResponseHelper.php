@@ -8,6 +8,7 @@ use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use Illuminate\Http\Client\RequestException as LaravelRequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
+use JsonException;
 use Psr\Http\Message\ResponseInterface;
 
 use function Safe\json_decode;
@@ -49,10 +50,16 @@ final class ResponseHelper
         if ($response instanceof ResponseInterface) {
             $body = (string) $response->getBody();
 
+            try {
+                $decoded = json_decode($body, true);
+            } catch (JsonException) {
+                $decoded = null;
+            }
+
             return [
                 $response->getStatusCode(),
                 $body,
-                json_decode($body, true) ?? $body,
+                $decoded ?? $body,
             ];
         }
 

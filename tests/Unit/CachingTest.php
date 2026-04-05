@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Tests\Fixtures\TestDataResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 use RuntimeException;
@@ -30,9 +31,10 @@ class CachingTest extends TestCase
     {
         $callCount = 0;
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/data',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: function () use (&$callCount) {
                 $callCount++;
 
@@ -41,9 +43,10 @@ class CachingTest extends TestCase
             cacheFor: now()->addHour(),
         );
 
-        $result = $this->integration->request(
+        $result = $this->integration->requestAs(
             endpoint: '/api/data',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: function () use (&$callCount) {
                 $callCount++;
 
@@ -53,7 +56,8 @@ class CachingTest extends TestCase
         );
 
         $this->assertSame(1, $callCount);
-        $this->assertSame(['data' => 'fresh'], $result);
+        $this->assertInstanceOf(TestDataResponse::class, $result);
+        $this->assertSame('fresh', $result->data);
 
         $cached = IntegrationRequest::first();
         $this->assertNotNull($cached);
@@ -62,21 +66,24 @@ class CachingTest extends TestCase
 
     public function test_stale_cache_returned_on_failure(): void
     {
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/flaky',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: fn () => ['data' => 'original'],
             cacheFor: now()->subSecond(), // expired
         );
 
-        $result = $this->integration->request(
+        $result = $this->integration->requestAs(
             endpoint: '/api/flaky',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: fn () => throw new RuntimeException('Service down'),
             serveStale: true,
         );
 
-        $this->assertSame(['data' => 'original'], $result);
+        $this->assertInstanceOf(TestDataResponse::class, $result);
+        $this->assertSame('original', $result->data);
 
         $original = IntegrationRequest::first();
         $this->assertNotNull($original);
@@ -85,18 +92,20 @@ class CachingTest extends TestCase
 
     public function test_no_stale_fallback_when_disabled(): void
     {
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/flaky',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: fn () => ['data' => 'original'],
             cacheFor: now()->subSecond(),
         );
 
         $this->expectException(RuntimeException::class);
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/flaky',
             method: 'GET',
+            responseClass: TestDataResponse::class,
             callback: fn () => throw new RuntimeException('Service down'),
             serveStale: false,
         );

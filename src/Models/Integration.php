@@ -194,21 +194,33 @@ class Integration extends Model
         }
     }
 
+    /** @return PendingRequest<Data> */
     public function to(string $endpoint): PendingRequest
     {
         return new PendingRequest($this, $endpoint);
     }
 
     /**
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @return PendingRequest<TResponse>
+     */
+    public function toAs(string $endpoint, string $responseClass): PendingRequest
+    {
+        return new PendingRequest($this, $endpoint, $responseClass);
+    }
+
+    /**
      * Execute a callback against this integration, logging the request.
      *
-     * @param  (Closure(): mixed)|null  $callback
+     * @param  Closure(): mixed  $callback
      * @param  string|array<string, mixed>|null  $requestData
      */
     public function request(
         string $endpoint,
         string $method,
-        ?Closure $callback = null,
+        Closure $callback,
         ?Model $relatedTo = null,
         string|array|null $requestData = null,
         ?CarbonInterface $cacheFor = null,
@@ -228,7 +240,47 @@ class Integration extends Model
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
         return $this->executor()->execute(
-            $endpoint, $method, $callback, $relatedTo,
+            $endpoint, $method, null, $callback, $relatedTo,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxRetries,
+        );
+    }
+
+    /**
+     * Execute a callback against this integration with a typed response.
+     *
+     * Both live and cached paths reconstruct via Data::from(), ensuring type-consistent responses.
+     *
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @param  Closure(): mixed  $callback
+     * @param  string|array<string, mixed>|null  $requestData
+     */
+    public function requestAs(
+        string $endpoint,
+        string $method,
+        string $responseClass,
+        Closure $callback,
+        ?Model $relatedTo = null,
+        string|array|null $requestData = null,
+        ?CarbonInterface $cacheFor = null,
+        bool $serveStale = false,
+        ?int $retryOfId = null,
+        ?int $maxRetries = null,
+    ): mixed {
+        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+
+        $fake = IntegrationRequestFake::active();
+        if ($fake !== null) {
+            $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
+
+            return $fake->record($this, $endpoint, $method, $encodedData, $responseClass);
+        }
+
+        $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
+
+        return $this->executor()->execute(
+            $endpoint, $method, $responseClass, $callback, $relatedTo,
             $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxRetries,
         );
     }

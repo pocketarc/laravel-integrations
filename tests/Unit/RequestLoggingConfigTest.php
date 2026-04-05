@@ -9,6 +9,7 @@ use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -31,9 +32,10 @@ class RequestLoggingConfigTest extends TestCase
     {
         Event::fake();
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/data',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 
@@ -46,9 +48,10 @@ class RequestLoggingConfigTest extends TestCase
         Event::fake();
 
         $this->assertThrows(function (): void {
-            $this->integration->request(
+            $this->integration->requestAs(
                 endpoint: '/api/data',
                 method: 'GET',
+                responseClass: TestOkResponse::class,
                 callback: fn () => throw new \RuntimeException('API error'),
             );
         }, \RuntimeException::class);
@@ -61,9 +64,10 @@ class RequestLoggingConfigTest extends TestCase
     {
         $this->integration->update(['consecutive_failures' => 3]);
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/data',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 
