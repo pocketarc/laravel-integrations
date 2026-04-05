@@ -70,6 +70,7 @@ final class RequestCache
             ->where('endpoint', $endpoint)
             ->where('method', $method)
             ->where('response_success', true)
+            ->whereNotNull('expires_at')
             ->when($hash !== null, fn (Builder $q) => $q->where('request_data_hash', $hash))
             ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
             ->latest()

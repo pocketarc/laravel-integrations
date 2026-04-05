@@ -54,8 +54,6 @@ final class RequestExecutor
         ?int $retryOfId,
         int $maxAttempts,
     ): mixed {
-        $this->enforceRateLimit();
-
         $encodedRequestData = $this->redactRequestData($encodedRequestData);
 
         if ($cacheFor !== null) {
@@ -64,6 +62,8 @@ final class RequestExecutor
                 return $cached;
             }
         }
+
+        $this->enforceRateLimit();
 
         if ($maxAttempts > 1) {
             return $this->requestWithRetries(
@@ -234,7 +234,6 @@ final class RequestExecutor
 
         $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
 
-        /** @var IntegrationRequest */
         $request = $this->integration->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
