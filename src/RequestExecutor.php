@@ -155,10 +155,10 @@ final class RequestExecutor
 
         try {
             $raw = $callback();
-            $responseSuccess = true;
 
             [$responseCode, $responseData, $parsed] = ResponseHelper::normalize($raw);
             $result = $this->convertResponse($parsed, $responseClass, $endpoint, $cacheFor);
+            $responseSuccess = true;
         } catch (\Throwable $e) {
             $error = [
                 'class' => $e::class,
