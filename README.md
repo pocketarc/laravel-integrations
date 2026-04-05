@@ -260,12 +260,17 @@ Each retry is persisted as its own `IntegrationRequest` row with `retry_of` poin
 
 **Backoff strategy:**
 
-| Status           | Backoff                         |
-|------------------|---------------------------------|
-| 429              | Fixed 30-second delay           |
-| 5xx              | Exponential (attempt x 2s)      |
-| Connection error | Linear (attempt x 1s)           |
-| 4xx (except 429) | Not retried, thrown immediately |
+| Status           | Backoff                                                       |
+|------------------|---------------------------------------------------------------|
+| `Retry-After`    | Respects the header value, capped at configured max (default 10 min) |
+| 429              | Fixed 30-second delay (when no `Retry-After` header)         |
+| 5xx              | Exponential (attempt x 2s)                                    |
+| Connection error | Linear (attempt x 1s)                                         |
+| 4xx (except 429) | Not retried, thrown immediately                               |
+
+**SDK exception support:** The retry handler walks the exception chain (`getPrevious()`) to detect retryable status codes and connection errors wrapped by third-party SDKs. If your SDK wraps a Guzzle, Laravel HTTP, or Symfony HTTP exception as a previous exception, retries work automatically with no adapter code needed.
+
+For SDKs that throw completely custom exceptions (not wrapping Guzzle), see the [`CustomizesRetry`](#provider-contracts) interface.
 
 </details>
 
@@ -334,6 +339,7 @@ Every provider must implement `IntegrationProvider`. Optional interfaces add cap
 | `HasHealthCheck`      | Lightweight connection testing.                                 |
 | `RedactsRequestData`  | Redact sensitive fields from stored request/response data.      |
 | `HasIncrementalSync`  | Delta sync with cursor support (extends `HasScheduledSync`).    |
+| `CustomizesRetry`     | Provider-specific retry decisions and delay logic.              |
 
 <details>
 <summary><strong>IntegrationProvider</strong> (required)</summary>
@@ -585,6 +591,60 @@ class ZendeskProvider implements IntegrationProvider, HasIncrementalSync
 ```
 
 The cursor is stored as JSON in the `sync_cursor` column and passed to `syncIncremental()` on the next sync. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
+
+</details>
+
+<details>
+<summary><strong>CustomizesRetry</strong></summary>
+
+For SDKs that throw custom exceptions not wrapping Guzzle (e.g. GitHub's `ApiLimitExceedException`, Twilio's rate limit exceptions), this interface lets the provider define retry semantics for its own exceptions:
+
+```php
+use Integrations\Contracts\CustomizesRetry;
+
+interface CustomizesRetry
+{
+    public function isRetryable(\Throwable $e): ?bool;
+    public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int;
+}
+```
+
+Both methods return `null` to fall back to the default retry logic. This means providers only need to handle exceptions they know about.
+
+Example:
+
+```php
+use Github\Exception\ApiLimitExceedException;
+use Github\Exception\RuntimeException as GithubRuntimeException;
+
+class GithubProvider implements IntegrationProvider, CustomizesRetry
+{
+    public function isRetryable(\Throwable $e): ?bool
+    {
+        if ($e instanceof ApiLimitExceedException) {
+            return true;
+        }
+
+        if ($e instanceof GithubRuntimeException) {
+            return false; // GitHub SDK errors are not transient
+        }
+
+        return null; // fall back to core logic
+    }
+
+    public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int
+    {
+        if ($e instanceof ApiLimitExceedException) {
+            $resetTime = $e->getResetTime(); // Unix timestamp from GitHub
+            $delaySeconds = max(0, $resetTime - time());
+
+            return $delaySeconds * 1000;
+        }
+
+        return null; // fall back to core logic
+    }
+}
+```
 
 </details>
 
@@ -1136,6 +1196,10 @@ return [
     'sync' => [
         'queue' => 'default',   // queue for SyncIntegration jobs
         'lock_ttl' => 600,      // WithoutOverlapping lock TTL in seconds
+    ],
+
+    'retry' => [
+        'retry_after_max_seconds' => 600, // cap Retry-After header at 10 minutes
     ],
 
     'rate_limiting' => [

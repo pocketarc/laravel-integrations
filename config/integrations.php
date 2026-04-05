@@ -75,6 +75,13 @@ return [
         'lock_ttl' => 600,
     ],
 
+    'retry' => [
+        // Maximum seconds to honour a Retry-After header. Prevents a misbehaving API
+        // from blocking a worker indefinitely. Retry-After values exceeding this cap
+        // are clamped to this value.
+        'retry_after_max_seconds' => 600,
+    ],
+
     'rate_limiting' => [
         // Maximum seconds to wait for rate limit capacity before throwing
         // RateLimitExceededException. When set to 0, throws immediately without waiting.

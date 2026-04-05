@@ -117,6 +117,11 @@ final class Config
         return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);
     }
 
+    public static function retryAfterMaxMs(): int
+    {
+        return self::boundedInt(config('integrations.retry.retry_after_max_seconds', 600), 600, 1) * 1000;
+    }
+
     public static function degradedAfter(): int
     {
         return self::boundedInt(config('integrations.health.degraded_after', 5), 5, 1);

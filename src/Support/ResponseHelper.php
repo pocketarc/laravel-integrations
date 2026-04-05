@@ -10,6 +10,7 @@ use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
 use JsonException;
 use Psr\Http\Message\ResponseInterface;
+use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 use function Safe\json_decode;
 use function Safe\json_encode;
@@ -21,12 +22,18 @@ final class ResponseHelper
      */
     public static function extractStatusCode(\Throwable $e): ?int
     {
-        if ($e instanceof LaravelRequestException) {
-            return $e->response->status();
-        }
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof LaravelRequestException) {
+                return $current->response->status();
+            }
 
-        if ($e instanceof GuzzleRequestException && $e->getResponse() !== null) {
-            return $e->getResponse()->getStatusCode();
+            if ($current instanceof GuzzleRequestException && $current->getResponse() !== null) {
+                return $current->getResponse()->getStatusCode();
+            }
+
+            if ($current instanceof HttpExceptionInterface) {
+                return $current->getStatusCode();
+            }
         }
 
         return null;
