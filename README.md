@@ -127,12 +127,13 @@ Credentials are encrypted at rest automatically. Metadata is stored as plain JSO
 
 ### 4. Make API requests
 
-Every API call goes through `$integration->request()`, which handles logging, caching, rate limiting, retries, and health tracking:
+Every API call goes through the integration, which handles logging, caching, rate limiting, retries, and health tracking. Use `requestAs()` for typed responses (returns a [Spatie Data](https://spatie.be/docs/laravel-data/v4/introduction) object), or `request()` when you don't need typed responses:
 
 ```php
-$result = $integration->request(
+$tickets = $integration->requestAs(
     endpoint: '/api/v2/tickets.json',
     method: 'GET',
+    responseClass: TicketListResponse::class,
     callback: fn () => Http::withHeaders([
         'Authorization' => 'Bearer '.$integration->credentialsArray()['api_token'],
     ])->get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
@@ -159,18 +160,23 @@ $result = $integration->request(
 
 ## Making requests
 
-`Integration::request()` wraps any API call with the full parameter list:
+There are two request methods: `requestAs()` for typed responses and `request()` for untyped responses. Both wrap your API call with logging, caching, rate limiting, retries, and health tracking.
+
+### Typed requests with `requestAs()`
+
+`requestAs()` requires a [Spatie Laravel Data](https://spatie.be/docs/laravel-data/v4/introduction) class-string. The response is reconstructed via `Data::from()`, giving you a typed object on every call (both live and cached):
 
 ```php
-$result = $integration->request(
+$tickets = $integration->requestAs(
     endpoint: '/api/v2/tickets.json',
     method: 'GET',
+    responseClass: TicketListResponse::class, // required - Spatie Data class
     callback: fn () => Http::get($url),
     relatedTo: $ticket,                // optional - links this request to a model
     requestData: ['status' => 'open'], // optional - logged (auto-captured for HTTP responses)
     cacheFor: now()->addHour(),        // optional - cache the response
     serveStale: true,                  // optional - return expired cache on error
-    maxRetries: 3,                     // optional - retry on transient errors (default: 3)
+    maxAttempts: 3,                     // optional - total attempts including first (default: 3 for GET, 1 otherwise)
 );
 ```
 
@@ -178,18 +184,33 @@ The `endpoint` and `method` are logical identifiers. They can be real HTTP paths
 
 ```php
 // SDK-style: endpoint is a logical name
-$result = $integration->request(
+$customer = $integration->requestAs(
     endpoint: 'customers.create',
     method: 'POST',
+    responseClass: CustomerResponse::class,
     callback: fn () => $stripe->customers->create(['email' => $email]),
     requestData: ['email' => $email],
 );
 ```
 
-<details>
-<summary><strong>What happens inside <code>request()</code></strong></summary>
+### Untyped requests with `request()`
 
-1. Counts actual requests in the last minute against the provider's configured limit. Throws `RateLimitExceededException` if exceeded.
+Use `request()` for non-JSON responses (PDFs, HTML, binary data) or when you don't need a typed response. It returns `mixed`:
+
+```php
+$pdf = $integration->request(
+    endpoint: '/api/invoice.pdf',
+    method: 'GET',
+    callback: fn () => Http::get($url),
+);
+```
+
+If you cache an untyped response and the response is an object, a warning is logged suggesting you use `requestAs()` instead.
+
+<details>
+<summary><strong>What happens inside <code>request()</code> / <code>requestAs()</code></strong></summary>
+
+1. Checks a cache-based sliding window rate counter against the provider's configured limit. Throws `RateLimitExceededException` if exceeded.
 2. If `cacheFor` is set, looks for a matching unexpired response (same integration + endpoint + method + request data hash).
 3. Runs your closure, measuring duration with `hrtime()`.
 4. Normalizes the response: Handles Laravel HTTP responses, Guzzle PSR-7 responses, `JsonResponse`, arrays, objects, and strings. Extracts status code and body automatically.
@@ -203,12 +224,13 @@ $result = $integration->request(
 <details>
 <summary><strong>Response caching</strong></summary>
 
-Pass `cacheFor` to cache successful responses. Subsequent identical requests (matched by endpoint + method + request data hash) return the cached response without executing the callback.
+Pass `cacheFor` to cache successful responses. Subsequent identical requests (matched by endpoint + method + request data hash) return the cached response without executing the callback. With `requestAs()`, both live and cached paths reconstruct the response via `Data::from()`, so you always receive the same typed Data object regardless of whether it was a cache hit or a live call.
 
 ```php
-$result = $integration->request(
+$tickets = $integration->requestAs(
     endpoint: '/api/v2/tickets.json',
     method: 'GET',
+    responseClass: TicketListResponse::class,
     callback: fn () => Http::get($url),
     cacheFor: now()->addHour(),
     serveStale: true, // fall back to expired cache if the live request fails
@@ -222,14 +244,15 @@ Cache hits and stale hits are tracked per-response via `cache_hits` and `stale_h
 <details>
 <summary><strong>Retries</strong></summary>
 
-Requests retry up to 3 times by default on transient errors (429, 5xx, connection errors). Override per-request:
+GET requests default to 3 attempts (1 original + up to 2 retries) on transient errors (429, 5xx, connection errors). Non-GET requests default to 1 attempt (no retries). Override per-request:
 
 ```php
-$result = $integration->request(
+$tickets = $integration->requestAs(
     endpoint: '/api/v2/tickets.json',
     method: 'GET',
+    responseClass: TicketListResponse::class,
     callback: fn () => Http::get($url),
-    maxRetries: 3,
+    maxAttempts: 3,
 );
 ```
 
@@ -256,7 +279,7 @@ use Integrations\RetryHandler;
 
 $result = RetryHandler::execute(
     callback: fn () => Http::get($url)->throw(),
-    maxRetries: 3,
+    maxAttempts: 3,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     onRetry: function (int $attempt, Throwable $e) {
         Log::warning("Retry attempt {$attempt}", ['error' => $e->getMessage()]);
@@ -269,23 +292,32 @@ $result = RetryHandler::execute(
 <details>
 <summary><strong>Fluent request builder</strong></summary>
 
-A chainable API is available via `Integration::to()`:
+A chainable API is available via `Integration::toAs()` (typed) and `Integration::to()` (untyped).
+
+**Typed** -- `toAs()` takes an endpoint and a response class:
 
 ```php
 // With a callback
-$result = $integration->to('/api/v2/tickets.json')
+$tickets = $integration->toAs('/api/v2/tickets.json', TicketListResponse::class)
     ->withCache(3600, serveStale: true)
-    ->withRetries(3)
+    ->withAttempts(3)
     ->relatedTo($ticket)
     ->get(fn () => Http::get($url));
 
 // With a URL (uses Laravel's HTTP client automatically)
-$result = $integration->to('/api/v2/tickets.json')
+$tickets = $integration->toAs('/api/v2/tickets.json', TicketListResponse::class)
     ->withData(['status' => 'open'])
     ->get("https://api.example.com/tickets");
 ```
 
-Available methods: `withCache(int|CarbonInterface $ttl, bool $serveStale)`, `withRetries(int $max)`, `relatedTo(Model $model)`, `withData(string|array $data)`, `retryOf(int $id)`. Terminal methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `execute(string $method, Closure $callback)`.
+**Untyped** -- `to()` takes only an endpoint:
+
+```php
+$pdf = $integration->to('/api/invoice.pdf')
+    ->get(fn () => Http::get($url));
+```
+
+Available methods: `withCache(int|CarbonInterface $ttl, bool $serveStale)`, `withAttempts(int $max)`, `relatedTo(Model $model)`, `withData(string|array $data)`, `retryOf(int $id)`. Terminal methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `execute(string $method, Closure $callback)`.
 
 </details>
 
@@ -345,14 +377,15 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
 
     public function sync(Integration $integration): SyncResult
     {
-        $tickets = $integration->request(
+        $tickets = $integration->requestAs(
             endpoint: '/api/v2/tickets.json',
             method: 'GET',
+            responseClass: TicketListResponse::class,
             callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
         );
 
         $count = 0;
-        foreach ($tickets['tickets'] as $ticket) {
+        foreach ($tickets->tickets as $ticket) {
             // Process each ticket...
             $count++;
         }
@@ -474,9 +507,10 @@ class ZendeskProvider implements IntegrationProvider, HasHealthCheck
     public function healthCheck(Integration $integration): bool
     {
         try {
-            $integration->request(
+            $integration->requestAs(
                 endpoint: '/api/v2/users/me.json',
                 method: 'GET',
+                responseClass: UserResponse::class,
                 callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/users/me.json"),
             );
             return true;
@@ -529,19 +563,20 @@ class ZendeskProvider implements IntegrationProvider, HasIncrementalSync
     {
         $startTime = $cursor ?? now()->subDay()->toIso8601String();
 
-        $tickets = $integration->request(
+        $tickets = $integration->requestAs(
             endpoint: '/api/v2/incremental/tickets.json',
             method: 'GET',
+            responseClass: IncrementalTicketResponse::class,
             callback: fn () => Http::get($url, ['start_time' => $startTime]),
         );
 
         // Process tickets...
 
         return new SyncResult(
-            successCount: count($tickets),
+            successCount: count($tickets->tickets),
             failureCount: 0,
             safeSyncedAt: now(),
-            cursor: $tickets['end_time'], // stored for next sync
+            cursor: $tickets->end_time, // stored for next sync
         );
     }
 
@@ -782,7 +817,7 @@ The sync scheduler respects health status. Degraded integrations sync at a reduc
 <details>
 <summary><strong>Sync timeline</strong></summary>
 
-During a sync, all API requests made via `$integration->request()` are tracked and their IDs stored in the parent sync log's metadata. This allows post-sync analysis:
+During a sync, all API requests made via `$integration->request()` or `$integration->requestAs()` are tracked and their IDs stored in the parent sync log's metadata. This allows post-sync analysis:
 
 ```php
 $syncLog = $integration->logs()->forOperation('sync')->latest()->first();
@@ -980,7 +1015,7 @@ IntegrationRequest::fake([
     'customers.create' => fn () => ['id' => 'cus_123', 'email' => 'test@example.com'],
 ]);
 
-// ... run your code that calls $integration->request() ...
+// ... run your code that calls $integration->request() or $integration->requestAs() ...
 
 // Assert
 IntegrationRequest::assertRequested('/api/v2/tickets.json');
@@ -994,7 +1029,7 @@ IntegrationRequest::assertRequestedWith('customers.create', function (string $re
 IntegrationRequest::stopFaking();
 ```
 
-When the fake is active, `Integration::request()` skips rate limiting, caching, health tracking, and database persistence entirely. It records requests in memory and returns your fake responses (or `null` for unmatched endpoints).
+When the fake is active, both `request()` and `requestAs()` skip rate limiting, caching, health tracking, and database persistence entirely. They record requests in memory and return your fake responses (or `null` for unmatched endpoints).
 
 ### Sequences and exceptions
 
@@ -1007,10 +1042,10 @@ IntegrationRequest::fake([
 ]);
 
 // Returns 'first', 'second', 'third', then null
-$r1 = $integration->request(endpoint: '/api/items', method: 'GET');
+$r1 = $integration->request(endpoint: '/api/items', method: 'GET', callback: fn () => Http::get($url));
 
 // Throws RuntimeException
-$integration->request(endpoint: '/api/fail', method: 'GET');
+$integration->request(endpoint: '/api/fail', method: 'GET', callback: fn () => Http::get($url));
 ```
 
 Additional assertions:

@@ -56,23 +56,15 @@ class MakeProviderCommand extends GeneratorCommand
      */
     private function resolveCapabilities(): array
     {
-        if ((bool) $this->option('all')) {
-            return ['oauth', 'sync', 'webhooks', 'health-check'];
-        }
-
-        $capabilities = [];
-
         $options = ['oauth', 'sync', 'webhooks', 'health-check'];
-        $hasAnyFlag = false;
 
-        foreach ($options as $option) {
-            if ((bool) $this->option($option)) {
-                $hasAnyFlag = true;
-                $capabilities[] = $option;
-            }
+        if ((bool) $this->option('all')) {
+            return $options;
         }
 
-        if (! $hasAnyFlag && $this->input->isInteractive()) {
+        $capabilities = array_values(array_filter($options, fn (string $option): bool => (bool) $this->option($option)));
+
+        if ($capabilities === [] && $this->input->isInteractive()) {
             foreach ($options as $option) {
                 if ($this->confirm("Include {$option} support?")) {
                     $capabilities[] = $option;

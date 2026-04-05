@@ -21,7 +21,7 @@ reviews:
         - path: "src/**"
           instructions: >
               This is a Laravel package (pocketarc/laravel-integrations) for managing
-              third-party service integrations. PHP 8.3+, Laravel 11/12/13. PHPStan
+              third-party service integrations. PHP 8.2+, Laravel 11/12/13. PHPStan
               level 10 with strict rules. Uses proper runtime type validation rather
               than @var annotations or casts on mixed.
     tools:

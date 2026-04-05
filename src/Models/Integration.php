@@ -6,23 +6,18 @@ namespace Integrations\Models;
 
 use Carbon\CarbonInterface;
 use Closure;
-use GuzzleHttp\Exception\RequestException;
-use Illuminate\Database\Eloquent\Builder;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
-use Illuminate\Http\Client\Response;
-use Illuminate\Http\JsonResponse;
+use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
-use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
-use Integrations\Contracts\RedactsRequestData;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
 use Integrations\Events\IntegrationDisabled;
@@ -30,20 +25,14 @@ use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
-use Integrations\Events\RequestCompleted;
-use Integrations\Events\RequestFailed;
-use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
-use Integrations\RetryHandler;
+use Integrations\RequestExecutor;
 use Integrations\Support\Config;
-use Integrations\Support\Redactor;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
-use Psr\Http\Message\ResponseInterface;
 use Spatie\LaravelData\Data;
 
-use function Safe\json_decode;
 use function Safe\json_encode;
 
 /**
@@ -88,7 +77,7 @@ class Integration extends Model
     /** @var array<string> */
     protected $guarded = [];
 
-    private ?int $lastCreatedRequestId = null;
+    private ?RequestExecutor $executor = null;
 
     #[\Override]
     protected static function booted(): void
@@ -191,29 +180,59 @@ class Integration extends Model
         return $ids;
     }
 
+    /** @internal */
+    public function activeSyncLogId(): ?int
+    {
+        return $this->activeSyncLogId;
+    }
+
+    /** @internal */
+    public function trackSyncRequestId(int $id): void
+    {
+        if ($this->activeSyncLogId !== null) {
+            $this->syncRequestIds[] = $id;
+        }
+    }
+
+    /** @return PendingRequest<Data> */
     public function to(string $endpoint): PendingRequest
     {
         return new PendingRequest($this, $endpoint);
     }
 
     /**
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @return PendingRequest<TResponse>
+     */
+    public function toAs(string $endpoint, string $responseClass): PendingRequest
+    {
+        return new PendingRequest($this, $endpoint, $responseClass);
+    }
+
+    /**
      * Execute a callback against this integration, logging the request.
      *
-     * @param  (Closure(): mixed)|null  $callback
+     * @param  Closure(): mixed  $callback
      * @param  string|array<string, mixed>|null  $requestData
      */
     public function request(
         string $endpoint,
         string $method,
-        ?Closure $callback = null,
+        Closure $callback,
         ?Model $relatedTo = null,
         string|array|null $requestData = null,
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        ?int $maxRetries = null,
+        ?int $maxAttempts = null,
     ): mixed {
-        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+        $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
+        }
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -222,377 +241,61 @@ class Integration extends Model
             return $fake->record($this, $endpoint, $method, $encodedData);
         }
 
-        $this->enforceRateLimit();
+        $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
+
+        return $this->executor()->execute(
+            $endpoint, $method, null, $callback, $relatedTo,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
+        );
+    }
+
+    /**
+     * Execute a callback against this integration with a typed response.
+     *
+     * Both live and cached paths reconstruct via Data::from(), ensuring type-consistent responses.
+     *
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>  $responseClass
+     * @param  Closure(): mixed  $callback
+     * @param  string|array<string, mixed>|null  $requestData
+     */
+    public function requestAs(
+        string $endpoint,
+        string $method,
+        string $responseClass,
+        Closure $callback,
+        ?Model $relatedTo = null,
+        string|array|null $requestData = null,
+        ?CarbonInterface $cacheFor = null,
+        bool $serveStale = false,
+        ?int $retryOfId = null,
+        ?int $maxAttempts = null,
+    ): mixed {
+        $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
+        }
+
+        $fake = IntegrationRequestFake::active();
+        if ($fake !== null) {
+            $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
+
+            return $fake->record($this, $endpoint, $method, $encodedData, $responseClass);
+        }
 
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
-        // Check cache
-        if ($cacheFor !== null) {
-            $cached = $this->findCachedResponse($endpoint, $method, $encodedRequestData);
-            if ($cached !== null) {
-                try {
-                    $decoded = json_decode($cached->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
-                    $cached->increment('cache_hits');
-
-                    return $decoded;
-                } catch (\JsonException) {
-                    // Corrupt cached data - treat as cache miss and re-request
-                }
-            }
-        }
-
-        if ($callback === null) {
-            return null;
-        }
-
-        if ($maxRetries > 1) {
-            return $this->requestWithRetries(
-                $endpoint, $method, $callback, $relatedTo,
-                $encodedRequestData, $cacheFor, $serveStale, $maxRetries, $retryOfId,
-            );
-        }
-
-        return $this->executeRequest(
-            $endpoint, $method, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $retryOfId,
+        return $this->executor()->execute(
+            $endpoint, $method, $responseClass, $callback, $relatedTo,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
         );
     }
 
-    /**
-     * @param  Closure(): mixed  $callback
-     */
-    private function requestWithRetries(
-        string $endpoint,
-        string $method,
-        Closure $callback,
-        ?Model $relatedTo,
-        ?string $encodedRequestData,
-        ?CarbonInterface $cacheFor,
-        bool $serveStale,
-        int $maxRetries,
-        ?int $retryOfId = null,
-    ): mixed {
-        $firstRequestId = $retryOfId;
-        $lastException = null;
-
-        $this->lastCreatedRequestId = null;
-
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            $isLastAttempt = $attempt >= $maxRetries;
-            $allowStale = $serveStale && $isLastAttempt;
-
-            try {
-                $result = $this->executeRequest(
-                    $endpoint, $method, $callback, $relatedTo,
-                    $encodedRequestData, $cacheFor, $allowStale,
-                    retryOfId: $firstRequestId,
-                );
-
-                $firstRequestId ??= $this->lastCreatedRequestId;
-
-                return $result;
-            } catch (\Throwable $e) {
-                $lastException = $e;
-
-                $firstRequestId ??= $this->lastCreatedRequestId;
-
-                $willRetry = ! $isLastAttempt && RetryHandler::isRetryable($e);
-
-                if (! $willRetry) {
-                    // Not retrying — try stale cache as last resort before giving up
-                    if ($serveStale && ! $allowStale) {
-                        $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
-                        if ($stale !== null) {
-                            try {
-                                $decoded = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
-                                $stale->increment('stale_hits');
-
-                                return $decoded;
-                            } catch (\JsonException) {
-                                // Fall through to throw
-                            }
-                        }
-                    }
-
-                    throw $e;
-                }
-
-                $delayMs = RetryHandler::calculateDelayMs($e, $attempt);
-                if ($delayMs > 0) {
-                    usleep($delayMs * 1000);
-                }
-            }
-        }
-
-        throw $lastException ?? new \RuntimeException('Retry logic exhausted without result.');
-    }
-
-    /**
-     * @param  Closure(): mixed  $callback
-     */
-    private function executeRequest(
-        string $endpoint,
-        string $method,
-        Closure $callback,
-        ?Model $relatedTo,
-        ?string $encodedRequestData,
-        ?CarbonInterface $cacheFor,
-        bool $serveStale,
-        ?int $retryOfId = null,
-    ): mixed {
-        $startTime = microtime(true);
-        $responseSuccess = false;
-        $responseCode = null;
-        $responseData = null;
-        $error = null;
-        $result = null;
-
-        try {
-            $result = $callback();
-            $responseSuccess = true;
-
-            [$responseCode, $responseData, $result] = $this->normalizeResponse($result);
-        } catch (\Throwable $e) {
-            $error = [
-                'class' => $e::class,
-                'message' => $e->getMessage(),
-                'code' => $e->getCode(),
-                'trace' => mb_strcut($e->getTraceAsString(), 0, 2000),
-            ];
-
-            $responseCode = $this->extractStatusCodeFromException($e);
-
-            if ($serveStale) {
-                $stale = $this->findStaleCachedResponse($endpoint, $method, $encodedRequestData);
-                if ($stale !== null) {
-                    try {
-                        $result = json_decode($stale->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
-                        $stale->increment('stale_hits');
-                    } catch (\JsonException) {
-                    }
-                }
-            }
-
-            if ($result === null) {
-                $this->recordFailure();
-                $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
-
-                $request = $this->persistRequest(
-                    $endpoint, $method, $encodedRequestData, $retryOfId,
-                    $relatedTo, $responseCode, $responseData, false,
-                    $error, $durationMs, $cacheFor,
-                );
-                $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
-
-                RequestFailed::dispatch($this, $request);
-
-                throw $e;
-            }
-        }
-
-        $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
-
-        $request = $this->persistRequest(
-            $endpoint, $method, $encodedRequestData, $retryOfId,
-            $relatedTo, $responseCode, $responseData, $responseSuccess,
-            $error, $durationMs, $cacheFor,
-        );
-        $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
-
-        if ($responseSuccess) {
-            RequestCompleted::dispatch($this, $request);
-        } else {
-            RequestFailed::dispatch($this, $request);
-        }
-
-        if ($responseSuccess) {
-            $this->recordSuccess();
-        } else {
-            $this->recordFailure();
-        }
-
-        return $result;
-    }
-
-    /**
-     * @param  array<string, mixed>|null  $error
-     */
-    private function persistRequest(
-        string $endpoint,
-        string $method,
-        ?string $requestData,
-        ?int $retryOfId,
-        ?Model $relatedTo,
-        ?int $responseCode,
-        ?string $responseData,
-        bool $responseSuccess,
-        ?array $error,
-        int $durationMs,
-        ?CarbonInterface $cacheFor,
-    ): IntegrationRequest {
-        $provider = $this->provider();
-
-        if ($provider instanceof RedactsRequestData) {
-            if ($requestData !== null) {
-                $requestData = Redactor::redact($requestData, $provider->sensitiveRequestFields());
-            }
-            if ($responseData !== null) {
-                $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
-            }
-        }
-
-        $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
-
-        /** @var IntegrationRequest */
-        $request = $this->requests()->create([
-            'endpoint' => $endpoint,
-            'method' => $method,
-            'request_data' => $truncatedRequestData,
-            'request_data_hash' => $truncatedRequestData !== null ? hash('xxh128', $truncatedRequestData) : null,
-            'retry_of' => $retryOfId,
-            'related_type' => $relatedTo !== null ? $relatedTo->getMorphClass() : null,
-            'related_id' => $relatedTo !== null ? self::keyToString($relatedTo->getKey()) : null,
-            'response_code' => $responseCode,
-            'response_data' => $responseData,
-            'response_success' => $responseSuccess,
-            'error' => $error,
-            'duration_ms' => $durationMs,
-            'expires_at' => $cacheFor,
-        ]);
-
-        if ($this->activeSyncLogId !== null) {
-            $this->syncRequestIds[] = $request->id;
-        }
-
-        return $request;
-    }
-
-    /**
-     * @return array{int|null, string|null, mixed}
-     */
-    private function normalizeResponse(mixed $response): array
+    private function executor(): RequestExecutor
     {
-        if ($response instanceof Response) {
-            return [
-                $response->status(),
-                $response->body(),
-                $response->json() ?? $response->body(),
-            ];
-        }
-
-        if ($response instanceof ResponseInterface) {
-            $body = (string) $response->getBody();
-
-            return [
-                $response->getStatusCode(),
-                $body,
-                json_decode($body, true) ?? $body,
-            ];
-        }
-
-        if ($response instanceof JsonResponse) {
-            return [
-                $response->getStatusCode(),
-                $response->getContent() !== false ? $response->getContent() : null,
-                $response->getData(true),
-            ];
-        }
-
-        if (is_array($response)) {
-            return [
-                null,
-                json_encode($response, JSON_THROW_ON_ERROR),
-                $response,
-            ];
-        }
-
-        if (is_object($response)) {
-            $encoded = json_encode($response, JSON_THROW_ON_ERROR);
-
-            return [null, $encoded, $response];
-        }
-
-        if (is_string($response)) {
-            return [null, $response, $response];
-        }
-
-        return [null, null, $response];
-    }
-
-    private function extractStatusCodeFromException(\Throwable $e): ?int
-    {
-        if ($e instanceof \Illuminate\Http\Client\RequestException) {
-            return $e->response->status();
-        }
-
-        if ($e instanceof RequestException && $e->getResponse() !== null) {
-            return $e->getResponse()->getStatusCode();
-        }
-
-        return null;
-    }
-
-    private function findCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
-    {
-        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
-
-        return $this->requests()
-            ->where('endpoint', $endpoint)
-            ->where('method', $method)
-            ->where('response_success', true)
-            ->where('expires_at', '>', now())
-            ->when($hash !== null, fn (Builder $q) => $q->where('request_data_hash', $hash))
-            ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
-            ->latest()
-            ->first();
-    }
-
-    private function findStaleCachedResponse(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
-    {
-        $hash = $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
-
-        return $this->requests()
-            ->where('endpoint', $endpoint)
-            ->where('method', $method)
-            ->where('response_success', true)
-            ->when($hash !== null, fn (Builder $q) => $q->where('request_data_hash', $hash))
-            ->when($hash === null, fn (Builder $q) => $q->whereNull('request_data'))
-            ->latest()
-            ->first();
-    }
-
-    private function enforceRateLimit(): void
-    {
-        $provider = $this->provider();
-
-        $limit = null;
-        if ($provider instanceof HasScheduledSync) {
-            $limit = $provider->defaultRateLimit();
-        }
-
-        if ($limit === null) {
-            return;
-        }
-
-        $maxWait = Config::rateLimitMaxWaitSeconds();
-        $waited = 0;
-
-        while (true) {
-            $requestsThisMinute = $this->requests()
-                ->where('created_at', '>=', now()->subMinute())
-                ->count();
-
-            if ($requestsThisMinute < $limit) {
-                return;
-            }
-
-            if ($waited >= $maxWait) {
-                throw new RateLimitExceededException($this, $requestsThisMinute, $limit);
-            }
-
-            sleep(1);
-            $waited++;
-        }
+        return $this->executor ??= new RequestExecutor($this);
     }
 
     public function recordSuccess(): void
@@ -619,7 +322,6 @@ class Integration extends Model
         $newStatus = null;
 
         DB::transaction(function () use (&$previousStatus, &$newStatus): void {
-            /** @var Integration|null $locked */
             $locked = Integration::lockForUpdate()->find($this->id);
 
             if ($locked === null) {
@@ -812,7 +514,6 @@ class Integration extends Model
 
     public function mapExternalId(string $externalId, Model $internalModel): IntegrationMapping
     {
-        /** @var IntegrationMapping */
         return $this->mappings()->updateOrCreate(
             [
                 'external_id' => $externalId,
@@ -852,7 +553,7 @@ class Integration extends Model
     }
 
     /**
-     * @param  \Illuminate\Database\Query\Builder  $query
+     * @param  Builder  $query
      * @return Builders\IntegrationBuilder<Integration>
      */
     #[\Override]

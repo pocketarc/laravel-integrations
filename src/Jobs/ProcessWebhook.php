@@ -12,6 +12,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Http\WebhookController;
+use Integrations\Models\Integration;
 use Integrations\Models\IntegrationWebhook;
 use Integrations\Support\IntegrationContext;
 
@@ -75,30 +76,11 @@ class ProcessWebhook implements ShouldQueue
 
             $webhook->markProcessed();
 
-            try {
-                $integration->logOperation(
-                    operation: 'webhook',
-                    direction: 'inbound',
-                    status: 'success',
-                    summary: "Queued webhook from {$integration->provider} processed successfully.",
-                );
-            } catch (\Throwable $logException) {
-                Log::warning("Failed to log successful webhook operation for '{$integration->name}': {$logException->getMessage()}");
-            }
+            $this->logWebhookOperation($integration, 'success', "Queued webhook from {$integration->provider} processed successfully.");
         } catch (\Throwable $e) {
             $webhook->markFailed($e->getMessage());
 
-            try {
-                $integration->logOperation(
-                    operation: 'webhook',
-                    direction: 'inbound',
-                    status: 'failed',
-                    summary: "Queued webhook from {$integration->provider} failed.",
-                    error: $e->getMessage(),
-                );
-            } catch (\Throwable $logException) {
-                Log::warning("Failed to log failed webhook operation for '{$integration->name}': {$logException->getMessage()}");
-            }
+            $this->logWebhookOperation($integration, 'failed', "Queued webhook from {$integration->provider} failed.", $e->getMessage());
 
             Log::error("Webhook processing failed for '{$integration->name}': {$e->getMessage()}", [
                 'integration_id' => $integration->id,
@@ -108,6 +90,21 @@ class ProcessWebhook implements ShouldQueue
             throw $e;
         } finally {
             IntegrationContext::clear();
+        }
+    }
+
+    private function logWebhookOperation(Integration $integration, string $status, string $summary, ?string $error = null): void
+    {
+        try {
+            $integration->logOperation(
+                operation: 'webhook',
+                direction: 'inbound',
+                status: $status,
+                summary: $summary,
+                error: $error,
+            );
+        } catch (\Throwable $e) {
+            report($e);
         }
     }
 }

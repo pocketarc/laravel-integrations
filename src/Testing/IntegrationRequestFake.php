@@ -47,7 +47,7 @@ class IntegrationRequestFake
         return self::$instance;
     }
 
-    public function record(Integration $integration, string $endpoint, string $method, ?string $requestData): mixed
+    public function record(Integration $integration, string $endpoint, string $method, ?string $requestData, ?string $responseClass = null): mixed
     {
         $this->recorded[] = [
             'integration_id' => $integration->id,
@@ -56,21 +56,25 @@ class IntegrationRequestFake
             'request_data' => $requestData,
         ];
 
-        if (array_key_exists($endpoint, $this->fakeResponses)) {
-            $response = $this->fakeResponses[$endpoint];
-
-            if ($response instanceof Throwable) {
-                throw $response;
-            }
-
-            if ($response instanceof ResponseSequence) {
-                return $response->next();
-            }
-
-            return $response instanceof Closure ? $response() : $response;
+        if (! array_key_exists($endpoint, $this->fakeResponses)) {
+            return null;
         }
 
-        return null;
+        $response = $this->fakeResponses[$endpoint];
+
+        if ($response instanceof Throwable) {
+            throw $response;
+        }
+
+        $raw = $response instanceof ResponseSequence
+            ? $response->next()
+            : ($response instanceof Closure ? $response() : $response);
+
+        if ($raw !== null && $responseClass !== null) {
+            return $responseClass::from($raw);
+        }
+
+        return $raw;
     }
 
     /**

@@ -1,6 +1,10 @@
 # bleedingEdge.neon is intentional; CI may break when new PHPStan releases arrive.
 includes:
     - phar://phpstan.phar/conf/bleedingEdge.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-dangerous-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-execution-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-insecure-calls.neon
+    - vendor/spaze/phpstan-disallowed-calls/disallowed-loose-calls.neon
 
 parameters:
     level: 10
@@ -52,6 +56,32 @@ parameters:
     reportAnyTypeWideningInVarTag: true
     checkMissingOverrideMethodAttribute: true
     checkMissingCallableSignature: true
+
+    # Cognitive complexity thresholds
+    cognitive_complexity:
+        function: 10
+        class: 50
+
+    # Laravel/debug functions that should never appear in production code.
+    disallowedFunctionCalls:
+        -
+            function: 'dd()'
+            message: 'use a logger or proper exception handling'
+        -
+            function: 'dump()'
+            message: 'use a logger or proper exception handling'
+        -
+            function: 'ray()'
+            message: 'remove debug call'
+        -
+            function: 'die()'
+            message: 'use a proper exception or return statement'
+        -
+            function: 'exit()'
+            message: 'use a proper exception or return statement'
+        -
+            function: 'compact()'
+            message: 'use explicit array construction instead'
 
     ignoreErrors:
         # #[\Override] on properties is a PHPStan bleeding edge feature that breaks PHP 8.3 at runtime.

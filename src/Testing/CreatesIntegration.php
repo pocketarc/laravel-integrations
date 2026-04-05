@@ -31,7 +31,6 @@ trait CreatesIntegration
             $manager->register($providerKey, $providerClass);
         }
 
-        /** @var Integration $integration */
         $integration = Integration::create(array_merge([
             'provider' => $providerKey,
             'name' => "Test {$providerKey}",

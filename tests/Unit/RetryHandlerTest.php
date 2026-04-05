@@ -40,7 +40,7 @@ class RetryHandlerTest extends TestCase
 
                 return 'recovered';
             },
-            maxRetries: 3,
+            maxAttempts: 3,
             rateLimitDelayMs: 0,
             serverErrorBaseDelayMs: 0,
             defaultBaseDelayMs: 0,
@@ -56,7 +56,7 @@ class RetryHandlerTest extends TestCase
 
         RetryHandler::execute(
             callback: fn () => throw new ConnectionException('timeout'),
-            maxRetries: 2,
+            maxAttempts: 2,
             rateLimitDelayMs: 0,
             serverErrorBaseDelayMs: 0,
             defaultBaseDelayMs: 0,
@@ -70,7 +70,7 @@ class RetryHandlerTest extends TestCase
         try {
             RetryHandler::execute(
                 callback: fn () => throw new ConnectionException('timeout'),
-                maxRetries: 3,
+                maxAttempts: 3,
                 rateLimitDelayMs: 0,
                 serverErrorBaseDelayMs: 0,
                 defaultBaseDelayMs: 0,

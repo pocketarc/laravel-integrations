@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Integrations;
 
 use Closure;
-use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use Illuminate\Http\Client\ConnectionException;
-use Illuminate\Http\Client\RequestException as LaravelRequestException;
 use Integrations\Exceptions\RetriesExhaustedException;
+use Integrations\Support\ResponseHelper;
+use InvalidArgumentException;
+use RuntimeException;
+use Throwable;
 
 class RetryHandler
 {
@@ -19,79 +21,63 @@ class RetryHandler
      *
      * @param  Closure(): T  $callback
      * @param  list<int>  $retryableStatusCodes
-     * @param  (Closure(int, \Throwable): void)|null  $onRetry
+     * @param  (Closure(int, Throwable): void)|null  $onRetry
      * @return T
      *
-     * @throws \Throwable
+     * @throws Throwable
      */
     public static function execute(
         Closure $callback,
-        int $maxRetries = 3,
+        int $maxAttempts = 3,
         array $retryableStatusCodes = [429, 500, 502, 503, 504],
         int $rateLimitDelayMs = 30_000,
         int $serverErrorBaseDelayMs = 2_000,
         int $defaultBaseDelayMs = 1_000,
         ?Closure $onRetry = null,
     ): mixed {
-        if ($maxRetries < 1) {
-            throw new \InvalidArgumentException('$maxRetries must be at least 1.');
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
         }
 
         if ($rateLimitDelayMs < 0 || $serverErrorBaseDelayMs < 0 || $defaultBaseDelayMs < 0) {
-            throw new \InvalidArgumentException('Delay values must be non-negative.');
+            throw new InvalidArgumentException('Delay values must be non-negative.');
         }
 
-        $lastException = null;
-        $retriesMade = 0;
-        $exhausted = false;
-
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
                 return $callback();
-            } catch (\Throwable $e) {
-                $lastException = $e;
-                $statusCode = self::extractStatusCode($e);
+            } catch (Throwable $e) {
+                $statusCode = ResponseHelper::extractStatusCode($e);
 
                 if (! self::isRetryableInternal($e, $statusCode, $retryableStatusCodes)) {
-                    break;
+                    throw $e;
                 }
 
-                if ($attempt >= $maxRetries) {
-                    $exhausted = true;
-                    break;
+                if ($attempt >= $maxAttempts) {
+                    throw new RetriesExhaustedException($attempt - 1, $e);
                 }
-
-                $retriesMade++;
-                $delayMs = self::calculateDelay(
-                    $statusCode, $attempt,
-                    $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs,
-                );
 
                 if ($onRetry !== null) {
                     ($onRetry)($attempt, $e);
                 }
 
+                $delayMs = self::calculateDelay(
+                    $statusCode, $attempt,
+                    $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs,
+                );
                 usleep($delayMs * 1000);
             }
         }
 
-        if ($exhausted && $retriesMade > 0) {
-            throw new RetriesExhaustedException($retriesMade, $lastException);
-        }
-
-        if ($lastException !== null) {
-            throw $lastException;
-        }
-
-        throw new \RuntimeException('Retry logic exhausted without result.');
+        throw new RuntimeException('Retry logic exhausted without result.');
     }
 
     /**
      * Check if an exception is retryable with default status codes.
      */
-    public static function isRetryable(\Throwable $e): bool
+    public static function isRetryable(Throwable $e): bool
     {
-        $statusCode = self::extractStatusCode($e);
+        $statusCode = ResponseHelper::extractStatusCode($e);
 
         return self::isRetryableInternal($e, $statusCode, [429, 500, 502, 503, 504]);
     }
@@ -99,31 +85,18 @@ class RetryHandler
     /**
      * Calculate the retry delay in milliseconds for a given exception and attempt.
      */
-    public static function calculateDelayMs(\Throwable $e, int $attempt): int
+    public static function calculateDelayMs(Throwable $e, int $attempt): int
     {
         $attempt = max(1, $attempt);
-        $statusCode = self::extractStatusCode($e);
+        $statusCode = ResponseHelper::extractStatusCode($e);
 
         return self::calculateDelay($statusCode, $attempt, 30_000, 2_000, 1_000);
-    }
-
-    private static function extractStatusCode(\Throwable $e): ?int
-    {
-        if ($e instanceof LaravelRequestException) {
-            return $e->response->status();
-        }
-
-        if ($e instanceof GuzzleRequestException && $e->getResponse() !== null) {
-            return $e->getResponse()->getStatusCode();
-        }
-
-        return null;
     }
 
     /**
      * @param  list<int>  $retryableStatusCodes
      */
-    private static function isRetryableInternal(\Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
+    private static function isRetryableInternal(Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
     {
         if ($e instanceof ConnectionException) {
             return true;

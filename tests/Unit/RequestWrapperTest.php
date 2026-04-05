@@ -10,6 +10,7 @@ use Integrations\Events\RequestFailed;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 use RuntimeException;
@@ -36,13 +37,15 @@ class RequestWrapperTest extends TestCase
     {
         Event::fake();
 
-        $result = $this->integration->request(
+        $result = $this->integration->requestAs(
             endpoint: '/api/tickets',
             method: 'GET',
-            callback: fn () => ['tickets' => [1, 2, 3]],
+            responseClass: TestOkResponse::class,
+            callback: fn () => ['ok' => true],
         );
 
-        $this->assertIsArray($result);
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
 
         $this->assertDatabaseCount('integration_requests', 1);
 
@@ -61,9 +64,10 @@ class RequestWrapperTest extends TestCase
         Event::fake();
 
         try {
-            $this->integration->request(
+            $this->integration->requestAs(
                 endpoint: '/api/fail',
                 method: 'POST',
+                responseClass: TestOkResponse::class,
                 callback: fn () => throw new RuntimeException('Something broke'),
             );
             $this->fail('Expected exception was not thrown.');
@@ -80,23 +84,25 @@ class RequestWrapperTest extends TestCase
         Event::assertDispatched(RequestFailed::class);
     }
 
-    public function test_null_callback_returns_null(): void
+    public function test_null_returning_callback_returns_null(): void
     {
         $result = $this->integration->request(
             endpoint: '/api/nothing',
             method: 'GET',
+            callback: fn () => null,
         );
 
         $this->assertNull($result);
-        $this->assertDatabaseCount('integration_requests', 0);
+        $this->assertDatabaseCount('integration_requests', 1);
     }
 
     public function test_request_with_explicit_request_data(): void
     {
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: 'customers.create',
             method: 'POST',
-            callback: fn () => ['id' => 'cus_123'],
+            responseClass: TestOkResponse::class,
+            callback: fn () => ['ok' => true],
             requestData: ['email' => 'test@example.com'],
         );
 
@@ -108,18 +114,20 @@ class RequestWrapperTest extends TestCase
 
     public function test_retry_of_links_to_original(): void
     {
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/first',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 
         $originalRequest = IntegrationRequest::first();
         $this->assertNotNull($originalRequest);
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/first',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
             retryOfId: $originalRequest->id,
         );
@@ -133,9 +141,10 @@ class RequestWrapperTest extends TestCase
     public function test_health_updated_on_failure(): void
     {
         try {
-            $this->integration->request(
+            $this->integration->requestAs(
                 endpoint: '/api/fail',
                 method: 'GET',
+                responseClass: TestOkResponse::class,
                 callback: fn () => throw new RuntimeException('fail'),
             );
         } catch (RuntimeException) {
@@ -150,9 +159,10 @@ class RequestWrapperTest extends TestCase
     {
         $this->integration->update(['consecutive_failures' => 3]);
 
-        $this->integration->request(
+        $this->integration->requestAs(
             endpoint: '/api/ok',
             method: 'GET',
+            responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 
