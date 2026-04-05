@@ -23,6 +23,7 @@ class CustomizesRetryTest extends TestCase
         RetryTestProvider::$isRetryable = null;
         RetryTestProvider::$delayMs = null;
         RetryTestProvider::$capturedStatusCode = 'not-called';
+        RetryTestProvider::$delayCallCount = 0;
 
         $manager = app(IntegrationManager::class);
         $manager->register('retry-test', RetryTestProvider::class);
@@ -37,6 +38,7 @@ class CustomizesRetryTest extends TestCase
     public function test_provider_can_mark_unknown_exception_as_retryable(): void
     {
         RetryTestProvider::$isRetryable = true;
+        RetryTestProvider::$delayMs = 0;
         $attempts = 0;
 
         try {
@@ -121,6 +123,7 @@ class CustomizesRetryTest extends TestCase
         }
 
         $this->assertSame(2, $attempts);
+        $this->assertSame(1, RetryTestProvider::$delayCallCount);
     }
 
     public function test_provider_delay_receives_status_code(): void
@@ -157,6 +160,8 @@ class RetryTestProvider implements CustomizesRetry, IntegrationProvider
 
     public static mixed $capturedStatusCode = 'not-called';
 
+    public static int $delayCallCount = 0;
+
     public function name(): string
     {
         return 'Retry Test Provider';
@@ -190,6 +195,7 @@ class RetryTestProvider implements CustomizesRetry, IntegrationProvider
     public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int
     {
         self::$capturedStatusCode = $statusCode;
+        self::$delayCallCount++;
 
         return self::$delayMs;
     }
