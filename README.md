@@ -385,7 +385,7 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
         );
 
         $count = 0;
-        foreach ($tickets['tickets'] as $ticket) {
+        foreach ($tickets->tickets as $ticket) {
             // Process each ticket...
             $count++;
         }
@@ -573,10 +573,10 @@ class ZendeskProvider implements IntegrationProvider, HasIncrementalSync
         // Process tickets...
 
         return new SyncResult(
-            successCount: count($tickets),
+            successCount: count($tickets->tickets),
             failureCount: 0,
             safeSyncedAt: now(),
-            cursor: $tickets['end_time'], // stored for next sync
+            cursor: $tickets->end_time, // stored for next sync
         );
     }
 
@@ -1042,10 +1042,10 @@ IntegrationRequest::fake([
 ]);
 
 // Returns 'first', 'second', 'third', then null
-$r1 = $integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: ItemListResponse::class, callback: fn () => Http::get($url));
+$r1 = $integration->request(endpoint: '/api/items', method: 'GET', callback: fn () => Http::get($url));
 
 // Throws RuntimeException
-$integration->requestAs(endpoint: '/api/fail', method: 'GET', responseClass: ErrorResponse::class, callback: fn () => Http::get($url));
+$integration->request(endpoint: '/api/fail', method: 'GET', callback: fn () => Http::get($url));
 ```
 
 Additional assertions:

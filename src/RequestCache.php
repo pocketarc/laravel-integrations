@@ -7,7 +7,9 @@ namespace Integrations;
 use Illuminate\Database\Eloquent\Builder;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use JsonException;
 use Spatie\LaravelData\Data;
+use Throwable;
 
 use function Safe\json_decode;
 
@@ -88,10 +90,19 @@ final class RequestCache
     {
         try {
             $decoded = json_decode($cached->response_data ?? '{}', true, 512, JSON_THROW_ON_ERROR);
-            $cached->increment($hitColumn);
+        } catch (JsonException) {
+            return null;
+        }
 
-            return $responseClass !== null ? $responseClass::from($decoded) : $decoded;
-        } catch (\JsonException) {
+        $cached->increment($hitColumn);
+
+        if ($responseClass === null) {
+            return $decoded;
+        }
+
+        try {
+            return $responseClass::from($decoded);
+        } catch (Throwable) {
             return null;
         }
     }

@@ -230,6 +230,10 @@ class Integration extends Model
     ): mixed {
         $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
+        }
+
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
             $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
@@ -269,6 +273,10 @@ class Integration extends Model
         ?int $maxAttempts = null,
     ): mixed {
         $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
+        }
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {

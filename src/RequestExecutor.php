@@ -122,6 +122,7 @@ final class RequestExecutor
                 }
 
                 usleep(RetryHandler::calculateDelayMs($e, $attempt) * 1000);
+                $this->enforceRateLimit();
             }
         }
 
@@ -289,7 +290,7 @@ final class RequestExecutor
         }
 
         if ($cacheFor !== null && $responseClass === null && is_object($parsed)) {
-            Log::warning("Caching response for '{$endpoint}' without a responseClass — cached responses will be returned as arrays, not ".get_class($parsed).'. Pass responseClass: to request() or to() for type-consistent caching.');
+            Log::warning("Caching response for '{$endpoint}' without a responseClass — cached responses will be returned as arrays, not ".get_class($parsed).'. Use requestAs() or toAs() for type-consistent caching.');
         }
 
         return $parsed;
