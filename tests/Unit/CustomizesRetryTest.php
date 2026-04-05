@@ -20,6 +20,10 @@ class CustomizesRetryTest extends TestCase
     {
         parent::setUp();
 
+        RetryTestProvider::$isRetryable = null;
+        RetryTestProvider::$delayMs = null;
+        RetryTestProvider::$capturedStatusCode = 'not-called';
+
         $manager = app(IntegrationManager::class);
         $manager->register('retry-test', RetryTestProvider::class);
 
