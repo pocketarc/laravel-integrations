@@ -322,7 +322,6 @@ class Integration extends Model
         $newStatus = null;
 
         DB::transaction(function () use (&$previousStatus, &$newStatus): void {
-            /** @var Integration|null $locked */
             $locked = Integration::lockForUpdate()->find($this->id);
 
             if ($locked === null) {
@@ -515,7 +514,6 @@ class Integration extends Model
 
     public function mapExternalId(string $externalId, Model $internalModel): IntegrationMapping
     {
-        /** @var IntegrationMapping */
         return $this->mappings()->updateOrCreate(
             [
                 'external_id' => $externalId,

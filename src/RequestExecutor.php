@@ -20,6 +20,7 @@ use Integrations\Support\Config;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
+use RuntimeException;
 use Spatie\LaravelData\Data;
 
 final class RequestExecutor
@@ -126,7 +127,7 @@ final class RequestExecutor
             }
         }
 
-        throw new \RuntimeException('Retry logic exhausted without result.');
+        throw new RuntimeException('Retry logic exhausted without result.');
     }
 
     /**
