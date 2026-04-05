@@ -28,7 +28,7 @@ class PendingRequest
 
     private ?int $retryOfId = null;
 
-    private ?int $maxRetries = null;
+    private ?int $maxAttempts = null;
 
     /**
      * @param  class-string<TResponse>|null  $responseClass
@@ -49,9 +49,9 @@ class PendingRequest
     }
 
     /** @return self<TResponse> */
-    public function withRetries(int $max): self
+    public function withAttempts(int $max): self
     {
-        $this->maxRetries = $max;
+        $this->maxAttempts = $max;
 
         return $this;
     }
@@ -155,7 +155,7 @@ class PendingRequest
                 cacheFor: $this->cacheFor,
                 serveStale: $this->serveStale,
                 retryOfId: $this->retryOfId,
-                maxRetries: $this->maxRetries,
+                maxAttempts: $this->maxAttempts,
             );
         }
 
@@ -168,7 +168,7 @@ class PendingRequest
             cacheFor: $this->cacheFor,
             serveStale: $this->serveStale,
             retryOfId: $this->retryOfId,
-            maxRetries: $this->maxRetries,
+            maxAttempts: $this->maxAttempts,
         );
     }
 

@@ -60,7 +60,7 @@ class PendingRequestTest extends TestCase
         IntegrationRequestFake::activate(['/api/test' => ['ok' => true]]);
 
         $this->integration->toAs('/api/test', TestOkResponse::class)
-            ->withRetries(3)
+            ->withAttempts(3)
             ->get(fn () => ['ok' => true]);
 
         IntegrationRequestFake::assertRequested('/api/test');
@@ -85,7 +85,7 @@ class PendingRequestTest extends TestCase
     {
         $pending = $this->integration->toAs('/api/test', TestOkResponse::class);
 
-        $this->assertSame($pending, $pending->withRetries(2));
+        $this->assertSame($pending, $pending->withAttempts(2));
         $this->assertSame($pending, $pending->withData('data'));
         $this->assertSame($pending, $pending->withCache(60));
     }

@@ -226,9 +226,9 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        ?int $maxRetries = null,
+        ?int $maxAttempts = null,
     ): mixed {
-        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+        $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -241,7 +241,7 @@ class Integration extends Model
 
         return $this->executor()->execute(
             $endpoint, $method, null, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxRetries,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
         );
     }
 
@@ -266,9 +266,9 @@ class Integration extends Model
         ?CarbonInterface $cacheFor = null,
         bool $serveStale = false,
         ?int $retryOfId = null,
-        ?int $maxRetries = null,
+        ?int $maxAttempts = null,
     ): mixed {
-        $maxRetries ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
+        $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
@@ -281,7 +281,7 @@ class Integration extends Model
 
         return $this->executor()->execute(
             $endpoint, $method, $responseClass, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxRetries,
+            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
         );
     }
 

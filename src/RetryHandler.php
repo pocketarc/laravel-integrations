@@ -28,22 +28,22 @@ class RetryHandler
      */
     public static function execute(
         Closure $callback,
-        int $maxRetries = 3,
+        int $maxAttempts = 3,
         array $retryableStatusCodes = [429, 500, 502, 503, 504],
         int $rateLimitDelayMs = 30_000,
         int $serverErrorBaseDelayMs = 2_000,
         int $defaultBaseDelayMs = 1_000,
         ?Closure $onRetry = null,
     ): mixed {
-        if ($maxRetries < 1) {
-            throw new InvalidArgumentException('$maxRetries must be at least 1.');
+        if ($maxAttempts < 1) {
+            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
         }
 
         if ($rateLimitDelayMs < 0 || $serverErrorBaseDelayMs < 0 || $defaultBaseDelayMs < 0) {
             throw new InvalidArgumentException('Delay values must be non-negative.');
         }
 
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             try {
                 return $callback();
             } catch (Throwable $e) {
@@ -53,7 +53,7 @@ class RetryHandler
                     throw $e;
                 }
 
-                if ($attempt >= $maxRetries) {
+                if ($attempt >= $maxAttempts) {
                     throw new RetriesExhaustedException($attempt - 1, $e);
                 }
 

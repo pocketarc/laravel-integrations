@@ -176,7 +176,7 @@ $tickets = $integration->requestAs(
     requestData: ['status' => 'open'], // optional - logged (auto-captured for HTTP responses)
     cacheFor: now()->addHour(),        // optional - cache the response
     serveStale: true,                  // optional - return expired cache on error
-    maxRetries: 3,                     // optional - retry on transient errors (default: 3)
+    maxAttempts: 3,                     // optional - total attempts including first (default: 3 for GET, 1 otherwise)
 );
 ```
 
@@ -244,7 +244,7 @@ Cache hits and stale hits are tracked per-response via `cache_hits` and `stale_h
 <details>
 <summary><strong>Retries</strong></summary>
 
-Requests retry up to 3 times by default on transient errors (429, 5xx, connection errors). Override per-request:
+GET requests default to 3 attempts (1 original + up to 2 retries) on transient errors (429, 5xx, connection errors). Non-GET requests default to 1 attempt (no retries). Override per-request:
 
 ```php
 $tickets = $integration->requestAs(
@@ -252,7 +252,7 @@ $tickets = $integration->requestAs(
     method: 'GET',
     responseClass: TicketListResponse::class,
     callback: fn () => Http::get($url),
-    maxRetries: 3,
+    maxAttempts: 3,
 );
 ```
 
@@ -279,7 +279,7 @@ use Integrations\RetryHandler;
 
 $result = RetryHandler::execute(
     callback: fn () => Http::get($url)->throw(),
-    maxRetries: 3,
+    maxAttempts: 3,
     retryableStatusCodes: [429, 500, 502, 503, 504],
     onRetry: function (int $attempt, Throwable $e) {
         Log::warning("Retry attempt {$attempt}", ['error' => $e->getMessage()]);
@@ -300,7 +300,7 @@ A chainable API is available via `Integration::toAs()` (typed) and `Integration:
 // With a callback
 $tickets = $integration->toAs('/api/v2/tickets.json', TicketListResponse::class)
     ->withCache(3600, serveStale: true)
-    ->withRetries(3)
+    ->withAttempts(3)
     ->relatedTo($ticket)
     ->get(fn () => Http::get($url));
 
@@ -317,7 +317,7 @@ $pdf = $integration->to('/api/invoice.pdf')
     ->get(fn () => Http::get($url));
 ```
 
-Available methods: `withCache(int|CarbonInterface $ttl, bool $serveStale)`, `withRetries(int $max)`, `relatedTo(Model $model)`, `withData(string|array $data)`, `retryOf(int $id)`. Terminal methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `execute(string $method, Closure $callback)`.
+Available methods: `withCache(int|CarbonInterface $ttl, bool $serveStale)`, `withAttempts(int $max)`, `relatedTo(Model $model)`, `withData(string|array $data)`, `retryOf(int $id)`. Terminal methods: `get()`, `post()`, `put()`, `patch()`, `delete()`, `execute(string $method, Closure $callback)`.
 
 </details>
 

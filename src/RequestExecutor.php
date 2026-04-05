@@ -52,7 +52,7 @@ final class RequestExecutor
         ?CarbonInterface $cacheFor,
         bool $serveStale,
         ?int $retryOfId,
-        int $maxRetries,
+        int $maxAttempts,
     ): mixed {
         $this->enforceRateLimit();
 
@@ -65,10 +65,10 @@ final class RequestExecutor
             }
         }
 
-        if ($maxRetries > 1) {
+        if ($maxAttempts > 1) {
             return $this->requestWithRetries(
                 $endpoint, $method, $responseClass, $callback, $relatedTo,
-                $encodedRequestData, $cacheFor, $serveStale, $maxRetries, $retryOfId,
+                $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
             );
         }
 
@@ -93,15 +93,15 @@ final class RequestExecutor
         ?string $encodedRequestData,
         ?CarbonInterface $cacheFor,
         bool $serveStale,
-        int $maxRetries,
+        int $maxAttempts,
         ?int $retryOfId = null,
     ): mixed {
         $firstRequestId = $retryOfId;
 
         $this->lastCreatedRequestId = null;
 
-        for ($attempt = 1; $attempt <= $maxRetries; $attempt++) {
-            $isLastAttempt = $attempt >= $maxRetries;
+        for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
+            $isLastAttempt = $attempt >= $maxAttempts;
             $allowStale = $serveStale && $isLastAttempt;
 
             try {
