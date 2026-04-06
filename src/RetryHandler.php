@@ -4,9 +4,12 @@ declare(strict_types=1);
 
 namespace Integrations;
 
+use Carbon\Carbon;
 use Closure;
+use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use Illuminate\Http\Client\ConnectionException;
 use Integrations\Exceptions\RetriesExhaustedException;
+use Integrations\Support\Config;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
 use RuntimeException;
@@ -61,8 +64,8 @@ class RetryHandler
                     ($onRetry)($attempt, $e);
                 }
 
-                $delayMs = self::calculateDelay(
-                    $statusCode, $attempt,
+                $delayMs = self::resolveDelay(
+                    $e, $statusCode, $attempt,
                     $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs,
                 );
                 usleep($delayMs * 1000);
@@ -88,6 +91,12 @@ class RetryHandler
     public static function calculateDelayMs(Throwable $e, int $attempt): int
     {
         $attempt = max(1, $attempt);
+
+        $retryAfterMs = self::extractRetryAfterMs($e);
+        if ($retryAfterMs !== null) {
+            return min($retryAfterMs, Config::retryAfterMaxMs());
+        }
+
         $statusCode = ResponseHelper::extractStatusCode($e);
 
         return self::calculateDelay($statusCode, $attempt, 30_000, 2_000, 1_000);
@@ -98,8 +107,10 @@ class RetryHandler
      */
     private static function isRetryableInternal(Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
     {
-        if ($e instanceof ConnectionException) {
-            return true;
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof ConnectionException) {
+                return true;
+            }
         }
 
         if ($statusCode !== null && in_array($statusCode, $retryableStatusCodes, true)) {
@@ -107,6 +118,22 @@ class RetryHandler
         }
 
         return false;
+    }
+
+    private static function resolveDelay(
+        Throwable $e,
+        ?int $statusCode,
+        int $attempt,
+        int $rateLimitDelayMs,
+        int $serverErrorBaseDelayMs,
+        int $defaultBaseDelayMs,
+    ): int {
+        $retryAfterMs = self::extractRetryAfterMs($e);
+        if ($retryAfterMs !== null) {
+            return min($retryAfterMs, Config::retryAfterMaxMs());
+        }
+
+        return self::calculateDelay($statusCode, $attempt, $rateLimitDelayMs, $serverErrorBaseDelayMs, $defaultBaseDelayMs);
     }
 
     private static function calculateDelay(
@@ -125,5 +152,37 @@ class RetryHandler
         }
 
         return $attempt * $defaultBaseDelayMs;
+    }
+
+    /**
+     * Extract a Retry-After delay from the exception chain, if available.
+     *
+     * Supports both numeric seconds and HTTP-date formats per RFC 9110 §10.2.3.
+     */
+    private static function extractRetryAfterMs(Throwable $e): ?int
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof GuzzleRequestException && $current->getResponse() !== null) {
+                $header = $current->getResponse()->getHeaderLine('Retry-After');
+                if ($header === '') {
+                    break;
+                }
+
+                if (is_numeric($header)) {
+                    return (int) ((float) $header * 1000);
+                }
+
+                try {
+                    $retryAt = Carbon::parse($header);
+                    $delaySeconds = now()->diffInSeconds($retryAt, absolute: false);
+
+                    return $delaySeconds > 0 ? (int) ($delaySeconds * 1000) : null;
+                } catch (Throwable) {
+                    return null;
+                }
+            }
+        }
+
+        return null;
     }
 }

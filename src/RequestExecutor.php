@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
+use Integrations\Contracts\CustomizesRetry;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Events\RequestCompleted;
@@ -66,16 +67,9 @@ final class RequestExecutor
 
         $this->enforceRateLimit();
 
-        if ($maxAttempts > 1) {
-            return $this->requestWithRetries(
-                $endpoint, $method, $responseClass, $callback, $relatedTo,
-                $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
-            );
-        }
-
-        return $this->executeRequest(
+        return $this->requestWithRetries(
             $endpoint, $method, $responseClass, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $retryOfId,
+            $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
         );
     }
 
@@ -118,11 +112,19 @@ final class RequestExecutor
             } catch (\Throwable $e) {
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
-                if (! RetryHandler::isRetryable($e) || $isLastAttempt) {
+                $provider = $this->integration->provider();
+                $providerRetryable = $provider instanceof CustomizesRetry ? $provider->isRetryable($e) : null;
+                $retryable = $providerRetryable ?? RetryHandler::isRetryable($e);
+
+                if (! $retryable || $isLastAttempt) {
                     return $this->serveStaleOrRethrow($e, $serveStale && ! $allowStale, $endpoint, $method, $encodedRequestData, $responseClass);
                 }
 
-                usleep(RetryHandler::calculateDelayMs($e, $attempt) * 1000);
+                $statusCode = ResponseHelper::extractStatusCode($e);
+                $providerDelay = $provider instanceof CustomizesRetry ? $provider->retryDelayMs($e, $attempt, $statusCode) : null;
+                $delayMs = $providerDelay ?? RetryHandler::calculateDelayMs($e, $attempt);
+
+                usleep($delayMs * 1000);
                 $this->enforceRateLimit();
             }
         }
