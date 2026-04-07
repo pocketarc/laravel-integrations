@@ -1,5 +1,6 @@
 import { defineConfig } from "vitepress";
 import llmstxt from "vitepress-plugin-llms";
+import { copyOrDownloadAsMarkdownButtons } from "vitepress-plugin-llms";
 
 export default defineConfig({
   title: "Laravel Integrations",
@@ -10,6 +11,12 @@ export default defineConfig({
   cleanUrls: true,
 
   srcExclude: ["**/README.md"],
+
+  markdown: {
+    config(md) {
+      md.use(copyOrDownloadAsMarkdownButtons);
+    },
+  },
 
   head: [
     // ["link", { rel: "icon", href: "/favicon.ico" }],
@@ -181,6 +188,10 @@ export default defineConfig({
   },
 
   vite: {
-    plugins: [llmstxt()],
+    plugins: [
+      llmstxt({
+        domain: "https://integrations.pocketarc.com",
+      }),
+    ],
   },
 });
