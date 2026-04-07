@@ -29,20 +29,24 @@ The `integrations:sync` command finds all active integrations where `next_sync_a
 ## Provider example
 
 ```php
-class ZendeskProvider implements IntegrationProvider, HasScheduledSync
+class GitHubProvider implements IntegrationProvider, HasScheduledSync
 {
     public function sync(Integration $integration): SyncResult
     {
-        $tickets = $integration->requestAs(
-            endpoint: '/api/v2/tickets.json',
+        $meta = $integration->metadata;
+
+        $issues = $integration->requestAs(
+            endpoint: '/repos/{owner}/{repo}/issues',
             method: 'GET',
-            responseClass: TicketListResponse::class,
-            callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
+            responseClass: IssueListResponse::class,
+            callback: fn () => Http::withHeaders([
+                'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
+            ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"),
         );
 
         $count = 0;
-        foreach ($tickets->tickets as $ticket) {
-            // Process each ticket...
+        foreach ($issues->issues as $issue) {
+            // Process each issue...
             $count++;
         }
 
@@ -56,7 +60,7 @@ class ZendeskProvider implements IntegrationProvider, HasScheduledSync
 
     public function defaultRateLimit(): ?int
     {
-        return 400; // Zendesk allows ~400 requests/minute
+        return 83; // ~5000 requests/hour (GitHub authenticated)
     }
 }
 ```
@@ -94,26 +98,32 @@ For providers that support fetching only changed records since a cursor or times
 ```php
 use Integrations\Contracts\HasIncrementalSync;
 
-class ZendeskProvider implements IntegrationProvider, HasIncrementalSync
+class GitHubProvider implements IntegrationProvider, HasIncrementalSync
 {
     public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
     {
-        $startTime = $cursor ?? now()->subDay()->toIso8601String();
+        $since = $cursor ?? now()->subDay()->toIso8601String();
+        $meta = $integration->metadata;
 
-        $tickets = $integration->requestAs(
-            endpoint: '/api/v2/incremental/tickets.json',
+        $issues = $integration->requestAs(
+            endpoint: '/repos/{owner}/{repo}/issues',
             method: 'GET',
-            responseClass: IncrementalTicketResponse::class,
-            callback: fn () => Http::get($url, ['start_time' => $startTime]),
+            responseClass: IssueListResponse::class,
+            callback: fn () => Http::withHeaders([
+                'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
+            ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues", [
+                'since' => $since,
+                'state' => 'all',
+            ]),
         );
 
-        // Process tickets...
+        // Process issues...
 
         return new SyncResult(
-            successCount: count($tickets->tickets),
+            successCount: count($issues->issues),
             failureCount: 0,
             safeSyncedAt: now(),
-            cursor: $tickets->end_time, // stored for next sync
+            cursor: now()->toIso8601String(), // stored for next sync
         );
     }
 

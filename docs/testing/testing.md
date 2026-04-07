@@ -55,8 +55,81 @@ IntegrationRequest::stopFaking();
 
 ### CreatesIntegration trait
 
-A `createIntegration()` method for test setup. Creates an integration with default values and a registered provider.
+A `createIntegration()` method for test setup. Creates an integration with default values and a registered provider. Use this when your test class already extends a base `TestCase` and you just need a quick integration instance:
+
+```php
+use Integrations\Testing\CreatesIntegration;
+use Tests\TestCase;
+
+class TicketSyncTest extends TestCase
+{
+    use CreatesIntegration;
+
+    public function test_syncs_tickets(): void
+    {
+        $integration = $this->createIntegration('github');
+
+        IntegrationRequest::fake([
+            'tickets.list' => ['tickets' => [['id' => 1, 'subject' => 'Bug report']]],
+        ]);
+
+        $result = $integration->requestAs(
+            endpoint: 'tickets.list',
+            method: 'GET',
+            responseClass: TicketListResponse::class,
+            callback: fn () => Http::get('https://api.github.com/issues'),
+        );
+
+        IntegrationRequest::assertRequested('tickets.list');
+    }
+}
+```
+
+The trait handles creating the `Integration` model with sensible defaults (active status, healthy state, a registered provider) so you can focus on the behavior under test.
 
 ### IntegrationTestCase
 
-Base test class that extends Laravel's `TestCase` with integration-specific setup and teardown.
+Base test class that extends Laravel's `TestCase` with integration-specific setup and teardown. It activates the fake in `setUp()` and calls `stopFaking()` in `tearDown()`, so you don't need to manage fake lifecycle manually:
+
+```php
+use Integrations\Testing\IntegrationTestCase;
+
+class GitHubProviderTest extends IntegrationTestCase
+{
+    // The fake is automatically activated in setUp()
+    // An integration is available via $this->integration
+
+    public function test_fetches_repository(): void
+    {
+        IntegrationRequest::fake([
+            'repos.get' => ['id' => 42, 'name' => 'laravel-integrations'],
+        ]);
+
+        $repo = $this->integration->requestAs(
+            endpoint: 'repos.get',
+            method: 'GET',
+            responseClass: RepoData::class,
+            callback: fn () => Http::get('https://api.github.com/repos/pocketarc/laravel-integrations'),
+        );
+
+        IntegrationRequest::assertRequested('repos.get');
+    }
+
+    public function test_handles_api_failure(): void
+    {
+        IntegrationRequest::fake([
+            'repos.get' => new \RuntimeException('API rate limit exceeded'),
+        ]);
+
+        $this->expectException(\RuntimeException::class);
+
+        $this->integration->request(
+            endpoint: 'repos.get',
+            method: 'GET',
+            callback: fn () => Http::get('https://api.github.com/repos/pocketarc/laravel-integrations'),
+        );
+    }
+}
+```
+
+Use `IntegrationTestCase` when most of your tests need an integration instance and fake -- it removes the boilerplate of setting those up in every test class.

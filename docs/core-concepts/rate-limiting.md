@@ -14,11 +14,11 @@ Every attempt (including retries) counts toward the rate limit.
 ## Provider configuration
 
 ```php
-class ZendeskProvider implements IntegrationProvider, HasScheduledSync
+class GitHubProvider implements IntegrationProvider, HasScheduledSync
 {
     public function defaultRateLimit(): ?int
     {
-        return 400; // requests per minute, null = unlimited
+        return 83; // ~5000 requests/hour, null = unlimited
     }
 
     // ...

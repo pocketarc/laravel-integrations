@@ -31,7 +31,6 @@ Register providers in `config/integrations.php`:
 
 ```php
 'providers' => [
-    'zendesk' => App\Integrations\ZendeskProvider::class,
     'github'  => App\Integrations\GitHubProvider::class,
 ],
 ```
@@ -41,10 +40,10 @@ Or programmatically via the facade:
 ```php
 use Integrations\Facades\Integrations;
 
-Integrations::register('zendesk', ZendeskProvider::class);
+Integrations::register('github', GitHubProvider::class);
 ```
 
-The key (`'zendesk'`) is the provider identifier stored in the `Integration` model's `provider` column.
+The key (`'github'`) is the provider identifier stored in the `Integration` model's `provider` column.
 
 ## Optional interfaces
 

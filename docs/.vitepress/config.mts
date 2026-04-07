@@ -12,7 +12,7 @@ export default defineConfig({
   srcExclude: ["**/README.md"],
 
   head: [
-    ["link", { rel: "icon", href: "/favicon.ico" }],
+    // ["link", { rel: "icon", href: "/favicon.ico" }],
     ["meta", { name: "author", content: "Bruno Moreira" }],
 
     // OpenGraph
@@ -31,7 +31,7 @@ export default defineConfig({
       },
     ],
 
-    ["meta", { property: "og:image", content: "/og-image.png" }],
+    ["meta", { property: "og:image", content: "https://integrations.pocketarc.com/og-image.png" }],
 
     // Twitter/X card
     ["meta", { name: "twitter:card", content: "summary_large_image" }],
@@ -55,37 +55,37 @@ export default defineConfig({
 
     sidebar: [
       {
-        text: "Getting Started",
+        text: "Getting started",
         items: [
           { text: "Introduction", link: "/getting-started/introduction" },
           { text: "Installation", link: "/getting-started/installation" },
-          { text: "Quick Start", link: "/getting-started/quick-start" },
+          { text: "Quick start", link: "/getting-started/quick-start" },
           {
-            text: "Scaffolding Providers",
+            text: "Scaffolding providers",
             link: "/getting-started/scaffolding",
           },
         ],
       },
       {
-        text: "Core Concepts",
+        text: "Core concepts",
         items: [
           { text: "Providers", link: "/core-concepts/providers" },
           {
-            text: "Credentials & Metadata",
+            text: "Credentials & metadata",
             link: "/core-concepts/credentials",
           },
           {
-            text: "Making Requests",
+            text: "Making requests",
             link: "/core-concepts/making-requests",
           },
           {
-            text: "Response Caching",
+            text: "Response caching",
             link: "/core-concepts/response-caching",
           },
           { text: "Retries", link: "/core-concepts/retries" },
-          { text: "Rate Limiting", link: "/core-concepts/rate-limiting" },
+          { text: "Rate limiting", link: "/core-concepts/rate-limiting" },
           {
-            text: "Health Monitoring",
+            text: "Health monitoring",
             link: "/core-concepts/health-monitoring",
           },
           { text: "Logging", link: "/core-concepts/logging" },
@@ -96,9 +96,9 @@ export default defineConfig({
         items: [
           { text: "OAuth2", link: "/features/oauth2" },
           { text: "Webhooks", link: "/features/webhooks" },
-          { text: "Scheduled Syncs", link: "/features/scheduled-syncs" },
-          { text: "ID Mapping", link: "/features/id-mapping" },
-          { text: "Data Redaction", link: "/features/redaction" },
+          { text: "Scheduled syncs", link: "/features/scheduled-syncs" },
+          { text: "ID mapping", link: "/features/id-mapping" },
+          { text: "Data redaction", link: "/features/redaction" },
           { text: "Multi-tenancy", link: "/features/multi-tenancy" },
         ],
       },
@@ -112,11 +112,11 @@ export default defineConfig({
           { text: "Contracts", link: "/reference/contracts" },
           { text: "Configuration", link: "/reference/configuration" },
           {
-            text: "Artisan Commands",
+            text: "Artisan commands",
             link: "/reference/artisan-commands",
           },
           { text: "Events", link: "/reference/events" },
-          { text: "Database Schema", link: "/reference/database-schema" },
+          { text: "Database schema", link: "/reference/database-schema" },
           { text: "Models", link: "/reference/models" },
         ],
       },
@@ -127,7 +127,7 @@ export default defineConfig({
           { text: "GitHub", link: "/adapters/github" },
           { text: "Zendesk", link: "/adapters/zendesk" },
           {
-            text: "Building Adapters",
+            text: "Building adapters",
             link: "/adapters/building-adapters",
           },
         ],
@@ -135,12 +135,19 @@ export default defineConfig({
       {
         text: "Advanced",
         items: [
-          { text: "Custom Retry Logic", link: "/advanced/custom-retry" },
+          { text: "Custom retry logic", link: "/advanced/custom-retry" },
           {
-            text: "Health Notifications",
+            text: "Health notifications",
             link: "/advanced/notifications",
           },
           { text: "Extending", link: "/advanced/extending" },
+        ],
+      },
+      {
+        text: "About",
+        items: [
+          { text: "Changelog", link: "/about/changelog" },
+          { text: "Upgrade guide", link: "/about/upgrade-guide" },
         ],
       },
     ],

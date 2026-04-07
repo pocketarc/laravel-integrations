@@ -11,32 +11,31 @@ namespace App\Integrations;
 
 use Integrations\Contracts\IntegrationProvider;
 
-class ZendeskProvider implements IntegrationProvider
+class GitHubProvider implements IntegrationProvider
 {
     public function name(): string
     {
-        return 'Zendesk';
+        return 'GitHub';
     }
 
     public function credentialRules(): array
     {
         return [
-            'subdomain' => ['required', 'string'],
-            'api_token' => ['required', 'string'],
-            'email' => ['required', 'email'],
+            'token' => ['required', 'string'],
         ];
     }
 
     public function metadataRules(): array
     {
         return [
-            'locale' => ['sometimes', 'string'],
+            'owner' => ['required', 'string'],
+            'repo' => ['required', 'string'],
         ];
     }
 
     public function credentialDataClass(): ?string
     {
-        return ZendeskCredentials::class;
+        return GitHubCredentials::class;
     }
 
     public function metadataDataClass(): ?string
@@ -54,7 +53,7 @@ In `config/integrations.php`:
 
 ```php
 'providers' => [
-    'zendesk' => App\Integrations\ZendeskProvider::class,
+    'github' => App\Integrations\GitHubProvider::class,
 ],
 ```
 
@@ -63,7 +62,7 @@ Or programmatically via the facade:
 ```php
 use Integrations\Facades\Integrations;
 
-Integrations::register('zendesk', ZendeskProvider::class);
+Integrations::register('github', GitHubProvider::class);
 ```
 
 ## 3. Create an integration
@@ -72,14 +71,12 @@ Integrations::register('zendesk', ZendeskProvider::class);
 use Integrations\Models\Integration;
 
 $integration = Integration::create([
-    'provider' => 'zendesk',
-    'name' => 'Production Zendesk',
+    'provider' => 'github',
+    'name' => 'Acme GitHub',
     'credentials' => [
-        'subdomain' => 'acme',
-        'api_token' => 'abc123',
-        'email' => 'admin@acme.com',
+        'token' => 'ghp_abc123...',
     ],
-    'metadata' => ['locale' => 'en-US'],
+    'metadata' => ['owner' => 'acme', 'repo' => 'widgets'],
 ]);
 ```
 
@@ -90,13 +87,15 @@ Credentials are encrypted at rest automatically. Metadata is stored as plain JSO
 Both `request()` and `requestAs()` wrap your API call with logging, caching, rate limiting, retries, and health tracking:
 
 ```php
-$tickets = $integration->requestAs(
-    endpoint: '/api/v2/tickets.json',
+$meta = $integration->metadata;
+
+$issues = $integration->requestAs(
+    endpoint: '/repos/{owner}/{repo}/issues',
     method: 'GET',
-    responseClass: TicketListResponse::class,
+    responseClass: IssueListResponse::class,
     callback: fn () => Http::withHeaders([
-        'Authorization' => 'Bearer '.$integration->credentialsArray()['api_token'],
-    ])->get("https://{$subdomain}.zendesk.com/api/v2/tickets.json"),
+        'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
+    ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"),
 );
 ```
 
@@ -107,4 +106,4 @@ Use `requestAs()` for typed responses (returns a [Spatie Data](https://spatie.be
 - [Making Requests](/core-concepts/making-requests) -- the full request API including the fluent builder
 - [Provider Contracts](/core-concepts/providers) -- optional interfaces for OAuth2, syncs, webhooks, and more
 - [Credentials & Metadata](/core-concepts/credentials) -- typed Data classes for credentials
-- [Adapters](/adapters/overview) -- ready-to-use adapters for GitHub, Zendesk, and more
+- [Adapters](/adapters/overview) -- ready-to-use adapters for GitHub and more

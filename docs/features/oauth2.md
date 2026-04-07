@@ -42,7 +42,7 @@ The package registers these routes automatically:
 Link to the authorize route from your UI:
 
 ```html
-<a href="{{ route('integrations.oauth.authorize', $integration) }}">Connect to Zendesk</a>
+<a href="{{ route('integrations.oauth.authorize', $integration) }}">Connect to GitHub</a>
 ```
 
 The package generates a state token, caches it, and redirects the user to the provider's consent page via your `authorizationUrl()` implementation. After the user authorizes, the provider redirects back to the callback route, which exchanges the code for tokens and stores them in the encrypted credentials column.

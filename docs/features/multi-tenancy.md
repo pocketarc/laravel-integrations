@@ -6,8 +6,8 @@ The `Integration` model has optional polymorphic `owner_type`/`owner_id` columns
 
 ```php
 $integration = Integration::create([
-    'provider' => 'zendesk',
-    'name' => 'Acme Zendesk',
+    'provider' => 'github',
+    'name' => 'Acme GitHub',
     'credentials' => [...],
     'owner_type' => Team::class,
     'owner_id' => $team->id,

@@ -5,17 +5,17 @@ The `make:integration-provider` Artisan command generates a provider class with 
 ## Basic usage
 
 ```bash
-php artisan make:integration-provider Zendesk
+php artisan make:integration-provider GitHub
 ```
 
-This creates `app/Integrations/ZendeskProvider.php` implementing `IntegrationProvider`.
+This creates `app/Integrations/GitHubProvider.php` implementing `IntegrationProvider`.
 
 ## Adding capabilities
 
 Use flags to include optional interfaces:
 
 ```bash
-php artisan make:integration-provider Zendesk --sync --webhooks --oauth --health-check
+php artisan make:integration-provider GitHub --sync --webhooks --oauth --health-check
 ```
 
 | Flag             | Interface added      |
@@ -31,7 +31,7 @@ php artisan make:integration-provider Zendesk --sync --webhooks --oauth --health
 Run without flags for interactive prompts that walk you through which capabilities to include:
 
 ```bash
-php artisan make:integration-provider Zendesk
+php artisan make:integration-provider GitHub
 ```
 
 ## What gets generated
@@ -42,6 +42,6 @@ After generating, register the provider in `config/integrations.php`:
 
 ```php
 'providers' => [
-    'zendesk' => App\Integrations\ZendeskProvider::class,
+    'github' => App\Integrations\GitHubProvider::class,
 ],
 ```

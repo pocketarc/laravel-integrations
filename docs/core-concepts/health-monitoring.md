@@ -49,16 +49,18 @@ interface HasHealthCheck
 ```
 
 ```php
-class ZendeskProvider implements IntegrationProvider, HasHealthCheck
+class GitHubProvider implements IntegrationProvider, HasHealthCheck
 {
     public function healthCheck(Integration $integration): bool
     {
         try {
             $integration->requestAs(
-                endpoint: '/api/v2/users/me.json',
+                endpoint: '/user',
                 method: 'GET',
                 responseClass: UserResponse::class,
-                callback: fn () => Http::get("https://{$subdomain}.zendesk.com/api/v2/users/me.json"),
+                callback: fn () => Http::withHeaders([
+                    'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
+                ])->get('https://api.github.com/user'),
             );
             return true;
         } catch (\Throwable) {

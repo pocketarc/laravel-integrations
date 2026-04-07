@@ -1,0 +1,12 @@
+# Hashed assets - cache immutably
+/assets/*
+  Cache-Control: public, max-age=31536000, immutable
+
+/*
+  X-Frame-Options: DENY
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: no-referrer
+  Permissions-Policy: document-domain=()
+
+https://:project.pages.dev/*
+  X-Robots-Tag: noindex

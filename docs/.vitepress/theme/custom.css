@@ -9,3 +9,33 @@
   --vp-c-brand-2: #5b8def;
   --vp-c-brand-3: #4a7de0;
 }
+
+/* Inlined Excalidraw SVGs: responsive, transparent bg, invert for dark mode */
+.inline-svg svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.inline-svg rect[fill="#fff"],
+.inline-svg rect[fill="#ffffff"] {
+  fill: transparent !important;
+}
+
+.inline-svg [stroke="#1e1e1e"] {
+  stroke: var(--vp-c-text-1) !important;
+}
+
+.inline-svg [fill="#1e1e1e"],
+.inline-svg [fill="#000"] {
+  fill: var(--vp-c-text-1) !important;
+}
+
+/* Preserve mask internals - undo overrides inside masks */
+.inline-svg mask rect[fill="#fff"],
+.inline-svg mask rect[fill="#ffffff"] {
+  fill: #fff !important;
+}
+
+.inline-svg mask rect[fill="#000"] {
+  fill: #000 !important;
+}

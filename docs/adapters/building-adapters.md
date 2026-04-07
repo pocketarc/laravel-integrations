@@ -7,16 +7,16 @@ This guide covers the conventions used by the official adapters. Follow these pa
 Each adapter follows this directory layout:
 
 ```
-YourService/
-├── YourServiceProvider.php      # Main provider implementing contracts
-├── YourServiceClient.php        # Wraps the SDK, bootstraps credentials
-├── YourServiceCredentials.php   # Spatie Data class for credentials
-├── YourServiceMetadata.php      # Spatie Data class for metadata
-├── YourServiceResource.php      # Abstract base for resource classes
-├── Data/                        # Spatie Data DTOs for API responses
-├── Resources/                   # Concrete resource implementations
-├── Enums/                       # Enums for statuses, types, etc.
-└── Events/                      # Dispatchable events for sync
+Linear/
+├── LinearProvider.php      # Main provider implementing contracts
+├── LinearClient.php        # Wraps the SDK, bootstraps credentials
+├── LinearCredentials.php   # Spatie Data class for credentials
+├── LinearMetadata.php      # Spatie Data class for metadata
+├── LinearResource.php      # Abstract base for resource classes
+├── Data/                   # Spatie Data DTOs for API responses
+├── Resources/              # Concrete resource implementations
+├── Enums/                  # Enums for statuses, types, etc.
+└── Events/                 # Dispatchable events for sync
 ```
 
 ## Provider class
@@ -24,7 +24,7 @@ YourService/
 The provider implements `IntegrationProvider` plus whichever optional contracts make sense:
 
 ```php
-class YourServiceProvider implements
+class LinearProvider implements
     IntegrationProvider,
     HasIncrementalSync,
     HasHealthCheck,
@@ -45,7 +45,7 @@ Common combinations:
 The client wraps the third-party SDK with lazy initialization:
 
 ```php
-class YourServiceClient
+class LinearClient
 {
     private ?SdkClient $sdk = null;
 
@@ -58,9 +58,9 @@ class YourServiceClient
         if ($this->sdk === null) {
             $credentials = $this->integration->credentials;
             // Validate types at runtime
-            assert($credentials instanceof YourServiceCredentials);
+            assert($credentials instanceof LinearCredentials);
 
-            $this->sdk = new SdkClient($credentials->token);
+            $this->sdk = new SdkClient($credentials->api_key);
         }
 
         return $this->sdk;
@@ -71,24 +71,24 @@ class YourServiceClient
 Patterns to follow:
 - Lazy-load the SDK on first use via a `boot()` method
 - Validate credential/metadata types at bootstrap time
-- Expose resource access via methods: `$client->tickets()`, `$client->users()`
+- Expose resource access via methods: `$client->issues()`, `$client->users()`
 
 ## Resource classes
 
 Resources handle the actual API calls. They go through `Integration::request()` / `requestAs()` so everything is logged, rate-limited, and health-tracked:
 
 ```php
-class YourServiceTickets extends YourServiceResource
+class LinearIssues extends LinearResource
 {
     use HandlesErrors;
 
-    public function get(int $id): YourServiceTicketData
+    public function get(string $id): LinearIssueData
     {
         return $this->integration->requestAs(
-            endpoint: "tickets/{$id}",
+            endpoint: "issues/{$id}",
             method: 'GET',
-            responseClass: YourServiceTicketData::class,
-            callback: fn () => $this->sdk->tickets()->find($id),
+            responseClass: LinearIssueData::class,
+            callback: fn () => $this->sdk->issues()->find($id),
         );
     }
 
@@ -106,13 +106,13 @@ The `HandlesErrors` concern provides `executeWithErrorHandling()` for try/catch 
 Use Spatie Laravel Data classes for typed API responses:
 
 ```php
-class YourServiceTicketData extends Data
+class LinearIssueData extends Data
 {
     public function __construct(
-        public readonly int $id,
-        public readonly string $subject,
-        public readonly string $status,
-        public readonly ?YourServiceUserData $requester,
+        public readonly string $id,
+        public readonly string $title,
+        public readonly string $state,
+        public readonly ?LinearUserData $assignee,
         public readonly array $original, // store original API response
     ) {}
 
@@ -121,9 +121,9 @@ class YourServiceTicketData extends Data
         // Transform raw API response into constructor-friendly shape
         return [
             'id' => $properties['id'],
-            'subject' => $properties['subject'],
-            'status' => $properties['status'],
-            'requester' => $properties['requester'] ?? null,
+            'title' => $properties['title'],
+            'state' => $properties['state']['name'] ?? $properties['state'],
+            'assignee' => $properties['assignee'] ?? null,
             'original' => $properties,
         ];
     }
@@ -140,21 +140,21 @@ Patterns to follow:
 Dispatch events during sync so consuming applications can process the data:
 
 ```php
-class YourServiceTicketSynced
+class LinearIssueSynced
 {
     use Dispatchable;
 
     public function __construct(
         public readonly Integration $integration,
-        public readonly YourServiceTicketData $ticket,
+        public readonly LinearIssueData $issue,
     ) {}
 }
 ```
 
 Typical events per adapter:
-- `YourServiceItemSynced` -- per successful item
-- `YourServiceItemSyncFailed` -- per failed item
-- `YourServiceSyncCompleted` -- after the full sync
+- `LinearIssueSynced` -- per successful item
+- `LinearIssueSyncFailed` -- per failed item
+- `LinearSyncCompleted` -- after the full sync
 
 ## Sync pattern
 
@@ -163,7 +163,7 @@ For incremental sync with safe cursor advancement:
 ```php
 public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
 {
-    $client = new YourServiceClient($integration);
+    $client = new LinearClient($integration);
     $startTime = $cursor ?? now()->subDay()->toIso8601String();
 
     // Subtract overlap buffer to catch items updated between syncs
@@ -173,19 +173,19 @@ public function syncIncremental(Integration $integration, mixed $cursor): SyncRe
     $failures = 0;
     $safeCursor = $startTime;
 
-    $client->tickets()->since($bufferedStart, function ($ticket) use ($integration, &$success, &$failures, &$safeCursor) {
+    $client->issues()->since($bufferedStart, function ($issue) use ($integration, &$success, &$failures, &$safeCursor) {
         try {
-            YourServiceTicketSynced::dispatch($integration, $ticket);
+            LinearIssueSynced::dispatch($integration, $issue);
             $success++;
-            $safeCursor = max($safeCursor, $ticket->updated_at);
+            $safeCursor = max($safeCursor, $issue->updated_at);
         } catch (\Throwable $e) {
-            YourServiceTicketSyncFailed::dispatch($integration, $ticket, $e);
+            LinearIssueSyncFailed::dispatch($integration, $issue, $e);
             $failures++;
             // Don't advance cursor past failed items
         }
     });
 
-    YourServiceSyncCompleted::dispatch($integration, new SyncResult($success, $failures, now(), $safeCursor));
+    LinearSyncCompleted::dispatch($integration, new SyncResult($success, $failures, now(), $safeCursor));
 
     return new SyncResult($success, $failures, now(), $safeCursor);
 }
@@ -200,10 +200,10 @@ Important:
 
 To add a new adapter to `pocketarc/laravel-integrations-adapters`:
 
-1. Create the adapter directory under `src/YourService/`
+1. Create the adapter directory under `src/Linear/` (using your service's name)
 2. Follow the patterns above
 3. Add a `README.md` inside your adapter directory
-4. Add tests under `tests/Unit/YourService/`
+4. Add tests under `tests/Unit/Linear/`
 5. Open a PR
 
 ## Releasing a community adapter

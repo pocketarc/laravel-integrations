@@ -8,12 +8,10 @@ Credentials are encrypted automatically when stored and decrypted when accessed.
 
 ```php
 $integration = Integration::create([
-    'provider' => 'zendesk',
-    'name' => 'Production Zendesk',
+    'provider' => 'github',
+    'name' => 'Acme GitHub',
     'credentials' => [
-        'subdomain' => 'acme',
-        'api_token' => 'abc123',
-        'email' => 'admin@acme.com',
+        'token' => 'ghp_abc123...',
     ],
 ]);
 ```
@@ -23,7 +21,7 @@ $integration = Integration::create([
 By default, `$integration->credentials` returns whatever the provider's `credentialDataClass()` returns. Use `credentialsArray()` when you need the raw array regardless:
 
 ```php
-$token = $integration->credentialsArray()['api_token'];
+$token = $integration->credentialsArray()['token'];
 ```
 
 ### Typed access with Data classes
@@ -33,33 +31,30 @@ Providers can declare a [Spatie Laravel Data](https://spatie.be/docs/laravel-dat
 ```php
 use Spatie\LaravelData\Data;
 
-class ZendeskCredentials extends Data
+class GitHubCredentials extends Data
 {
     public function __construct(
-        public string $subdomain,
-        public string $api_token,
-        public string $email,
+        public string $token,
     ) {}
 }
 ```
 
 ```php
-class ZendeskProvider implements IntegrationProvider
+class GitHubProvider implements IntegrationProvider
 {
     // ...
 
     public function credentialDataClass(): ?string
     {
-        return ZendeskCredentials::class;
+        return GitHubCredentials::class;
     }
 }
 ```
 
-Now `$integration->credentials` returns a `ZendeskCredentials` instance:
+Now `$integration->credentials` returns a `GitHubCredentials` instance:
 
 ```php
-$integration->credentials->subdomain; // 'acme'
-$integration->credentials->api_token; // 'abc123'
+$integration->credentials->token; // 'ghp_abc123...'
 ```
 
 ## Metadata
@@ -68,10 +63,10 @@ Metadata is stored as plain JSON (not encrypted). Use it for non-sensitive confi
 
 ```php
 $integration = Integration::create([
-    'provider' => 'zendesk',
-    'name' => 'Production Zendesk',
+    'provider' => 'github',
+    'name' => 'Acme GitHub',
     'credentials' => [...],
-    'metadata' => ['locale' => 'en-US'],
+    'metadata' => ['owner' => 'acme', 'repo' => 'widgets'],
 ]);
 ```
 
