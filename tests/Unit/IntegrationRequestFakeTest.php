@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Testing\IntegrationRequestFake;
 use Integrations\Testing\ResponseSequence;
 use Integrations\Tests\Fixtures\TestDataResponse;
 use Integrations\Tests\Fixtures\TestOkResponse;
@@ -205,5 +206,223 @@ class IntegrationRequestFakeTest extends TestCase
         );
 
         $this->assertDatabaseCount('integration_requests', 1);
+    }
+
+    public function test_fake_matches_wildcard_endpoint(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['ok' => true],
+        ]);
+
+        $result = $this->integration->requestAs(
+            endpoint: 'tickets/123.json',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: fn () => throw new \RuntimeException('Should not be called'),
+        );
+
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
+    }
+
+    public function test_fake_exact_match_takes_precedence_over_wildcard(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['data' => 'wildcard'],
+            'tickets/123.json' => ['data' => 'exact'],
+        ]);
+
+        $result = $this->integration->requestAs(
+            endpoint: 'tickets/123.json',
+            method: 'GET',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertInstanceOf(TestDataResponse::class, $result);
+        $this->assertSame('exact', $result->data);
+    }
+
+    public function test_fake_specific_wildcard_beats_general_wildcard(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['data' => 'general'],
+            'tickets/*/comments.json' => ['data' => 'specific'],
+        ]);
+
+        $result = $this->integration->requestAs(
+            endpoint: 'tickets/42/comments.json',
+            method: 'GET',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertInstanceOf(TestDataResponse::class, $result);
+        $this->assertSame('specific', $result->data);
+    }
+
+    public function test_assert_requested_with_wildcard_pattern(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('tickets/*.json');
+    }
+
+    public function test_fake_method_aware_responses(): void
+    {
+        IntegrationRequest::fake([
+            'GET:tickets/123.json' => ['data' => 'read'],
+            'PUT:tickets/123.json' => ['data' => 'updated'],
+        ]);
+
+        $getResult = $this->integration->requestAs(
+            endpoint: 'tickets/123.json',
+            method: 'GET',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $putResult = $this->integration->requestAs(
+            endpoint: 'tickets/123.json',
+            method: 'PUT',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertSame('read', $getResult->data);
+        $this->assertSame('updated', $putResult->data);
+    }
+
+    public function test_fake_unprefixed_matches_any_method(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['ok' => true],
+        ]);
+
+        $getResult = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $postResult = $this->integration->requestAs(endpoint: 'tickets/2.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        $this->assertInstanceOf(TestOkResponse::class, $getResult);
+        $this->assertInstanceOf(TestOkResponse::class, $postResult);
+    }
+
+    public function test_fake_method_prefix_takes_precedence_over_unprefixed(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['data' => 'any'],
+            'GET:tickets/*.json' => ['data' => 'get-specific'],
+        ]);
+
+        $getResult = $this->integration->requestAs(
+            endpoint: 'tickets/1.json',
+            method: 'GET',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $postResult = $this->integration->requestAs(
+            endpoint: 'tickets/2.json',
+            method: 'POST',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertSame('get-specific', $getResult->data);
+        $this->assertSame('any', $postResult->data);
+    }
+
+    public function test_fake_method_with_wildcard_combined(): void
+    {
+        IntegrationRequest::fake([
+            'GET:tickets/*/comments.json' => ['data' => 'comments'],
+        ]);
+
+        $result = $this->integration->requestAs(
+            endpoint: 'tickets/42/comments.json',
+            method: 'GET',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertInstanceOf(TestDataResponse::class, $result);
+        $this->assertSame('comments', $result->data);
+
+        // Different method should not match
+        $miss = $this->integration->requestAs(
+            endpoint: 'tickets/42/comments.json',
+            method: 'POST',
+            responseClass: TestDataResponse::class,
+            callback: fn () => null,
+        );
+
+        $this->assertNull($miss);
+    }
+
+    public function test_scoped_fake_returns_integration_specific_response(): void
+    {
+        $other = Integration::create(['provider' => 'test', 'name' => 'Other']);
+        $other->refresh();
+
+        IntegrationRequest::fake()
+            ->forIntegration($this->integration, ['tickets/*.json' => ['data' => 'integration-a']])
+            ->forIntegration($other, ['tickets/*.json' => ['data' => 'integration-b']]);
+
+        $resultA = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $resultB = $other->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+
+        $this->assertSame('integration-a', $resultA->data);
+        $this->assertSame('integration-b', $resultB->data);
+    }
+
+    public function test_scoped_fake_falls_back_to_global(): void
+    {
+        IntegrationRequest::fake(['fallback/endpoint' => ['data' => 'global']])
+            ->forIntegration($this->integration, ['scoped/endpoint' => ['data' => 'scoped']]);
+
+        $scoped = $this->integration->requestAs(endpoint: 'scoped/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $global = $this->integration->requestAs(endpoint: 'fallback/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+
+        $this->assertSame('scoped', $scoped->data);
+        $this->assertSame('global', $global->data);
+    }
+
+    public function test_scoped_fake_with_integer_id(): void
+    {
+        IntegrationRequestFake::activate()
+            ->forIntegration($this->integration->id, ['tickets/*.json' => ['ok' => true]]);
+
+        $result = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
+    }
+
+    public function test_assert_requested_with_method_filter(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('tickets/1.json', times: 1, method: 'GET');
+        IntegrationRequest::assertRequested('tickets/1.json', times: 1, method: 'PUT');
+        IntegrationRequest::assertRequested('tickets/1.json', times: 2);
+    }
+
+    public function test_assert_requested_with_integration_id_filter(): void
+    {
+        $other = Integration::create(['provider' => 'test', 'name' => 'Other']);
+        $other->refresh();
+
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $other->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $this->integration->id);
+        IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $other->id);
+        IntegrationRequest::assertRequested('tickets/1.json', times: 2);
     }
 }

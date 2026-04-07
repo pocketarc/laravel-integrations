@@ -80,4 +80,80 @@ class IntegrationMappingTest extends TestCase
 
         $this->assertNull($resolved);
     }
+
+    public function test_upsert_by_external_id_creates_new_model(): void
+    {
+        $model = $this->integration->upsertByExternalId('EXT-NEW', Integration::class, [
+            'provider' => 'created',
+            'name' => 'Created',
+        ]);
+
+        $this->assertSame('created', $model->provider);
+        $this->assertSame('Created', $model->name);
+        $this->assertSame('EXT-NEW', $this->integration->findExternalId($model));
+    }
+
+    public function test_upsert_by_external_id_updates_existing_model(): void
+    {
+        $original = Integration::create(['provider' => 'old', 'name' => 'Old']);
+        $this->integration->mapExternalId('EXT-UPD', $original);
+
+        $updated = $this->integration->upsertByExternalId('EXT-UPD', Integration::class, [
+            'name' => 'Updated',
+        ]);
+
+        $this->assertSame($original->id, $updated->id);
+        $this->assertSame('Updated', $updated->name);
+    }
+
+    public function test_upsert_by_external_id_is_idempotent(): void
+    {
+        $this->integration->upsertByExternalId('EXT-IDEM', Integration::class, [
+            'provider' => 'first',
+            'name' => 'First',
+        ]);
+
+        $this->integration->upsertByExternalId('EXT-IDEM', Integration::class, [
+            'name' => 'Second',
+        ]);
+
+        $this->assertCount(1, $this->integration->mappings()->get());
+    }
+
+    public function test_resolve_mappings_returns_keyed_collection(): void
+    {
+        $a = Integration::create(['provider' => 'a', 'name' => 'A']);
+        $b = Integration::create(['provider' => 'b', 'name' => 'B']);
+        $c = Integration::create(['provider' => 'c', 'name' => 'C']);
+
+        $this->integration->mapExternalId('EXT-A', $a);
+        $this->integration->mapExternalId('EXT-B', $b);
+        $this->integration->mapExternalId('EXT-C', $c);
+
+        $result = $this->integration->resolveMappings(['EXT-A', 'EXT-B', 'EXT-C'], Integration::class);
+
+        $this->assertCount(3, $result);
+        $this->assertSame($a->id, $result->get('EXT-A')?->getKey());
+        $this->assertSame($b->id, $result->get('EXT-B')?->getKey());
+        $this->assertSame($c->id, $result->get('EXT-C')?->getKey());
+    }
+
+    public function test_resolve_mappings_returns_null_for_missing_ids(): void
+    {
+        $a = Integration::create(['provider' => 'a', 'name' => 'A']);
+        $this->integration->mapExternalId('EXT-A', $a);
+
+        $result = $this->integration->resolveMappings(['EXT-A', 'EXT-MISSING'], Integration::class);
+
+        $this->assertCount(2, $result);
+        $this->assertSame($a->id, $result->get('EXT-A')?->getKey());
+        $this->assertNull($result->get('EXT-MISSING'));
+    }
+
+    public function test_resolve_mappings_with_empty_input(): void
+    {
+        $result = $this->integration->resolveMappings([], Integration::class);
+
+        $this->assertCount(0, $result);
+    }
 }

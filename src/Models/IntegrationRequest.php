@@ -129,22 +129,22 @@ class IntegrationRequest extends Model
         IntegrationRequestFake::deactivate();
     }
 
-    public static function assertRequested(string $endpoint, ?int $times = null): void
+    public static function assertRequested(string $endpoint, ?int $times = null, ?string $method = null, ?int $integrationId = null): void
     {
-        IntegrationRequestFake::assertRequested($endpoint, $times);
+        IntegrationRequestFake::assertRequested($endpoint, $times, $method, $integrationId);
     }
 
-    public static function assertNotRequested(string $endpoint): void
+    public static function assertNotRequested(string $endpoint, ?string $method = null, ?int $integrationId = null): void
     {
-        IntegrationRequestFake::assertNotRequested($endpoint);
+        IntegrationRequestFake::assertNotRequested($endpoint, $method, $integrationId);
     }
 
     /**
      * @param  \Closure(string|null): bool  $callback
      */
-    public static function assertRequestedWith(string $endpoint, \Closure $callback): void
+    public static function assertRequestedWith(string $endpoint, \Closure $callback, ?string $method = null, ?int $integrationId = null): void
     {
-        IntegrationRequestFake::assertRequestedWith($endpoint, $callback);
+        IntegrationRequestFake::assertRequestedWith($endpoint, $callback, $method, $integrationId);
     }
 
     public static function assertRequestCount(int $expected): void

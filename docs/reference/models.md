@@ -25,7 +25,9 @@ The central model. Represents a configured connection to an external service.
 | `to()` / `toAs()` | Fluent request builder |
 | `logOperation()` | Create an operation log entry |
 | `mapExternalId()` | Map an external ID to an internal model |
-| `resolveMapping()` | Resolve external ID to internal model |
+| `resolveMapping()` | Resolve external ID to internal model (returns typed `TModel`) |
+| `resolveMappings()` | Batch-resolve multiple external IDs in two queries |
+| `upsertByExternalId()` | Resolve, create-or-update, and map in one call |
 | `findExternalId()` | Find external ID for an internal model |
 | `getAccessToken()` | Get OAuth access token (auto-refreshes) |
 | `tokenExpiresSoon()` | Check if token needs refresh |

@@ -194,7 +194,7 @@ public function syncIncremental(Integration $integration, mixed $cursor): SyncRe
 Important:
 - Subtract an overlap buffer from the cursor (1 hour in official adapters)
 - Don't advance the cursor past failed items
-- Consumers should use `updateOrCreate()` since overlap is expected
+- Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected
 
 ## Contributing to the official package
 
