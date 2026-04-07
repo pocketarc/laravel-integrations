@@ -1,0 +1,196 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      width: 1200px;
+      height: 630px;
+      overflow: hidden;
+      font-family: 'Inter', sans-serif;
+    }
+    .container {
+      width: 1200px;
+      height: 630px;
+      background: #0f1219;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      padding-bottom: 60px;
+      position: relative;
+    }
+
+    /* Subtle grid background */
+    .container::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      background-image:
+        linear-gradient(rgba(99, 130, 191, 0.04) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(99, 130, 191, 0.04) 1px, transparent 1px);
+      background-size: 40px 40px;
+    }
+
+    /* Subtle glow behind the code block */
+    .glow {
+      position: absolute;
+      width: 700px;
+      height: 300px;
+      background: radial-gradient(ellipse, rgba(91, 141, 239, 0.08) 0%, transparent 70%);
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -45%);
+    }
+
+    .header {
+      position: relative;
+      z-index: 1;
+      text-align: center;
+      margin-bottom: 32px;
+    }
+
+    .title {
+      font-size: 42px;
+      font-weight: 700;
+      color: #e8ecf4;
+      letter-spacing: -0.5px;
+    }
+
+    .tagline {
+      font-size: 18px;
+      font-weight: 400;
+      color: #6b7a94;
+      margin-top: 8px;
+    }
+
+    .code-window {
+      position: relative;
+      z-index: 1;
+      width: 820px;
+      background: #181d27;
+      border-radius: 10px;
+      border: 1px solid rgba(99, 130, 191, 0.15);
+      overflow: hidden;
+      box-shadow:
+        0 4px 24px rgba(0, 0, 0, 0.4),
+        0 0 0 1px rgba(99, 130, 191, 0.05);
+    }
+
+    .code-titlebar {
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 12px 16px;
+      background: #1a1f2b;
+      border-bottom: 1px solid rgba(99, 130, 191, 0.1);
+    }
+
+    .dot {
+      width: 11px;
+      height: 11px;
+      border-radius: 50%;
+    }
+    .dot-red { background: #ff5f57; }
+    .dot-yellow { background: #febc2e; }
+    .dot-green { background: #28c840; }
+
+    .code-titlebar-text {
+      flex: 1;
+      text-align: center;
+      font-size: 12px;
+      color: #4a5568;
+      font-family: 'Inter', sans-serif;
+      margin-right: 44px;
+    }
+
+    .code-body {
+      padding: 20px 24px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 14.5px;
+      line-height: 1.7;
+    }
+
+    .line {
+      white-space: pre;
+    }
+
+    /* Syntax colors */
+    .var { color: #e8ecf4; }
+    .obj { color: #7ec8e3; }
+    .method { color: #c4a7e7; }
+    .arrow { color: #6b7a94; }
+    .key { color: #9ccfd8; }
+    .string { color: #a8d8a8; }
+    .class { color: #f6c177; }
+    .comment { color: #4a5568; font-style: italic; }
+    .keyword { color: #eb6f92; }
+    .fn { color: #c4a7e7; }
+    .punct { color: #6b7a94; }
+
+    .footer-bar {
+      position: absolute;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      padding: 14px 40px;
+      z-index: 1;
+    }
+
+    .footer-left {
+      font-size: 13px;
+      color: #4a5568;
+    }
+
+    .footer-right {
+      font-size: 13px;
+      color: #4a5568;
+    }
+
+    .footer-right span {
+      color: #5b8def;
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="glow"></div>
+
+    <div class="header">
+      <div class="title">Laravel Integrations</div>
+      <div class="tagline">API integrations without the boilerplate.</div>
+    </div>
+
+    <div class="code-window">
+      <div class="code-titlebar">
+        <div class="dot dot-red"></div>
+        <div class="dot dot-yellow"></div>
+        <div class="dot dot-green"></div>
+        <div class="code-titlebar-text">ZendeskProvider.php</div>
+      </div>
+      <div class="code-body">
+        <div class="line"><span class="var">$tickets</span> <span class="punct">=</span> <span class="var">$integration</span><span class="arrow">-></span><span class="method">requestAs</span><span class="punct">(</span></div>
+        <div class="line">    <span class="key">endpoint:</span> <span class="string">'/api/v2/tickets.json'</span><span class="punct">,</span></div>
+        <div class="line">    <span class="key">method:</span> <span class="string">'GET'</span><span class="punct">,</span></div>
+        <div class="line">    <span class="key">responseClass:</span> <span class="class">TicketListResponse</span><span class="punct">::</span><span class="keyword">class</span><span class="punct">,</span></div>
+        <div class="line">    <span class="key">callback:</span> <span class="keyword">fn</span> <span class="punct">()</span> <span class="arrow">=></span> <span class="class">Http</span><span class="punct">::</span><span class="method">get</span><span class="punct">(</span><span class="var">$url</span><span class="punct">),</span></div>
+        <div class="line"><span class="punct">);</span></div>
+        <div class="line"></div>
+        <div class="line"><span class="comment">// Logged, cached, rate-limited, retried, health-tracked.</span></div>
+      </div>
+    </div>
+
+    <div class="footer-bar">
+      <div class="footer-left">pocketarc/laravel-integrations</div>
+      <div class="footer-right">by <span>@pocketarc</span></div>
+    </div>
+  </div>
+</body>
+</html>

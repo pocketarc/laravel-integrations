@@ -1,5 +1,9 @@
 /vendor/
+/node_modules/
 /.phpunit.cache/
 /.idea/
 .DS_Store
 composer.lock
+bun.lock
+docs/.vitepress/dist/
+docs/.vitepress/cache/

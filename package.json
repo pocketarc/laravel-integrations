@@ -1,0 +1,15 @@
+{
+  "private": true,
+  "scripts": {
+    "docs:dev": "vitepress dev docs",
+    "docs:build": "vitepress build docs",
+    "docs:preview": "vitepress preview docs",
+    "docs:deploy": "vitepress build docs && wrangler pages deploy docs/.vitepress/dist"
+  },
+  "devDependencies": {
+    "vitepress": "^1.6.0",
+    "vue": "^3.5.0",
+    "vitepress-plugin-llms": "^1.2.0",
+    "wrangler": "^4.54.0"
+  }
+}
