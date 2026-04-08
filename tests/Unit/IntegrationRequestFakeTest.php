@@ -261,6 +261,19 @@ class IntegrationRequestFakeTest extends TestCase
         $this->assertSame('specific', $result->data);
     }
 
+    public function test_fake_wildcard_does_not_cross_path_segments(): void
+    {
+        IntegrationRequest::fake([
+            'tickets/*.json' => ['data' => 'single-segment'],
+        ]);
+
+        $match = $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $miss = $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+
+        $this->assertInstanceOf(TestDataResponse::class, $match);
+        $this->assertNull($miss);
+    }
+
     public function test_assert_requested_with_wildcard_pattern(): void
     {
         IntegrationRequest::fake();

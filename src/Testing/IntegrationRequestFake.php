@@ -252,7 +252,7 @@ class IntegrationRequestFake
         }
 
         $isExact = $pattern === $endpoint;
-        $isWildcard = ! $isExact && str_contains($pattern, '*') && fnmatch($pattern, $endpoint);
+        $isWildcard = ! $isExact && str_contains($pattern, '*') && fnmatch($pattern, $endpoint, FNM_PATHNAME);
 
         if (! $isExact && ! $isWildcard) {
             return [0, 0];
@@ -308,6 +308,6 @@ class IntegrationRequestFake
             return false;
         }
 
-        return $record['endpoint'] === $endpoint || fnmatch($endpoint, $record['endpoint']);
+        return $record['endpoint'] === $endpoint || fnmatch($endpoint, $record['endpoint'], FNM_PATHNAME);
     }
 }
