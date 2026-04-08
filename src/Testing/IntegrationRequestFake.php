@@ -9,6 +9,8 @@ use Integrations\Models\Integration;
 use PHPUnit\Framework\Assert;
 use Throwable;
 
+use function Safe\preg_match;
+
 class IntegrationRequestFake
 {
     private static ?self $instance = null;
@@ -55,7 +57,16 @@ class IntegrationRequestFake
      */
     public function forIntegration(Integration|int $integration, array $responses): self
     {
-        $id = $integration instanceof Integration ? $integration->id : $integration;
+        if ($integration instanceof Integration) {
+            if (! $integration->exists) {
+                throw new \InvalidArgumentException('Cannot scope fakes to an unsaved Integration (id is null).');
+            }
+
+            $id = $integration->id;
+        } else {
+            $id = $integration;
+        }
+
         $this->scopedResponses[$id] = array_merge($this->scopedResponses[$id] ?? [], $responses);
 
         return $this;
@@ -252,7 +263,7 @@ class IntegrationRequestFake
         }
 
         $isExact = $pattern === $endpoint;
-        $isWildcard = ! $isExact && str_contains($pattern, '*') && fnmatch($pattern, $endpoint, FNM_PATHNAME);
+        $isWildcard = ! $isExact && str_contains($pattern, '*') && self::matchesPattern($pattern, $endpoint);
 
         if (! $isExact && ! $isWildcard) {
             return [0, 0];
@@ -296,6 +307,16 @@ class IntegrationRequestFake
     }
 
     /**
+     * Match an endpoint against a pattern where only `*` is treated as a wildcard (matching any character except `/`).
+     */
+    private static function matchesPattern(string $pattern, string $endpoint): bool
+    {
+        $regex = '#^'.str_replace('\*', '[^/]*', preg_quote($pattern, '#')).'$#u';
+
+        return preg_match($regex, $endpoint) === 1;
+    }
+
+    /**
      * @param  array{integration_id: int, endpoint: string, method: string, request_data: string|null}  $record
      */
     private static function matchesFilter(array $record, string $endpoint, ?string $method, ?int $integrationId): bool
@@ -308,6 +329,6 @@ class IntegrationRequestFake
             return false;
         }
 
-        return $record['endpoint'] === $endpoint || fnmatch($endpoint, $record['endpoint'], FNM_PATHNAME);
+        return $record['endpoint'] === $endpoint || self::matchesPattern($endpoint, $record['endpoint']);
     }
 }
