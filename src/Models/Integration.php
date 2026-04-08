@@ -526,7 +526,10 @@ class Integration extends Model
     }
 
     /**
-     * @param  class-string<Model>  $internalType
+     * @template TModel of Model
+     *
+     * @param  class-string<TModel>  $internalType
+     * @return TModel|null
      */
     public function resolveMapping(string $externalId, string $internalType): ?Model
     {
@@ -539,7 +542,13 @@ class Integration extends Model
             return null;
         }
 
-        return $mapping->internalModel()->first();
+        $model = (new $internalType)->newQuery()->find($mapping->internal_id);
+
+        if (! $model instanceof $internalType) {
+            return null;
+        }
+
+        return $model;
     }
 
     public function findExternalId(Model $internalModel): ?string
@@ -550,6 +559,79 @@ class Integration extends Model
             ->first();
 
         return $mapping?->external_id;
+    }
+
+    /**
+     * @template TModel of Model
+     *
+     * @param  class-string<TModel>  $modelClass
+     * @param  array<string, mixed>  $attributes
+     * @return TModel
+     */
+    public function upsertByExternalId(string $externalId, string $modelClass, array $attributes): Model
+    {
+        $existing = $this->resolveMapping($externalId, $modelClass);
+
+        if ($existing !== null) {
+            $existing->update($attributes);
+
+            return $existing->refresh();
+        }
+
+        DB::beginTransaction();
+
+        try {
+            $model = new $modelClass($attributes);
+            $model->save();
+            $this->mapExternalId($externalId, $model);
+            DB::commit();
+        } catch (\Throwable $e) {
+            DB::rollBack();
+
+            throw $e;
+        }
+
+        return $model;
+    }
+
+    /**
+     * @template TModel of Model
+     *
+     * @param  list<string>  $externalIds
+     * @param  class-string<TModel>  $internalType
+     * @return \Illuminate\Support\Collection<string, TModel|null>
+     */
+    public function resolveMappings(array $externalIds, string $internalType): \Illuminate\Support\Collection
+    {
+        /** @var array<string, TModel|null> $result */
+        $result = [];
+
+        if ($externalIds === []) {
+            return collect($result);
+        }
+
+        $morphClass = (new $internalType)->getMorphClass();
+
+        $mappings = $this->mappings()
+            ->whereIn('external_id', $externalIds)
+            ->where('internal_type', $morphClass)
+            ->get();
+
+        $internalIds = $mappings->pluck('internal_id')->unique()->values()->all();
+
+        $instance = new $internalType;
+        $modelsByKey = $instance->newQuery()
+            ->whereIn($instance->getKeyName(), $internalIds)
+            ->get()
+            ->keyBy(fn (Model $model): string => self::keyToString($model->getKey()));
+
+        foreach ($externalIds as $externalId) {
+            $mapping = $mappings->firstWhere('external_id', $externalId);
+            $model = $mapping !== null ? $modelsByKey->get($mapping->internal_id) : null;
+            $result[$externalId] = $model instanceof $internalType ? $model : null;
+        }
+
+        return collect($result);
     }
 
     /**

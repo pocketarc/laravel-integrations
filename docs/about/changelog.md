@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.6.0
+
+- Added [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) — resolve, create-or-update, and map in a single atomic call.
+- Added [`resolveMappings()`](/features/id-mapping#batch-resolution) — batch-resolve multiple external IDs in two queries instead of 2N.
+- `resolveMapping()`, `resolveMappings()`, and `upsertByExternalId()` now return properly generic types (`?Ticket` instead of `?Model`).
+- Testing fake: [wildcard endpoint matching](/testing/testing#wildcard-endpoints) (`tickets/*.json`), respecting path segment boundaries.
+- Testing fake: [method-aware fakes](/testing/testing#method-aware-fakes) (`GET:endpoint` vs `PUT:endpoint`).
+- Testing fake: [integration-scoped fakes](/testing/testing#integration-scoped-fakes) via `forIntegration()` fluent API.
+- Assertion methods now support optional `method` and `integrationId` [filters](/testing/testing#filtering-assertions).
+
 ## 1.5.0
 
 - Automatic detection and honoring of `Retry-After` headers (capped by config, default 10 minutes). 429 falls back to a fixed 30s only when `Retry-After` is absent.

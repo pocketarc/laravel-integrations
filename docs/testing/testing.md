@@ -15,6 +15,59 @@ IntegrationRequest::fake([
 
 When the fake is active, both `request()` and `requestAs()` skip rate limiting, caching, health tracking, and database persistence entirely. They record requests in memory and return your fake responses (or `null` for unmatched endpoints).
 
+### Wildcard endpoints
+
+Use `*` to match dynamic segments in endpoint strings:
+
+```php
+IntegrationRequest::fake([
+    'tickets/*/comments.json' => ['comments' => []],
+    'tickets/*.json' => ['id' => 1, 'subject' => 'Test'],
+]);
+```
+
+More specific patterns take priority -- `tickets/*/comments.json` matches before `tickets/*.json`. Exact matches always take priority over wildcards.
+
+### Method-aware fakes
+
+Prefix an endpoint with an HTTP method to return different responses for different methods on the same endpoint:
+
+```php
+IntegrationRequest::fake([
+    'GET:tickets/123.json' => ['id' => 123, 'subject' => 'Bug report'],
+    'PUT:tickets/123.json' => ['id' => 123, 'subject' => 'Updated'],
+]);
+```
+
+Method-prefixed entries take priority over unprefixed ones. Unprefixed entries match any method (backwards compatible). Wildcards and method prefixes can be combined: `GET:tickets/*.json`.
+
+### Integration-scoped fakes
+
+When testing flows that span multiple integrations, scope fake responses to specific integrations:
+
+```php
+IntegrationRequest::fake()
+    ->forIntegration($zendesk, [
+        'tickets/*.json' => ['id' => 1, 'subject' => 'Test'],
+    ])
+    ->forIntegration($github, [
+        'repos/*/*/issues' => ['number' => 42, 'title' => 'Bug'],
+    ]);
+```
+
+Scoped responses are checked first. If no scoped match is found, the global responses are used as a fallback:
+
+```php
+IntegrationRequest::fake(['fallback/endpoint' => ['ok' => true]])
+    ->forIntegration($zendesk, ['tickets/*.json' => ['id' => 1]]);
+
+// $zendesk matches scoped response for tickets/*.json
+// $zendesk matches global fallback for fallback/endpoint
+// $github matches global fallback for fallback/endpoint
+```
+
+You can pass either an `Integration` model or an integer ID to `forIntegration()`.
+
 ## Making assertions
 
 ```php
@@ -26,6 +79,19 @@ IntegrationRequest::assertRequestedWith('customers.create', function (string $re
 });
 IntegrationRequest::assertRequestCount(5);
 IntegrationRequest::assertNothingRequested();
+```
+
+Assertions support wildcards too -- `assertRequested('tickets/*.json')` matches any recorded `tickets/{id}.json` request.
+
+### Filtering assertions
+
+Filter assertions by HTTP method and/or integration:
+
+```php
+IntegrationRequest::assertRequested('tickets/123.json', times: 1, method: 'GET');
+IntegrationRequest::assertRequested('tickets/123.json', times: 1, method: 'PUT');
+IntegrationRequest::assertNotRequested('tickets/123.json', method: 'DELETE');
+IntegrationRequest::assertRequested('tickets/*.json', integrationId: $zendesk->id);
 ```
 
 ## Sequences and exceptions

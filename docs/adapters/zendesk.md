@@ -24,8 +24,8 @@ $integration = Integration::create([
 
 | Credentials | Metadata |
 |-------------|----------|
-| `email` (string) -- Zendesk admin email | `subdomain` (string) -- Zendesk subdomain |
-| `token` (string) -- API token | `custom_domain` (?string) -- full base URL including scheme, e.g. `https://support.acme.com` |
+| `email` (string) - Zendesk admin email | `subdomain` (string) - Zendesk subdomain |
+| `token` (string) - API token | `custom_domain` (?string) - full base URL including scheme, e.g. `https://support.acme.com` |
 
 The health check appends `/api/v2/users/me.json` to `custom_domain` if set, otherwise uses `https://{subdomain}.zendesk.com`.
 
@@ -44,6 +44,7 @@ $client = new ZendeskClient($integration);
 | | `->close($ticketId)` | Set ticket status to "solved". Returns `?ZendeskTicketData`. |
 | | `->reopen($ticketId)` | Set ticket status to "open". Returns `?ZendeskTicketData`. |
 | `$client->comments()` | `->list($ticketId, $callback)` | Iterate comments on a ticket (cursor-paginated). Callback receives `ZendeskCommentData`. |
+| | `->newerThan($minId, $callback, $days)` | Find comments with ID > `$minId` across tickets updated in the last `$days` (default 7). For catching missed comments. Callback receives `ZendeskCommentData` and ticket ID. |
 | | `->add($ticketId, $body)` | Add a public comment. Returns `?ZendeskCommentData`. |
 | | `->addInternalNote($ticketId, $body)` | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`. |
 | `$client->users()` | `->get($userId)` | Get a single user. Returns `?ZendeskUserData`. |
@@ -51,11 +52,7 @@ $client = new ZendeskClient($integration);
 | `$client->attachments()` | `->download($url)` | Download an attachment by content URL. |
 | | `->freshUrl($ticketId, $attachmentId)` | Get a fresh (non-expired) content URL for an attachment. |
 
-All resource methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited.
-
-## Retry handling
-
-Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
+All resource methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
 
 ## Sync
 
@@ -67,7 +64,7 @@ First sync (null cursor) fetches all tickets from timestamp 0. Set `sync_cursor`
 $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 ```
 
-Every sync subtracts a 1-hour buffer from the cursor to catch items updated between syncs. Consumers should use `updateOrCreate()` in their event listeners since overlap is expected.
+Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their event listeners since overlap is expected.
 
 Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 
@@ -76,17 +73,17 @@ Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 | Class | Description |
 |-------|-------------|
 | `ZendeskTicketData` | Ticket with status, requester, assignee, custom fields, satisfaction rating, tags. Stores original API response. |
-| `ZendeskCommentData` | Comment with body (plain/HTML), attachments, via channel. Has `hasAttachments()` and `getImageAttachments()` helpers. |
-| `ZendeskUserData` | User with role, org, locale, timezone, phone, photo. Handles email fallback for users without emails. |
+| `ZendeskCommentData` | Comment with body (plain/HTML), attachments, via channel. Has `hasAttachments()` and `getImageAttachments()` helpers. Stores original API response. |
+| `ZendeskUserData` | User with role, org, locale, timezone, phone, photo. Handles email fallback for users without emails via `prepareForPipeline()`. Stores original API response. |
 | `ZendeskAttachmentData` | Attachment with file name, content type, size, dimensions, malware scan result, thumbnails. |
 | `ZendeskCustomFieldData` | Custom field ID + value pair. |
-| `ZendeskViaData` | Channel and source info. Normalizes integer channel values to strings. |
+| `ZendeskViaData` | Channel and source info (how the ticket/comment was created). Normalizes integer channel values to strings via `prepareForPipeline()`. |
 | `ZendeskSatisfactionRatingData` | Satisfaction survey score. |
 | `ZendeskPhotoData` | User profile photo with thumbnails. |
 | `ZendeskThumbnailData` | Thumbnail image for attachments/photos. |
-| `ZendeskIncrementalTicketResponse` | Typed response for the incremental tickets API. Has `nextTimestamp()` for pagination. |
-| `ZendeskSearchResponse` | Typed response for the search API. |
-| `ZendeskCommentPageResponse` | Typed response for the comments endpoint with cursor pagination. |
+| `ZendeskIncrementalTicketResponse` | Typed response for the incremental tickets API. Contains `tickets`, `users`, `next_page`, `count`. Has `nextTimestamp()` for pagination. |
+| `ZendeskSearchResponse` | Typed response for the search API. Contains `results` (tickets), `users`, `next_page`. |
+| `ZendeskCommentPageResponse` | Typed response for the comments endpoint. Contains `comments` and `meta` (pagination). |
 | `ZendeskPaginationMeta` | Cursor pagination metadata with `has_more` and `after_cursor`. |
 
 ## Enums
