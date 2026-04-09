@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit;
 use Illuminate\Support\Facades\Event;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
+use Integrations\Events\OperationStarted;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
 use Integrations\Tests\TestCase;
@@ -42,6 +43,37 @@ class IntegrationLogTest extends TestCase
         $this->assertSame('Synced 42 tickets', $log->summary);
         $this->assertSame(42, $log->metadata['count']);
         $this->assertSame(1500, $log->duration_ms);
+    }
+
+    public function test_log_operation_with_result_data(): void
+    {
+        $log = $this->integration->logOperation(
+            operation: 'issue.create',
+            direction: 'outbound',
+            status: 'success',
+            summary: 'Created issue in GitHub',
+            metadata: ['repo' => 'acme/api'],
+            resultData: ['issue_number' => 42, 'url' => 'https://github.com/acme/api/issues/42'],
+            durationMs: 1250,
+        );
+
+        $this->assertSame(['issue_number' => 42, 'url' => 'https://github.com/acme/api/issues/42'], $log->result_data);
+        $this->assertSame(['repo' => 'acme/api'], $log->metadata);
+
+        $fresh = $log->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame(42, $fresh->result_data['issue_number']);
+    }
+
+    public function test_result_data_defaults_to_null(): void
+    {
+        $log = $this->integration->logOperation(
+            operation: 'sync',
+            direction: 'inbound',
+            status: 'success',
+        );
+
+        $this->assertNull($log->result_data);
     }
 
     public function test_parent_child_hierarchy(): void
@@ -115,6 +147,22 @@ class IntegrationLogTest extends TestCase
         Event::assertNotDispatched(OperationCompleted::class);
     }
 
+    public function test_dispatches_operation_started_event(): void
+    {
+        Event::fake();
+
+        $this->integration->logOperation(operation: 'issue.create', direction: 'outbound', status: 'processing');
+
+        Event::assertDispatched(OperationStarted::class, function (OperationStarted $event): bool {
+            return $event->integration->is($this->integration)
+                && $event->log->operation === 'issue.create'
+                && $event->log->direction === 'outbound'
+                && $event->log->status === 'processing';
+        });
+        Event::assertNotDispatched(OperationCompleted::class);
+        Event::assertNotDispatched(OperationFailed::class);
+    }
+
     public function test_no_event_for_pending_status(): void
     {
         Event::fake();
@@ -123,5 +171,6 @@ class IntegrationLogTest extends TestCase
 
         Event::assertNotDispatched(OperationCompleted::class);
         Event::assertNotDispatched(OperationFailed::class);
+        Event::assertNotDispatched(OperationStarted::class);
     }
 }

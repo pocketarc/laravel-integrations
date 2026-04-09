@@ -15,6 +15,7 @@ use Integrations\Contracts\RedactsRequestData;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RateLimitExceededException;
+use Integrations\Exceptions\RetryableException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Support\Config;
@@ -23,6 +24,7 @@ use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
 use RuntimeException;
 use Spatie\LaravelData\Data;
+use Throwable;
 
 final class RequestExecutor
 {
@@ -109,20 +111,16 @@ final class RequestExecutor
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
                 return $result;
-            } catch (\Throwable $e) {
+            } catch (Throwable $e) {
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
-                $provider = $this->integration->provider();
-                $providerRetryable = $provider instanceof CustomizesRetry ? $provider->isRetryable($e) : null;
-                $retryable = $providerRetryable ?? RetryHandler::isRetryable($e);
+                $shouldRetry = $this->shouldRetry($e, $attempt, $maxAttempts);
 
-                if (! $retryable || $isLastAttempt) {
+                if (! $shouldRetry) {
                     return $this->serveStaleOrRethrow($e, $serveStale && ! $allowStale, $endpoint, $method, $encodedRequestData, $responseClass);
                 }
 
-                $statusCode = ResponseHelper::extractStatusCode($e);
-                $providerDelay = $provider instanceof CustomizesRetry ? $provider->retryDelayMs($e, $attempt, $statusCode) : null;
-                $delayMs = $providerDelay ?? RetryHandler::calculateDelayMs($e, $attempt);
+                $delayMs = $this->resolveRetryDelay($e, $attempt);
 
                 usleep($delayMs * 1000);
                 $this->enforceRateLimit();
@@ -162,35 +160,11 @@ final class RequestExecutor
             [$responseCode, $responseData, $parsed] = ResponseHelper::normalize($raw);
             $result = $this->convertResponse($parsed, $responseClass, $endpoint, $cacheFor);
             $responseSuccess = true;
-        } catch (\Throwable $e) {
-            $error = [
-                'class' => $e::class,
-                'message' => $e->getMessage(),
-                'code' => $e->getCode(),
-                'trace' => mb_strcut($e->getTraceAsString(), 0, 2000),
-            ];
-
-            $responseCode = ResponseHelper::extractStatusCode($e);
-
-            if ($serveStale) {
-                $result = $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass);
-            }
-
-            if ($result === null) {
-                $this->integration->recordFailure();
-                $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
-
-                $request = $this->persistRequest(
-                    $endpoint, $method, $encodedRequestData, $retryOfId,
-                    $relatedTo, $responseCode, $responseData, false,
-                    $error, $durationMs, $cacheFor,
-                );
-                $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
-
-                RequestFailed::dispatch($this->integration, $request);
-
-                throw $e;
-            }
+        } catch (Throwable $e) {
+            [$responseCode, $error, $result] = $this->handleRequestError(
+                $e, $startTime, $endpoint, $method, $responseClass, $encodedRequestData,
+                $retryOfId, $relatedTo, $responseData, $cacheFor, $serveStale,
+            );
         }
 
         $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
@@ -211,6 +185,59 @@ final class RequestExecutor
         }
 
         return $result;
+    }
+
+    /**
+     * @template TResponse of Data
+     *
+     * @param  class-string<TResponse>|null  $responseClass
+     * @return array{?int, array<string, mixed>, mixed}
+     *
+     * @throws Throwable
+     */
+    private function handleRequestError(
+        Throwable $e,
+        float $startTime,
+        string $endpoint,
+        string $method,
+        ?string $responseClass,
+        ?string $encodedRequestData,
+        ?int $retryOfId,
+        ?Model $relatedTo,
+        ?string $responseData,
+        ?CarbonInterface $cacheFor,
+        bool $serveStale,
+    ): array {
+        $error = [
+            'class' => $e::class,
+            'message' => $e->getMessage(),
+            'code' => $e->getCode(),
+            'trace' => mb_strcut($e->getTraceAsString(), 0, 2000),
+        ];
+
+        $responseCode = ResponseHelper::extractStatusCode($e);
+
+        $result = $serveStale
+            ? $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass)
+            : null;
+
+        if ($result === null) {
+            $this->integration->recordFailure();
+            $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
+
+            $request = $this->persistRequest(
+                $endpoint, $method, $encodedRequestData, $retryOfId,
+                $relatedTo, $responseCode, $responseData, false,
+                $error, $durationMs, $cacheFor,
+            );
+            $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
+
+            RequestFailed::dispatch($this->integration, $request);
+
+            throw $e;
+        }
+
+        return [$responseCode, $error, $result];
     }
 
     /**
@@ -265,21 +292,22 @@ final class RequestExecutor
      *
      * @param  class-string<TResponse>|null  $responseClass
      *
-     * @throws \Throwable
+     * @throws Throwable
      */
     private function serveStaleOrRethrow(
-        \Throwable $e,
+        Throwable $e,
         bool $tryStale,
         string $endpoint,
         string $method,
         ?string $encodedRequestData,
         ?string $responseClass,
     ): mixed {
-        if ($tryStale) {
-            $stale = $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass);
-            if ($stale !== null) {
-                return $stale;
-            }
+        $stale = $tryStale
+            ? $this->cache->serveStale($endpoint, $method, $encodedRequestData, $responseClass)
+            : null;
+
+        if ($stale !== null) {
+            return $stale;
         }
 
         throw $e;
@@ -315,23 +343,10 @@ final class RequestExecutor
         $waited = 0;
 
         while (true) {
-            $now = now();
-            $currentKey = $this->rateLimitKey($now);
-            $previousKey = $this->rateLimitKey($now->copy()->subMinute());
-
-            $elapsedFraction = ((int) $now->format('s') + (int) $now->format('u') / 1_000_000) / 60.0;
-
-            Cache::add($currentKey, 0, 120);
-            Cache::add($previousKey, 0, 120);
-
-            $rawCurrent = Cache::get($currentKey, 0);
-            $rawPrevious = Cache::get($previousKey, 0);
-            $currentCount = is_numeric($rawCurrent) ? (int) $rawCurrent : 0;
-            $previousCount = is_numeric($rawPrevious) ? (int) $rawPrevious : 0;
-
-            $estimate = (int) ceil($currentCount + $previousCount * (1.0 - $elapsedFraction));
+            $estimate = $this->estimateCurrentRate();
 
             if ($estimate < $limit) {
+                $currentKey = $this->rateLimitKey(now());
                 Cache::increment($currentKey);
 
                 return;
@@ -344,6 +359,25 @@ final class RequestExecutor
             sleep(1);
             $waited++;
         }
+    }
+
+    private function estimateCurrentRate(): int
+    {
+        $now = now();
+        $currentKey = $this->rateLimitKey($now);
+        $previousKey = $this->rateLimitKey($now->copy()->subMinute());
+
+        $elapsedFraction = ((int) $now->format('s') + (int) $now->format('u') / 1_000_000) / 60.0;
+
+        Cache::add($currentKey, 0, 120);
+        Cache::add($previousKey, 0, 120);
+
+        $rawCurrent = Cache::get($currentKey, 0);
+        $rawPrevious = Cache::get($previousKey, 0);
+        $currentCount = is_numeric($rawCurrent) ? (int) $rawCurrent : 0;
+        $previousCount = is_numeric($rawPrevious) ? (int) $rawPrevious : 0;
+
+        return (int) ceil($currentCount + $previousCount * (1.0 - $elapsedFraction));
     }
 
     private function rateLimitKey(CarbonInterface $time): string
@@ -364,6 +398,51 @@ final class RequestExecutor
         }
 
         return $requestData;
+    }
+
+    private function shouldRetry(Throwable $e, int $attempt, int $maxAttempts): bool
+    {
+        $retryableException = self::findRetryableException($e);
+
+        $retryable = $retryableException !== null || $this->isRetryableViaProvider($e);
+
+        if (! $retryable) {
+            return false;
+        }
+
+        $effectiveMax = $retryableException?->maxAttempts !== null
+            ? min($maxAttempts, $retryableException->maxAttempts)
+            : $maxAttempts;
+
+        return $attempt < $effectiveMax;
+    }
+
+    private function isRetryableViaProvider(Throwable $e): bool
+    {
+        $provider = $this->integration->provider();
+        $providerRetryable = $provider instanceof CustomizesRetry ? $provider->isRetryable($e) : null;
+
+        return $providerRetryable ?? RetryHandler::isRetryable($e);
+    }
+
+    private function resolveRetryDelay(Throwable $e, int $attempt): int
+    {
+        $provider = $this->integration->provider();
+        $statusCode = ResponseHelper::extractStatusCode($e);
+        $providerDelay = $provider instanceof CustomizesRetry ? $provider->retryDelayMs($e, $attempt, $statusCode) : null;
+
+        return $providerDelay ?? RetryHandler::calculateDelayMs($e, $attempt);
+    }
+
+    private static function findRetryableException(Throwable $e): ?RetryableException
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof RetryableException) {
+                return $current;
+            }
+        }
+
+        return null;
     }
 
     private static function keyToString(mixed $key): string

@@ -62,7 +62,7 @@ parameters:
         function: 10
         class: 50
 
-    # Laravel/debug functions that should never appear in production code.
+    # Functions that should never appear in production code.
     disallowedFunctionCalls:
         -
             function: 'dd()'
@@ -85,6 +85,27 @@ parameters:
         -
             function: 'assert()'
             message: 'use a proper exception or runtime check'
+        -
+            function: 'error_log()'
+            message: 'use the Log facade instead'
+        -
+            function: 'trigger_error()'
+            message: 'throw an exception instead'
+        -
+            function: 'settype()'
+            message: 'use explicit type casting instead'
+        -
+            function: 'define()'
+            message: 'use class constants instead'
+        -
+            function: 'print()'
+            message: 'use the Log facade or a Response instead'
+        -
+            function: 'call_user_func()'
+            message: 'invoke the callable directly instead'
+        -
+            function: 'call_user_func_array()'
+            message: 'invoke the callable directly with the spread operator instead'
 
     ignoreErrors:
         # #[\Override] on properties is a PHPStan bleeding edge feature that breaks PHP 8.3 at runtime.

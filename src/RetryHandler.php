@@ -9,6 +9,7 @@ use Closure;
 use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use Illuminate\Http\Client\ConnectionException;
 use Integrations\Exceptions\RetriesExhaustedException;
+use Integrations\Exceptions\RetryableException;
 use Integrations\Support\Config;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
@@ -92,6 +93,11 @@ class RetryHandler
     {
         $attempt = max(1, $attempt);
 
+        $retryableDelayMs = self::extractRetryableExceptionDelayMs($e);
+        if ($retryableDelayMs !== null) {
+            return min($retryableDelayMs, Config::retryAfterMaxMs());
+        }
+
         $retryAfterMs = self::extractRetryAfterMs($e);
         if ($retryAfterMs !== null) {
             return min($retryAfterMs, Config::retryAfterMaxMs());
@@ -108,6 +114,10 @@ class RetryHandler
     private static function isRetryableInternal(Throwable $e, ?int $statusCode, array $retryableStatusCodes): bool
     {
         for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof RetryableException) {
+                return true;
+            }
+
             if ($current instanceof ConnectionException) {
                 return true;
             }
@@ -128,6 +138,11 @@ class RetryHandler
         int $serverErrorBaseDelayMs,
         int $defaultBaseDelayMs,
     ): int {
+        $retryableDelayMs = self::extractRetryableExceptionDelayMs($e);
+        if ($retryableDelayMs !== null) {
+            return min($retryableDelayMs, Config::retryAfterMaxMs());
+        }
+
         $retryAfterMs = self::extractRetryAfterMs($e);
         if ($retryAfterMs !== null) {
             return min($retryAfterMs, Config::retryAfterMaxMs());
@@ -152,6 +167,17 @@ class RetryHandler
         }
 
         return $attempt * $defaultBaseDelayMs;
+    }
+
+    private static function extractRetryableExceptionDelayMs(Throwable $e): ?int
+    {
+        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
+            if ($current instanceof RetryableException && $current->retryAfterSeconds !== null) {
+                return $current->retryAfterSeconds * 1000;
+            }
+        }
+
+        return null;
     }
 
     /**
