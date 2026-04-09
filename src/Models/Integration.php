@@ -25,6 +25,7 @@ use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
+use Integrations\Events\OperationStarted;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
 use Integrations\RequestExecutor;
@@ -479,6 +480,7 @@ class Integration extends Model
 
     /**
      * @param  array<string, mixed>|null  $metadata
+     * @param  array<string, mixed>|null  $resultData
      */
     public function logOperation(
         string $operation,
@@ -490,6 +492,7 @@ class Integration extends Model
         ?string $error = null,
         ?int $durationMs = null,
         ?int $parentId = null,
+        ?array $resultData = null,
     ): IntegrationLog {
         $log = $this->logs()->create([
             'parent_id' => $parentId,
@@ -499,6 +502,7 @@ class Integration extends Model
             'external_id' => $externalId,
             'summary' => $summary,
             'metadata' => $metadata,
+            'result_data' => $resultData,
             'error' => $error,
             'duration_ms' => $durationMs,
         ]);
@@ -507,6 +511,8 @@ class Integration extends Model
             OperationCompleted::dispatch($this, $log);
         } elseif ($status === 'failed') {
             OperationFailed::dispatch($this, $log);
+        } elseif ($status === 'processing') {
+            OperationStarted::dispatch($this, $log);
         }
 
         return $log;

@@ -22,6 +22,7 @@ use Integrations\Support\Config;
  * @property string|null $external_id
  * @property string|null $summary
  * @property array<string, mixed>|null $metadata
+ * @property array<string, mixed>|null $result_data
  * @property string|null $error
  * @property int|null $duration_ms
  * @property Carbon|null $created_at
@@ -63,6 +64,7 @@ class IntegrationLog extends Model
     {
         return [
             'metadata' => 'json',
+            'result_data' => 'json',
             'duration_ms' => 'integer',
         ];
     }

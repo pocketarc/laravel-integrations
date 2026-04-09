@@ -20,10 +20,11 @@ All events use Laravel's `Dispatchable` and `SerializesModels` traits.
 
 ## Operations
 
-| Event | Payload | When |
-|-------|---------|------|
-| `OperationCompleted` | `$integration`, `$log` | An operation is logged with status `success` |
-| `OperationFailed` | `$integration`, `$log` | An operation is logged with status `failed` |
+| Event                | Payload                | When                                            |
+|----------------------|------------------------|-------------------------------------------------|
+| `OperationStarted`   | `$integration`, `$log` | An operation is logged with status `processing` |
+| `OperationCompleted` | `$integration`, `$log` | An operation is logged with status `success`    |
+| `OperationFailed`    | `$integration`, `$log` | An operation is logged with status `failed`     |
 
 ## OAuth
 

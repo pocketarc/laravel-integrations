@@ -51,11 +51,20 @@ class GithubProvider implements IntegrationProvider, CustomizesRetry
 }
 ```
 
-## How it composes with default logic
+## How it composes with other retry logic
 
-1. The retry handler first consults `isRetryable()` on the provider (if it implements `CustomizesRetry`).
-2. If the provider returns `true` or `false`, that decision is final.
-3. If the provider returns `null`, the default logic kicks in (exception chain walking, status code checks).
-4. For delays, `retryDelayMs()` is consulted first, with the same null-fallback pattern.
+The full retry decision chain, in priority order:
 
-This means providers only need to handle their SDK-specific exceptions -- everything else is handled automatically by the core retry handler.
+1. `RetryableException`: if the thrown exception (or anything in its chain) is a [`RetryableException`](/core-concepts/retries#retryableexception), it is always retried. `CustomizesRetry` is not consulted.
+2. `CustomizesRetry::isRetryable()`: if the provider returns `true` or `false`, that decision is final.
+3. Default logic: exception chain walking, status code checks.
+
+For delays, the same priority applies:
+
+1. `RetryableException::retryAfterSeconds` (if set)
+2. `CustomizesRetry::retryDelayMs()` (if non-null)
+3. Default delay logic (Retry-After header, status-code-based backoff)
+
+::: tip When to use which
+Use `RetryableException` when you control the throwing code (your own adapters, wrappers around third-party calls). Use `CustomizesRetry` when you need to inspect exceptions thrown by code you don't control (third-party SDKs).
+:::

@@ -5,10 +5,9 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Http\Client\ConnectionException;
-use Integrations\Contracts\CustomizesRetry;
-use Integrations\Contracts\IntegrationProvider;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Tests\Fixtures\RetryTestProvider;
 use Integrations\Tests\TestCase;
 use RuntimeException;
 
@@ -20,10 +19,7 @@ class CustomizesRetryTest extends TestCase
     {
         parent::setUp();
 
-        RetryTestProvider::$isRetryable = null;
-        RetryTestProvider::$delayMs = null;
-        RetryTestProvider::$capturedStatusCode = 'not-called';
-        RetryTestProvider::$delayCallCount = 0;
+        RetryTestProvider::reset();
 
         $manager = app(IntegrationManager::class);
         $manager->register('retry-test', RetryTestProvider::class);
@@ -149,54 +145,5 @@ class CustomizesRetryTest extends TestCase
         }
 
         $this->assertNull(RetryTestProvider::$capturedStatusCode);
-    }
-}
-
-class RetryTestProvider implements CustomizesRetry, IntegrationProvider
-{
-    public static ?bool $isRetryable = null;
-
-    public static ?int $delayMs = null;
-
-    public static mixed $capturedStatusCode = 'not-called';
-
-    public static int $delayCallCount = 0;
-
-    public function name(): string
-    {
-        return 'Retry Test Provider';
-    }
-
-    public function credentialRules(): array
-    {
-        return [];
-    }
-
-    public function metadataRules(): array
-    {
-        return [];
-    }
-
-    public function credentialDataClass(): ?string
-    {
-        return null;
-    }
-
-    public function metadataDataClass(): ?string
-    {
-        return null;
-    }
-
-    public function isRetryable(\Throwable $e): ?bool
-    {
-        return self::$isRetryable;
-    }
-
-    public function retryDelayMs(\Throwable $e, int $attempt, ?int $statusCode): ?int
-    {
-        self::$capturedStatusCode = $statusCode;
-        self::$delayCallCount++;
-
-        return self::$delayMs;
     }
 }

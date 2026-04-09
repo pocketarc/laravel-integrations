@@ -31,6 +31,26 @@ $log = $integration->logOperation(
 );
 ```
 
+### Structured result data
+
+Use `resultData` to store the structured output of an operation, separate from operational `metadata`:
+
+```php
+$log = $integration->logOperation(
+    operation: 'issue.create',
+    direction: 'outbound',
+    status: 'success',
+    summary: 'Created issue in GitHub',
+    metadata: ['repo' => 'acme/api', 'labels' => ['bug']],
+    resultData: ['issue_number' => 42, 'url' => 'https://github.com/acme/api/issues/42'],
+    durationMs: 850,
+);
+
+$log->result_data['issue_number']; // 42
+```
+
+`metadata` is for operational context (configuration, counts, request IDs). `resultData` is for what the operation produced (references, created IDs, output values).
+
 ### Hierarchical logging
 
 Use `parentId` for per-record granularity under a parent operation:
