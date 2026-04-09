@@ -18,6 +18,14 @@ class RetryTestProvider implements CustomizesRetry, IntegrationProvider
 
     public static int $delayCallCount = 0;
 
+    public static function reset(): void
+    {
+        self::$isRetryable = null;
+        self::$delayMs = null;
+        self::$capturedStatusCode = 'not-called';
+        self::$delayCallCount = 0;
+    }
+
     public function name(): string
     {
         return 'Retry Test Provider';

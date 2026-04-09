@@ -489,10 +489,10 @@ class Integration extends Model
         ?string $externalId = null,
         ?string $summary = null,
         ?array $metadata = null,
-        ?array $resultData = null,
         ?string $error = null,
         ?int $durationMs = null,
         ?int $parentId = null,
+        ?array $resultData = null,
     ): IntegrationLog {
         $log = $this->logs()->create([
             'parent_id' => $parentId,

@@ -56,20 +56,21 @@ API request/response log. One row per API call (including retries).
 
 Operation-level logs (syncs, imports, webhooks).
 
-| Column           | Type              | Description                                     |
-|------------------|-------------------|-------------------------------------------------|
-| `id`             | bigint (PK)       | Auto-incrementing ID                            |
-| `integration_id` | bigint (FK)       | Parent integration                              |
-| `operation`      | string            | Operation type (sync, import, webhook, etc.)    |
-| `direction`      | string            | `inbound` or `outbound`                         |
-| `status`         | string            | `success`, `failed`, or `processing`            |
-| `summary`        | string (nullable) | Human-readable summary                          |
-| `external_id`    | string (nullable) | External record ID                              |
-| `metadata`       | json (nullable)   | Structured metadata (counts, request IDs, etc.) |
-| `result_data`    | json (nullable)   | Structured output from the operation            |
-| `duration_ms`    | int (nullable)    | Operation duration                              |
-| `parent_id`      | bigint (nullable) | For hierarchical logging                        |
-| `timestamps`     |                   | `created_at`, `updated_at`                      |
+| Column           | Type              | Description                                                      |
+|------------------|-------------------|------------------------------------------------------------------|
+| `id`             | bigint (PK)       | Auto-incrementing ID                                             |
+| `integration_id` | bigint (FK)       | Parent integration                                               |
+| `operation`      | string            | Operation type (sync, import, webhook, etc.)                     |
+| `direction`      | string            | `inbound` or `outbound`                                          |
+| `status`         | string            | Free-form, e.g. `success`, `failed`, `processing`, `pending`     |
+| `summary`        | string (nullable) | Human-readable summary                                           |
+| `external_id`    | string (nullable) | External record ID                                               |
+| `metadata`       | json (nullable)   | Structured metadata (counts, request IDs, etc.)                  |
+| `result_data`    | json (nullable)   | Structured output from the operation                             |
+| `error`          | text (nullable)   | Error message on failure                                         |
+| `duration_ms`    | int (nullable)    | Operation duration                                               |
+| `parent_id`      | bigint (nullable) | For hierarchical logging                                         |
+| `timestamps`     |                   | `created_at`, `updated_at`                                       |
 
 ## integration_mappings
 

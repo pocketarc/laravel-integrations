@@ -14,6 +14,12 @@ class CustomizesRetryProvider implements CustomizesRetry, IntegrationProvider
 
     public static ?int $delayMs = null;
 
+    public static function reset(): void
+    {
+        self::$isRetryable = null;
+        self::$delayMs = null;
+    }
+
     public function name(): string
     {
         return 'Customizes Retry Provider';

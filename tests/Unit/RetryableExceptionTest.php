@@ -16,6 +16,13 @@ use RuntimeException;
 
 class RetryableExceptionTest extends TestCase
 {
+    protected function setUp(): void
+    {
+        parent::setUp();
+
+        CustomizesRetryProvider::reset();
+    }
+
     public function test_is_retryable_detects_retryable_exception(): void
     {
         $e = new RetryableException('temporary failure');
@@ -114,6 +121,7 @@ class RetryableExceptionTest extends TestCase
                 },
                 maxAttempts: 3,
             );
+            $this->fail('Expected RetryableException was not thrown.');
         } catch (RetryableException) {
             // expected after retries exhausted
         }
@@ -145,6 +153,7 @@ class RetryableExceptionTest extends TestCase
                 },
                 maxAttempts: 5,
             );
+            $this->fail('Expected RetryableException was not thrown.');
         } catch (RetryableException) {
             // expected
         }

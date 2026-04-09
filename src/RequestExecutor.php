@@ -7,18 +7,14 @@ namespace Integrations;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\CustomizesRetry;
-use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
-use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\Exceptions\RetryableException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
-use Integrations\Support\Config;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
@@ -32,10 +28,13 @@ final class RequestExecutor
 
     private readonly RequestCache $cache;
 
+    private readonly RateLimiter $rateLimiter;
+
     public function __construct(
         private readonly Integration $integration,
     ) {
         $this->cache = new RequestCache($integration);
+        $this->rateLimiter = new RateLimiter($integration);
     }
 
     /**
@@ -67,7 +66,7 @@ final class RequestExecutor
             }
         }
 
-        $this->enforceRateLimit();
+        $this->rateLimiter->enforce();
 
         return $this->requestWithRetries(
             $endpoint, $method, $responseClass, $callback, $relatedTo,
@@ -123,7 +122,7 @@ final class RequestExecutor
                 $delayMs = $this->resolveRetryDelay($e, $attempt);
 
                 usleep($delayMs * 1000);
-                $this->enforceRateLimit();
+                $this->rateLimiter->enforce();
             }
         }
 
@@ -326,65 +325,6 @@ final class RequestExecutor
         return $parsed;
     }
 
-    private function enforceRateLimit(): void
-    {
-        $provider = $this->integration->provider();
-
-        $limit = null;
-        if ($provider instanceof HasScheduledSync) {
-            $limit = $provider->defaultRateLimit();
-        }
-
-        if ($limit === null) {
-            return;
-        }
-
-        $maxWait = Config::rateLimitMaxWaitSeconds();
-        $waited = 0;
-
-        while (true) {
-            $estimate = $this->estimateCurrentRate();
-
-            if ($estimate < $limit) {
-                $currentKey = $this->rateLimitKey(now());
-                Cache::increment($currentKey);
-
-                return;
-            }
-
-            if ($waited >= $maxWait) {
-                throw new RateLimitExceededException($this->integration, $estimate, $limit);
-            }
-
-            sleep(1);
-            $waited++;
-        }
-    }
-
-    private function estimateCurrentRate(): int
-    {
-        $now = now();
-        $currentKey = $this->rateLimitKey($now);
-        $previousKey = $this->rateLimitKey($now->copy()->subMinute());
-
-        $elapsedFraction = ((int) $now->format('s') + (int) $now->format('u') / 1_000_000) / 60.0;
-
-        Cache::add($currentKey, 0, 120);
-        Cache::add($previousKey, 0, 120);
-
-        $rawCurrent = Cache::get($currentKey, 0);
-        $rawPrevious = Cache::get($previousKey, 0);
-        $currentCount = is_numeric($rawCurrent) ? (int) $rawCurrent : 0;
-        $previousCount = is_numeric($rawPrevious) ? (int) $rawPrevious : 0;
-
-        return (int) ceil($currentCount + $previousCount * (1.0 - $elapsedFraction));
-    }
-
-    private function rateLimitKey(CarbonInterface $time): string
-    {
-        return Config::cachePrefix().':rate:'.$this->integration->id.':'.$time->format('Y-m-d-H-i');
-    }
-
     private function redactRequestData(?string $requestData): ?string
     {
         if ($requestData === null) {
@@ -404,17 +344,13 @@ final class RequestExecutor
     {
         $retryableException = self::findRetryableException($e);
 
-        $retryable = $retryableException !== null || $this->isRetryableViaProvider($e);
-
-        if (! $retryable) {
+        if ($retryableException === null && ! $this->isRetryableViaProvider($e)) {
             return false;
         }
 
-        $effectiveMax = $retryableException?->maxAttempts !== null
-            ? min($maxAttempts, $retryableException->maxAttempts)
-            : $maxAttempts;
+        $cap = $retryableException?->maxAttempts;
 
-        return $attempt < $effectiveMax;
+        return $attempt < ($cap !== null ? min($maxAttempts, $cap) : $maxAttempts);
     }
 
     private function isRetryableViaProvider(Throwable $e): bool
@@ -427,6 +363,13 @@ final class RequestExecutor
 
     private function resolveRetryDelay(Throwable $e, int $attempt): int
     {
+        // RetryableException::retryAfterSeconds takes priority over CustomizesRetry.
+        // RetryHandler::calculateDelayMs already honors it, so route there directly.
+        $retryableException = self::findRetryableException($e);
+        if ($retryableException !== null && $retryableException->retryAfterSeconds !== null) {
+            return RetryHandler::calculateDelayMs($e, $attempt);
+        }
+
         $provider = $this->integration->provider();
         $statusCode = ResponseHelper::extractStatusCode($e);
         $providerDelay = $provider instanceof CustomizesRetry ? $provider->retryDelayMs($e, $attempt, $statusCode) : null;
