@@ -114,6 +114,8 @@ class IntegrationRequestFake
     {
         Assert::assertNotNull(self::$instance, 'IntegrationRequest::fake() was not called.');
 
+        [$endpoint, $method] = self::normalizeAssertionTarget($endpoint, $method);
+
         $matches = array_filter(
             self::$instance->recorded,
             static fn (array $r): bool => self::matchesFilter($r, $endpoint, $method, $integrationId),
@@ -140,6 +142,8 @@ class IntegrationRequestFake
     {
         Assert::assertNotNull(self::$instance, 'IntegrationRequest::fake() was not called.');
 
+        [$endpoint, $method] = self::normalizeAssertionTarget($endpoint, $method);
+
         $matches = array_filter(
             self::$instance->recorded,
             static fn (array $r): bool => self::matchesFilter($r, $endpoint, $method, $integrationId),
@@ -158,6 +162,8 @@ class IntegrationRequestFake
     public static function assertRequestedWith(string $endpoint, Closure $callback, ?string $method = null, ?int $integrationId = null): void
     {
         Assert::assertNotNull(self::$instance, 'IntegrationRequest::fake() was not called.');
+
+        [$endpoint, $method] = self::normalizeAssertionTarget($endpoint, $method);
 
         $matches = array_filter(
             self::$instance->recorded,
@@ -304,6 +310,26 @@ class IntegrationRequestFake
         }
 
         return [null, $key];
+    }
+
+    /**
+     * Extract any `METHOD:` prefix from an assertion's endpoint argument and
+     * reconcile it with an explicit `$method` filter. A conflict between the
+     * two is surfaced loudly so the mistake is obvious at the call site.
+     *
+     * @return array{string, string|null}
+     */
+    private static function normalizeAssertionTarget(string $endpoint, ?string $method): array
+    {
+        [$prefixMethod, $parsedEndpoint] = self::parseKey($endpoint);
+
+        if ($prefixMethod !== null && $method !== null && $prefixMethod !== mb_strtoupper($method)) {
+            throw new \InvalidArgumentException(
+                "Method prefix '{$prefixMethod}' in endpoint '{$endpoint}' conflicts with explicit method argument '{$method}'."
+            );
+        }
+
+        return [$parsedEndpoint, $method ?? $prefixMethod];
     }
 
     /**

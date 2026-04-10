@@ -13,6 +13,7 @@ use Integrations\Tests\Fixtures\TestDataResponse;
 use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
+use PHPUnit\Framework\AssertionFailedError;
 
 class IntegrationRequestFakeTest extends TestCase
 {
@@ -437,5 +438,116 @@ class IntegrationRequestFakeTest extends TestCase
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $this->integration->id);
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $other->id);
         IntegrationRequest::assertRequested('tickets/1.json', times: 2);
+    }
+
+    public function test_assert_requested_with_method_prefix_in_endpoint(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('GET:tickets/123.json');
+        IntegrationRequest::assertRequested('PUT:tickets/123.json');
+        IntegrationRequest::assertRequested('GET:tickets/123.json', times: 1);
+        IntegrationRequest::assertRequested('PUT:tickets/123.json', times: 1);
+    }
+
+    public function test_assert_requested_method_prefix_equivalent_to_explicit_method(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/42.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: 'tickets/7.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('PUT:tickets/*.json', times: 2);
+        IntegrationRequest::assertRequested('tickets/*.json', times: 2, method: 'PUT');
+    }
+
+    public function test_assert_not_requested_with_method_prefix(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertNotRequested('PUT:tickets/1.json');
+        IntegrationRequest::assertNotRequested('DELETE:tickets/*.json');
+    }
+
+    public function test_assert_not_requested_with_method_prefix_fails_when_matched(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        $this->expectException(AssertionFailedError::class);
+
+        IntegrationRequest::assertNotRequested('GET:tickets/1.json');
+    }
+
+    public function test_assert_requested_with_method_prefix_and_callback(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(
+            endpoint: 'tickets/1.json',
+            method: 'PUT',
+            requestData: '{"subject":"updated"}',
+            responseClass: TestOkResponse::class,
+            callback: fn () => null,
+        );
+
+        IntegrationRequest::assertRequestedWith(
+            'PUT:tickets/1.json',
+            fn (?string $data) => $data !== null && str_contains($data, 'updated'),
+        );
+    }
+
+    public function test_assert_requested_throws_on_method_prefix_conflict(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        $this->expectException(\InvalidArgumentException::class);
+        $this->expectExceptionMessage("Method prefix 'PUT' in endpoint 'PUT:tickets/1.json' conflicts with explicit method argument 'GET'.");
+
+        IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'GET');
+    }
+
+    public function test_assert_requested_allows_matching_method_prefix_and_explicit_method(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        // Same method, same case — no conflict.
+        IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'PUT');
+
+        // Same method, different case — still no conflict.
+        IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'put');
+    }
+
+    public function test_assert_requested_method_prefix_with_wildcard(): void
+    {
+        IntegrationRequest::fake();
+
+        $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('GET:tickets/*/comments.json', times: 1);
+        IntegrationRequest::assertRequested('POST:tickets/*/comments.json', times: 1);
+        IntegrationRequest::assertNotRequested('DELETE:tickets/*/comments.json');
+    }
+
+    public function test_assert_requested_with_non_http_prefix_is_treated_as_literal(): void
+    {
+        IntegrationRequest::fake();
+
+        // "FOO" is not an HTTP method, so parseKey() leaves the string intact
+        // and it behaves as a literal endpoint match — consistent with findResponse().
+        $this->integration->requestAs(endpoint: 'FOO:bar', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+
+        IntegrationRequest::assertRequested('FOO:bar');
     }
 }
