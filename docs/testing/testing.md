@@ -94,6 +94,15 @@ IntegrationRequest::assertNotRequested('tickets/123.json', method: 'DELETE');
 IntegrationRequest::assertRequested('tickets/*.json', integrationId: $zendesk->id);
 ```
 
+For symmetry with the `METHOD:endpoint` form accepted by `fake()`, assertions accept the same prefix in the endpoint argument. These two forms are equivalent:
+
+```php
+IntegrationRequest::assertRequested('PUT:tickets/*.json', times: 1);
+IntegrationRequest::assertRequested('tickets/*.json', times: 1, method: 'PUT');
+```
+
+Passing a prefix *and* an explicit `method:` that disagrees raises `InvalidArgumentException` so the mismatch isn't silent.
+
 ## Sequences and exceptions
 
 ```php

@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.7.1
+
+- Testing fake: assertion methods now accept the [`METHOD:endpoint`](/testing/testing#filtering-assertions) prefix form in the endpoint argument, matching how `fake()` registers responses. A prefix that conflicts with an explicit `method:` argument raises `InvalidArgumentException` instead of silently mismatching.
+
 ## 1.7.0
 
 - [`RetryableException`](/core-concepts/retries#retryableexception): throw to mark an error as retryable, with optional `retryAfterSeconds` and `maxAttempts`. Takes priority over `CustomizesRetry` and default status-code logic. Updated [retry decision chain](/advanced/custom-retry#how-it-composes-with-other-retry-logic).
