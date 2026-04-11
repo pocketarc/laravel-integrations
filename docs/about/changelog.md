@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.8.0
+
+- [`registerDefaults()`](/core-concepts/providers#auto-registration-for-companion-packages): companion packages can auto-register their providers so users don't need to edit config after `composer require`. Defaults never override user-defined entries. See [Building adapters](/adapters/building-adapters#auto-registration) for the recommended service provider pattern.
+
 ## 1.7.1
 
 - Testing fake: assertion methods now accept the [`METHOD:endpoint`](/testing/testing#filtering-assertions) prefix form in the endpoint argument, matching how `fake()` registers responses. A prefix that conflicts with an explicit `method:` argument raises `InvalidArgumentException` instead of silently mismatching.

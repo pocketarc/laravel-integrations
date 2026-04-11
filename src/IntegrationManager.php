@@ -19,6 +19,30 @@ class IntegrationManager
     ) {}
 
     /**
+     * Register default providers that companion packages ship out of the box.
+     *
+     * Merges the given providers into config('integrations.providers') without
+     * overriding entries the user has already defined. Call this from a companion
+     * package's service provider register() method.
+     *
+     * @param  array<string, class-string<IntegrationProvider>>  $providers
+     */
+    public static function registerDefaults(array $providers): void
+    {
+        $existing = config('integrations.providers', []);
+
+        if (! is_array($existing)) {
+            $existing = [];
+        }
+
+        foreach ($providers as $key => $class) {
+            $existing[$key] ??= $class;
+        }
+
+        config(['integrations.providers' => $existing]);
+    }
+
+    /**
      * Register a provider class for the given key.
      *
      * @param  class-string<IntegrationProvider>  $providerClass
