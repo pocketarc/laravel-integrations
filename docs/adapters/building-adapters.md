@@ -196,21 +196,64 @@ Important:
 - Don't advance the cursor past failed items
 - Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected
 
+## Auto-registration
+
+Adapter packages can auto-register their providers so users don't need to manually edit `config/integrations.php`. Ship a Laravel service provider that calls `IntegrationManager::registerDefaults()`:
+
+```php
+<?php
+
+namespace Integrations\Adapters;
+
+use Illuminate\Support\ServiceProvider;
+use Integrations\Adapters\GitHub\GitHubProvider;
+use Integrations\Adapters\Zendesk\ZendeskProvider;
+use Integrations\IntegrationManager;
+
+class IntegrationAdaptersServiceProvider extends ServiceProvider
+{
+    public function register(): void
+    {
+        IntegrationManager::registerDefaults([
+            'github' => GitHubProvider::class,
+            'zendesk' => ZendeskProvider::class,
+        ]);
+    }
+}
+```
+
+Then register it for Laravel's package auto-discovery in your `composer.json`:
+
+```json
+"extra": {
+    "laravel": {
+        "providers": [
+            "Integrations\\Adapters\\IntegrationAdaptersServiceProvider"
+        ]
+    }
+}
+```
+
+With this in place, `composer require` is all the user needs. Users can still override any key in their published config if they want a custom provider class.
+
 ## Contributing to the official package
 
 To add a new adapter to `pocketarc/laravel-integrations-adapters`:
 
-1. Create the adapter directory under `src/Linear/` (using your service's name)
-2. Follow the patterns above
-3. Add a `README.md` inside your adapter directory
-4. Add tests under `tests/Unit/Linear/`
-5. Open a PR
+1. Create the adapter directory under `src/Linear/` (using your service's name).
+2. Follow the patterns above.
+3. Add a `README.md` inside your adapter directory.
+4. Add tests under `tests/Unit/Linear/`.
+5. Add your provider to `IntegrationAdaptersServiceProvider::register()` so it's auto-registered.
+6. Open a PR.
 
 ## Releasing a community adapter
 
 If you prefer to maintain your own package:
 
-1. Create a new Composer package
-2. Require `pocketarc/laravel-integrations` as a dependency
-3. Follow the same patterns for consistency
-4. Submit your adapter for listing on these docs by opening an issue on the [laravel-integrations](https://github.com/pocketarc/laravel-integrations) repository
+1. Create a new Composer package.
+2. Require `pocketarc/laravel-integrations` as a dependency.
+3. Follow the same patterns for consistency.
+4. Ship a service provider that calls `IntegrationManager::registerDefaults()` (see [Auto-registration](#auto-registration) above).
+5. Register it for auto-discovery in your `composer.json`.
+6. Submit your adapter for listing on these docs by opening an issue on the [laravel-integrations](https://github.com/pocketarc/laravel-integrations) repository.

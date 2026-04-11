@@ -45,6 +45,21 @@ Integrations::register('github', GitHubProvider::class);
 
 The key (`'github'`) is the provider identifier stored in the `Integration` model's `provider` column.
 
+### Auto-registration for companion packages
+
+Companion packages (like `pocketarc/laravel-integrations-adapters`) can auto-register their providers so users don't need to edit config after `composer require`. The package ships a Laravel service provider that calls `registerDefaults()` during registration:
+
+```php
+use Integrations\IntegrationManager;
+
+IntegrationManager::registerDefaults([
+    'github' => GitHubProvider::class,
+    'zendesk' => ZendeskProvider::class,
+]);
+```
+
+Defaults never override entries the user has already defined in their published config. If you've set `'github' => MyCustomGitHubProvider::class`, the default is ignored.
+
 ## Optional interfaces
 
 Providers can opt into additional capabilities by implementing these interfaces:
