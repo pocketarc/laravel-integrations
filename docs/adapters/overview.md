@@ -10,6 +10,7 @@ The [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/lar
 |---------|-----|-------|
 | [GitHub](/adapters/github) | [knplabs/github-api](https://github.com/KnpLabs/php-github-api) | Issues |
 | [Zendesk](/adapters/zendesk) | [zendesk/zendesk_api_client_php](https://github.com/zendesk/zendesk_api_client_php) | Tickets, users, comments |
+| [Stripe](/adapters/stripe) | [stripe/stripe-php](https://github.com/stripe/stripe-php) | Payment intents, refunds, charges, customers, disputes, events, webhooks |
 
 These adapters aren't fully API-complete -- they cover what's needed for the projects that use them. You can extend them or build your own.
 
@@ -25,6 +26,7 @@ Register the adapters you need in `config/integrations.php`:
 'providers' => [
     'zendesk' => \Integrations\Adapters\Zendesk\ZendeskProvider::class,
     'github'  => \Integrations\Adapters\GitHub\GitHubProvider::class,
+    'stripe'  => \Integrations\Adapters\Stripe\StripeProvider::class,
 ],
 ```
 
