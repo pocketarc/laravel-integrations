@@ -160,7 +160,7 @@ class InstallCommand extends Command
 
     /**
      * Parse repeatable `--flag=key=value` options into an associative array.
-     * Silently drops entries without an `=` separator; validation at the
+     * Warns and drops entries without an `=` separator; validation at the
      * next layer catches any resulting missing values.
      *
      * @return array<string, string>
@@ -226,7 +226,7 @@ class InstallCommand extends Command
     }
 
     /**
-     * @param  array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed}>  $fields
+     * @param  array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}>  $fields
      * @param  array<string, string>  $fromFlags
      * @return array<string, mixed>|null
      */
@@ -242,10 +242,11 @@ class InstallCommand extends Command
                 continue;
             }
 
-            // Optional fields fall through to the Data class's declared default
-            // unless the caller explicitly set them via --flag. Keeps the
-            // interactive flow short; CI callers stay predictable.
-            if ($field['nullable'] || $field['hasDefault']) {
+            // Only prompt for fields the provider explicitly declared as
+            // required. Optional fields (nullable, defaulted, or just not
+            // marked required in the rules) fall through to whatever
+            // default the Data class provides.
+            if (! $field['required']) {
                 continue;
             }
 
@@ -261,7 +262,7 @@ class InstallCommand extends Command
     }
 
     /**
-     * @param  array{type: string, nullable: bool, hasDefault: bool, default: mixed}  $field
+     * @param  array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}  $field
      */
     private function resolveRequiredField(string $label, string $name, array $field, bool $interactive): mixed
     {
@@ -308,7 +309,7 @@ class InstallCommand extends Command
      * Prompt for one required field. Returns null if the user left it blank.
      * Secret-looking names use masked input.
      *
-     * @param  array{type: string, nullable: bool, hasDefault: bool, default: mixed}  $field
+     * @param  array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}  $field
      */
     private function promptField(string $label, string $name, array $field): mixed
     {
@@ -330,11 +331,34 @@ class InstallCommand extends Command
         return preg_match('/secret|token|key|password/i', $name) === 1;
     }
 
+    /**
+     * Coerce raw flag input into the constructor-declared type so it matches
+     * the provider's validation rules, but only when the string clearly
+     * represents that type. For ambiguous input ("abc" for int, "maybe" for
+     * bool) return the raw string so the validator can reject it rather than
+     * silently casting garbage to 0 / false.
+     */
     private function castValue(string $raw, string $type): mixed
     {
         return match ($type) {
-            'int' => (int) $raw,
-            'bool' => in_array(mb_strtolower($raw), ['1', 'true', 'yes', 'y'], true),
+            'int' => $this->castInt($raw),
+            'bool' => $this->castBool($raw),
+            default => $raw,
+        };
+    }
+
+    private function castInt(string $raw): int|string
+    {
+        $parsed = filter_var($raw, FILTER_VALIDATE_INT);
+
+        return $parsed === false ? $raw : $parsed;
+    }
+
+    private function castBool(string $raw): bool|string
+    {
+        return match (mb_strtolower($raw)) {
+            '1', 'true', 'yes', 'y' => true,
+            '0', 'false', 'no', 'n' => false,
             default => $raw,
         };
     }

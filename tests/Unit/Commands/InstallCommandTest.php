@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit\Commands;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Tests\Fixtures\InstallableProvider;
+use Integrations\Tests\Fixtures\OptionalRuleProvider;
 use Integrations\Tests\Fixtures\TestDataProvider;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
@@ -21,6 +22,7 @@ class InstallCommandTest extends TestCase
         $manager->register('installable', InstallableProvider::class);
         $manager->register('test-data', TestDataProvider::class);
         $manager->register('test', TestProvider::class);
+        $manager->register('optional-rule', OptionalRuleProvider::class);
     }
 
     public function test_errors_on_unknown_provider(): void
@@ -61,8 +63,8 @@ class InstallCommandTest extends TestCase
     public function test_prompts_only_for_required_credentials_interactively(): void
     {
         // Optional fields (region/timeout/sandbox) fall through to their
-        // Data-class defaults without prompting, keeping the interactive
-        // flow tight. The test confirms only api_key + api_secret are asked.
+        // Data-class defaults without prompting. The test confirms only
+        // api_key + api_secret are asked.
         $this->artisan('integrations:install', ['provider' => 'installable'])
             ->expectsQuestion('credential: api_key', 'key-abc')
             ->expectsQuestion('credential: api_secret', 'secret-xyz')
@@ -270,5 +272,57 @@ class InstallCommandTest extends TestCase
 
         $credentials = Integration::query()->firstOrFail()->credentialsArray();
         $this->assertSame('from-flag', $credentials['api_key']);
+    }
+
+    public function test_rules_only_field_without_required_marker_is_not_prompted(): void
+    {
+        // OptionalRuleProvider declares `note` as just 'string' — no required,
+        // no nullable. The installer should not prompt for it; only the
+        // required `api_key` should be asked. If the installer prompted for
+        // `note`, expectsQuestion would fail because we only expect one prompt.
+        $this->artisan('integrations:install', ['provider' => 'optional-rule'])
+            ->expectsQuestion('credential: api_key', 'key-abc')
+            ->assertSuccessful();
+
+        $credentials = Integration::query()->firstOrFail()->credentialsArray();
+        $this->assertSame('key-abc', $credentials['api_key']);
+        $this->assertArrayNotHasKey('note', $credentials);
+    }
+
+    public function test_non_numeric_int_flag_fails_validation_instead_of_silent_cast(): void
+    {
+        // timeout has rule 'nullable|integer'. Before the fix, (int)"not-a-number"
+        // would silently become 0 and pass validation; now the raw string
+        // reaches the validator and is rejected.
+        $this->artisan('integrations:install', [
+            'provider' => 'installable',
+            '--credential' => [
+                'api_key=k',
+                'api_secret=s',
+                'timeout=not-a-number',
+            ],
+        ])
+            ->assertFailed()
+            ->expectsOutputToContain('Invalid credentials');
+
+        $this->assertDatabaseCount('integrations', 0);
+    }
+
+    public function test_unrecognized_bool_flag_fails_validation_instead_of_silent_cast(): void
+    {
+        // sandbox has rule 'nullable|boolean'. Before the fix, "maybe" would
+        // coerce to false and save; now it reaches the validator unchanged.
+        $this->artisan('integrations:install', [
+            'provider' => 'installable',
+            '--credential' => [
+                'api_key=k',
+                'api_secret=s',
+                'sandbox=maybe',
+            ],
+        ])
+            ->assertFailed()
+            ->expectsOutputToContain('Invalid credentials');
+
+        $this->assertDatabaseCount('integrations', 0);
     }
 }

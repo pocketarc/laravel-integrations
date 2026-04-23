@@ -82,6 +82,12 @@ $integration = Integration::create([
 
 Credentials are encrypted at rest automatically. Metadata is stored as plain JSON.
 
+Or create the row from the CLI. [`integrations:install`](/reference/artisan-commands#integrations-install) reads your provider's Data classes, prompts for the required fields (masking secret-looking ones), validates against your rules, and runs the health check if the provider has one:
+
+```bash
+php artisan integrations:install github --name="Acme GitHub"
+```
+
 ## 4. Make API requests
 
 Both `request()` and `requestAs()` wrap your API call with logging, caching, rate limiting, retries, and health tracking:

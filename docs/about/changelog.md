@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows [S
 
 ## 1.9.0
 
-- `integrations:install` command: interactive installer that introspects a provider's `credentialDataClass()` / `metadataDataClass()` via reflection, prompts for required fields (masking secret-looking names), validates with the provider's rules, runs the health check if the provider implements `HasHealthCheck`, and upserts the `Integration` row. Non-interactive callers can supply every value via repeatable `--credential=key=value` / `--metadata=key=value` flags. Use `--force` to skip the overwrite and failed-health-check confirmations.
+- [`integrations:install`](/reference/artisan-commands#integrations-install) command: interactive installer that introspects a provider's `credentialDataClass()` / `metadataDataClass()` via reflection, prompts for required fields (masking secret-looking names), validates with the provider's rules, runs the health check if the provider implements `HasHealthCheck`, and upserts the `Integration` row. Non-interactive callers can supply every value via repeatable `--credential=key=value` / `--metadata=key=value` flags. Use `--force` to skip the overwrite and failed-health-check confirmations.
 
 ## 1.8.0
 

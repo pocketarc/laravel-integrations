@@ -22,7 +22,7 @@ final class FieldIntrospector
     /**
      * @param  class-string<Data>|null  $dataClass
      * @param  array<string, mixed>  $rules
-     * @return array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed}>
+     * @return array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}>
      */
     public static function discover(?string $dataClass, array $rules): array
     {
@@ -38,6 +38,7 @@ final class FieldIntrospector
                 'nullable' => self::ruleIsNullable($rule),
                 'hasDefault' => false,
                 'default' => null,
+                'required' => self::ruleIsRequired($rule),
             ];
         }
 
@@ -46,7 +47,7 @@ final class FieldIntrospector
 
     /**
      * @param  class-string<Data>|null  $dataClass
-     * @return array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed}>
+     * @return array<string, array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}>
      */
     private static function fromDataClass(?string $dataClass): array
     {
@@ -71,19 +72,21 @@ final class FieldIntrospector
     }
 
     /**
-     * @return array{type: string, nullable: bool, hasDefault: bool, default: mixed}
+     * @return array{type: string, nullable: bool, hasDefault: bool, default: mixed, required: bool}
      */
     private static function describe(ReflectionParameter $parameter): array
     {
         $type = $parameter->getType();
         $typeName = $type instanceof ReflectionNamedType ? $type->getName() : 'string';
         $hasDefault = $parameter->isDefaultValueAvailable();
+        $nullable = $parameter->allowsNull();
 
         return [
             'type' => $typeName,
-            'nullable' => $parameter->allowsNull(),
+            'nullable' => $nullable,
             'hasDefault' => $hasDefault,
             'default' => $hasDefault ? $parameter->getDefaultValue() : null,
+            'required' => ! $nullable && ! $hasDefault,
         ];
     }
 
@@ -99,6 +102,24 @@ final class FieldIntrospector
                     return true;
                 }
             }
+        }
+
+        return false;
+    }
+
+    /**
+     * Matches only the discrete `required` token, not conditional variants
+     * like `required_if` / `required_with` — those depend on sibling field
+     * state we can't evaluate at prompt time.
+     */
+    private static function ruleIsRequired(mixed $rule): bool
+    {
+        if (is_string($rule)) {
+            return in_array('required', explode('|', $rule), true);
+        }
+
+        if (is_array($rule)) {
+            return in_array('required', $rule, true);
         }
 
         return false;
