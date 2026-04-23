@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 1.9.0
+
+- `integrations:install` command: interactive installer that introspects a provider's `credentialDataClass()` / `metadataDataClass()` via reflection, prompts for required fields (masking secret-looking names), validates with the provider's rules, runs the health check if the provider implements `HasHealthCheck`, and upserts the `Integration` row. Non-interactive callers can supply every value via repeatable `--credential=key=value` / `--metadata=key=value` flags. Use `--force` to skip the overwrite and failed-health-check confirmations.
+
 ## 1.8.0
 
 - [`registerDefaults()`](/core-concepts/providers#auto-registration-for-companion-packages): companion packages can auto-register their providers so users don't need to edit config after `composer require`. Defaults never override user-defined entries. See [Building adapters](/adapters/building-adapters#auto-registration) for the recommended service provider pattern.
