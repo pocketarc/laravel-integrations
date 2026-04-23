@@ -88,7 +88,10 @@ return new class extends Migration
             $table->json('metadata')->nullable();
             $table->timestamps();
 
-            $table->unique(['integration_id', 'external_id', 'internal_type']);
+            $table->unique(
+                ['integration_id', 'external_id', 'internal_type'],
+                "{$prefix}_mappings_ext_int_unique",
+            );
             $table->index(['internal_type', 'internal_id']);
         });
     }
