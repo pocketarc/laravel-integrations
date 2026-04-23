@@ -65,6 +65,12 @@ class InstallCommand extends Command
             return self::SUCCESS;
         }
 
+        // Captured before persistIntegration() mutates the row. If the health
+        // check later fails and the user declines, we restore these attributes
+        // instead of deleting the row, so an update can't nuke previously
+        // working credentials.
+        $previousState = $existing !== null ? $this->snapshot($existing) : null;
+
         $credentials = $this->gatherValues(
             'credential',
             $provider->credentialDataClass(),
@@ -93,10 +99,37 @@ class InstallCommand extends Command
         );
 
         if ($provider instanceof HasHealthCheck) {
-            $this->runHealthCheck($provider, $integration, $force);
+            $this->runHealthCheck($provider, $integration, $force, $previousState);
         }
 
         return self::SUCCESS;
+    }
+
+    /**
+     * @return array{credentials: array<string, mixed>, metadata: array<string, mixed>, is_active: bool}
+     */
+    private function snapshot(Integration $integration): array
+    {
+        return [
+            'credentials' => $integration->credentialsArray(),
+            'metadata' => $this->metadataAsArray($integration),
+            'is_active' => $integration->is_active,
+        ];
+    }
+
+    /**
+     * @return array<string, mixed>
+     */
+    private function metadataAsArray(Integration $integration): array
+    {
+        $metadata = $integration->metadata;
+
+        if ($metadata instanceof Data) {
+            /** @var array<string, mixed> */
+            return $metadata->toArray();
+        }
+
+        return is_array($metadata) ? $metadata : [];
     }
 
     private function stringArgument(string $name): ?string
@@ -363,7 +396,10 @@ class InstallCommand extends Command
         };
     }
 
-    private function runHealthCheck(HasHealthCheck $provider, Integration $integration, bool $force): void
+    /**
+     * @param  array{credentials: array<string, mixed>, metadata: array<string, mixed>, is_active: bool}|null  $previousState
+     */
+    private function runHealthCheck(HasHealthCheck $provider, Integration $integration, bool $force, ?array $previousState): void
     {
         $this->line('Running health check...');
 
@@ -383,9 +419,21 @@ class InstallCommand extends Command
 
         $this->error('  [FAIL] Health check did not pass.');
 
-        if (! $force && ! $this->confirm('Keep the integration configured anyway?', default: true)) {
+        if ($force || $this->confirm('Keep the integration configured anyway?', default: true)) {
+            return;
+        }
+
+        // Fresh install: drop the row. Update: restore the row's previous
+        // credentials/metadata/is_active so we don't lose whatever was
+        // working before the user tried to reconfigure.
+        if ($previousState === null) {
             $integration->delete();
             $this->info('Installation rolled back.');
+
+            return;
         }
+
+        $integration->update($previousState);
+        $this->info('Rolled back to previous configuration.');
     }
 }

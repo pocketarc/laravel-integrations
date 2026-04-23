@@ -39,11 +39,11 @@ class InstallCommandTest extends TestCase
         $this->artisan('integrations:install', [
             'provider' => 'installable',
             '--credential' => [
-                'api_key' => 'api_key=key-123',
-                'api_secret' => 'api_secret=shh',
-                'region' => 'region=eu-west-1',
-                'timeout' => 'timeout=10',
-                'sandbox' => 'sandbox=true',
+                'api_key=key-123',
+                'api_secret=shh',
+                'region=eu-west-1',
+                'timeout=10',
+                'sandbox=true',
             ],
         ])
             ->assertSuccessful()
@@ -215,6 +215,46 @@ class InstallCommandTest extends TestCase
             ->expectsOutputToContain('Installation rolled back.');
 
         $this->assertDatabaseCount('integrations', 0);
+    }
+
+    public function test_failed_health_check_on_update_restores_previous_credentials_instead_of_deleting(): void
+    {
+        // Seed an existing, working row. The update run will overwrite it with
+        // new credentials, the health check will fail, and the user will say
+        // "no, don't keep it". Previously this called delete() and nuked the
+        // entire row; now we restore the captured pre-update snapshot.
+        Integration::create([
+            'provider' => 'installable',
+            'name' => 'Installable',
+            'credentials' => [
+                'api_key' => 'old-key',
+                'api_secret' => 'old-secret',
+                'region' => 'us-east-1',
+            ],
+            'is_active' => true,
+        ]);
+
+        $provider = new InstallableProvider;
+        $provider->healthCheckResult = false;
+        $this->app->instance(InstallableProvider::class, $provider);
+
+        $this->artisan('integrations:install', [
+            'provider' => 'installable',
+            '--credential' => ['api_key=new-key', 'api_secret=new-secret'],
+        ])
+            ->expectsConfirmation(
+                "An integration named 'Installable' already exists for 'installable'. Overwrite its credentials and metadata?",
+                'yes',
+            )
+            ->expectsConfirmation('Keep the integration configured anyway?', 'no')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Rolled back to previous configuration.');
+
+        $this->assertDatabaseCount('integrations', 1);
+        $credentials = Integration::query()->firstOrFail()->credentialsArray();
+        $this->assertSame('old-key', $credentials['api_key']);
+        $this->assertSame('old-secret', $credentials['api_secret']);
+        $this->assertSame('us-east-1', $credentials['region']);
     }
 
     public function test_force_keeps_integration_even_when_health_check_fails(): void
