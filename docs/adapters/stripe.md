@@ -4,6 +4,12 @@ Wraps the [stripe/stripe-php](https://github.com/stripe/stripe-php) SDK. Covers 
 
 Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package.
 
+## Installation
+
+```bash
+composer require pocketarc/laravel-integrations-adapters
+```
+
 ## Setup
 
 ```php
@@ -41,17 +47,17 @@ $client = new StripeClient($integration);
 
 | Resource                        | Method                                                         | Description                                                                                              |
 |---------------------------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `$client->paymentIntents()`     | `->create($amount, $currency, ...)`                            | Create a PaymentIntent. Auto-generates an idempotency key. Returns `\Stripe\PaymentIntent`.              |
+| `$client->paymentIntents()`     | `->create($amount, $currency, ..., $idempotencyKey?)`          | Create a PaymentIntent. Auto-generates an idempotency key. Returns `\Stripe\PaymentIntent`.              |
 |                                 | `->retrieve($id)`                                              | Get a PaymentIntent by id.                                                                               |
 |                                 | `->update($id, ...)`                                           | Update editable fields.                                                                                  |
-|                                 | `->confirm($id, $paymentMethod?)`                              | Confirm a PaymentIntent. Accepts an idempotency key.                                                     |
-|                                 | `->capture($id, $amountToCapture?)`                            | Capture an authorised PaymentIntent. Accepts an idempotency key.                                         |
-|                                 | `->cancel($id, $cancellationReason?)`                          | Cancel a PaymentIntent. Accepts an idempotency key.                                                      |
+|                                 | `->confirm($id, $paymentMethod?, $idempotencyKey?)`            | Confirm a PaymentIntent.                                                                                 |
+|                                 | `->capture($id, $amountToCapture?, $idempotencyKey?)`          | Capture an authorised PaymentIntent.                                                                     |
+|                                 | `->cancel($id, $cancellationReason?, $idempotencyKey?)`        | Cancel a PaymentIntent.                                                                                  |
 |                                 | `->list($customer?, $limit?)`                                  | Returns `\Stripe\Collection<\Stripe\PaymentIntent>`.                                                     |
-| `$client->refunds()`            | `->create($paymentIntent?, $charge?, ...)`                     | Refund against exactly one of `paymentIntent` or `charge`. Auto-generates an idempotency key.            |
+| `$client->refunds()`            | `->create($paymentIntent?, $charge?, ..., $idempotencyKey?)`   | Refund against exactly one of `paymentIntent` or `charge`. Auto-generates an idempotency key.            |
 |                                 | `->retrieve($id)` / `->list($paymentIntent?, $charge?, $limit?)` | Returns `\Stripe\Refund` or `\Stripe\Collection<\Stripe\Refund>`.                                      |
 | `$client->charges()`            | `->retrieve($id)`                                              | Get a Charge.                                                                                            |
-|                                 | `->capture($id, $amount?, $receiptEmail?)`                     | Capture an authorised charge. Auto-generates an idempotency key.                                         |
+|                                 | `->capture($id, $amount?, $receiptEmail?, $idempotencyKey?)`   | Capture an authorised charge. Auto-generates an idempotency key.                                         |
 |                                 | `->list($customer?, $paymentIntent?, $limit?)`                 | Returns `\Stripe\Collection<\Stripe\Charge>`.                                                            |
 | `$client->customers()`          | `->create(...)` / `->update($id, ...)`                         | Returns `\Stripe\Customer`.                                                                              |
 |                                 | `->retrieve($id)` / `->delete($id)`                            | Delete returns the Customer with `$deleted = true`.                                                      |

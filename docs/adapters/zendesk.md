@@ -4,6 +4,12 @@ Wraps the [zendesk/zendesk_api_client_php](https://github.com/zendesk/zendesk_ap
 
 Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package.
 
+## Installation
+
+```bash
+composer require pocketarc/laravel-integrations-adapters
+```
+
 ## Setup
 
 ```php
