@@ -16,6 +16,8 @@ $integration = Integration::create([
 ]);
 ```
 
+Or seed the row from the CLI. The [`integrations:install`](/reference/artisan-commands#integrations-install) Artisan command introspects your provider's `credentialDataClass()` to prompt for each required field, masks secret-looking ones, validates against your rules, and persists the row.
+
 ### Plain array access
 
 By default, `$integration->credentials` returns whatever the provider's `credentialDataClass()` returns. Use `credentialsArray()` when you need the raw array regardless:
