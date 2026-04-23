@@ -4,6 +4,12 @@ Wraps the [knplabs/github-api](https://github.com/KnpLabs/php-github-api) SDK. C
 
 Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package.
 
+## Installation
+
+```bash
+composer require pocketarc/laravel-integrations-adapters
+```
+
 ## Setup
 
 ```php

@@ -101,9 +101,148 @@ class LinearIssues extends LinearResource
 
 The `HandlesErrors` concern provides `executeWithErrorHandling()` for try/catch with logging.
 
-## Data classes
+## Input validation
 
-Use Spatie Laravel Data classes for typed API responses:
+Callers are internal application code, but the adapter is still a boundary worth guarding. For IDs, amounts, limits, and any value the upstream would reject with an opaque error, fail fast locally so the stack trace points at the actual caller. Keep a small base class for shared helpers rather than repeating guards in every method:
+
+```php
+abstract class StripeResource
+{
+    // ... constructor, sdk() accessor ...
+
+    protected function assertId(string $id): void
+    {
+        if ($id === '') {
+            throw new InvalidArgumentException('Stripe resource id cannot be empty.');
+        }
+    }
+
+    protected function assertPositive(int $value, string $parameter): void
+    {
+        if ($value <= 0) {
+            throw new InvalidArgumentException(sprintf(
+                'Stripe %s must be positive, got %d.',
+                $parameter,
+                $value,
+            ));
+        }
+    }
+}
+```
+
+Then each method validates its inputs before building the request:
+
+```php
+public function retrieve(string $id): Refund
+{
+    $this->assertId($id); // '' would otherwise build `refunds/`, hitting the list endpoint
+
+    return $this->expectInstance(
+        $this->integration->to("refunds/{$id}")->get(...),
+        Refund::class,
+    );
+}
+```
+
+Two reasons this matters:
+- Empty-string IDs silently route to the list endpoint of most REST APIs; the `assertId()` check catches the common footgun (uninit variable, `?? ''` fallback in caller code) before the URL is built.
+- Non-positive limits and amounts would be rejected by the upstream anyway, but a local `InvalidArgumentException` points at the caller directly rather than surfacing as an opaque API error.
+
+## Idempotency keys for non-idempotent writes
+
+The core retries GET requests 3 times and non-GET requests once. If a POST reaches the upstream but the response is lost in transit, the retry re-runs the closure and creates a second record: a duplicate refund, a duplicate charge capture, a duplicate dispatched message.
+
+For any state-changing POST where a duplicate would be bad, accept an optional idempotency key and auto-generate one when the caller doesn't supply it:
+
+```php
+public function create(
+    int $amount,
+    string $currency,
+    // ...
+    ?string $idempotencyKey = null,
+): PaymentIntent {
+    $this->assertPositive($amount, 'amount');
+
+    // null -> fresh UUID; '' -> throws; non-empty -> used as-is
+    $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
+
+    return $this->expectInstance(
+        $this->integration
+            ->to('payment_intents')
+            ->withData($params)
+            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->create(
+                $params,
+                ['idempotency_key' => $idempotencyKey],
+            )),
+        PaymentIntent::class,
+    );
+}
+```
+
+Helper on the resource base class:
+
+```php
+protected function resolveIdempotencyKey(?string $key): string
+{
+    if ($key === null) {
+        return Str::uuid()->toString();
+    }
+
+    if ($key === '') {
+        throw new InvalidArgumentException('idempotencyKey must not be empty when provided.');
+    }
+
+    return $key;
+}
+```
+
+Three things to get right:
+- Generate the key outside the closure. The closure runs once per attempt, so generating inside it would produce a new key per retry and defeat the purpose.
+- Callers re-issuing the same operation across job runs (e.g. a queued job that retries after a crash) should pass a stable key derived from the originating domain event. The auto-generated UUID only protects transient retries inside one adapter call, not retries across separate calls.
+- Reject blank strings up front. Forwarding `['idempotency_key' => '']` silently disables the upstream's duplicate-protection behaviour without an error.
+
+## Return types
+
+Two paths for typing resource responses, depending on what the SDK gives you back:
+
+| SDK behaviour                                 | Return                              | Example                |
+|-----------------------------------------------|-------------------------------------|------------------------|
+| Already returns typed classes (phpdoc or native) | The SDK type directly            | Stripe (`\Stripe\Refund`) |
+| Returns arrays or loosely-typed objects       | Local Spatie Data class             | GitHub (`GitHubIssueData`), Zendesk (`ZendeskTicketData`) |
+
+Wrapping an already-typed SDK response in a local Data class duplicates work without adding anything. Wrapping a raw-array response gives you strong typing, a place to normalise odd shapes, and a stable surface that survives SDK swaps.
+
+### Returning SDK types directly
+
+`Integration::request()` returns `mixed` because the closure can return anything the pipeline needs to log. Narrow back to the expected type with a runtime check rather than PHPDoc annotations. A generic helper on the resource base class handles this once:
+
+```php
+/**
+ * @template T of object
+ * @param  class-string<T>  $class
+ * @return T
+ */
+protected function expectInstance(mixed $value, string $class): object
+{
+    if (! $value instanceof $class) {
+        throw new UnexpectedValueException(sprintf(
+            'Expected instance of %s, got %s.',
+            $class,
+            get_debug_type($value),
+        ));
+    }
+
+    return $value;
+}
+```
+
+For list endpoints, most SDKs expose a typed Collection class (e.g. `\Stripe\Collection<\Stripe\Refund>`). Narrow to that rather than iterating into a plain `list<T>`, so callers keep access to pagination metadata.
+
+Serialization for request logging still works: objects that implement `JsonSerializable` (like `\Stripe\StripeObject`) are JSON-encoded by the pipeline before being stored.
+
+### Wrapping in local Data classes
+
+When the SDK returns raw arrays, use Spatie Laravel Data:
 
 ```php
 class LinearIssueData extends Data
@@ -131,9 +270,9 @@ class LinearIssueData extends Data
 ```
 
 Patterns to follow:
-- Store the original API response in an `original` property for debugging
-- Use `prepareForPipeline()` to transform raw API responses
-- Extract nested data (attachments from HTML, fallback values, etc.) in the pipeline
+- Store the original API response in an `original` property for debugging.
+- Use `prepareForPipeline()` to transform raw API responses.
+- Extract nested data (attachments from HTML, fallback values, etc.) in the pipeline.
 
 ## Events
 
