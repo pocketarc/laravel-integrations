@@ -1,6 +1,6 @@
 # Stripe adapter
 
-Wraps the [stripe/stripe-php](https://github.com/stripe/stripe-php) SDK. Covers payment intents, refunds, charges, customers, disputes, events, and webhook endpoints. Returns Stripe's native typed objects directly rather than wrapping them in local Data classes; see [Building adapters](/adapters/building-adapters#return-types) for when each approach fits.
+Wraps the [stripe/stripe-php](https://github.com/stripe/stripe-php) SDK. Covers payment intents, refunds, charges, customers, disputes, events, and webhook endpoints. Methods return Stripe's native typed objects (`\Stripe\Refund`, `\Stripe\PaymentIntent`, etc.), or `\Stripe\Collection<T>` for list endpoints.
 
 Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package.
 
@@ -62,7 +62,7 @@ $client = new StripeClient($integration);
 | `$client->webhookEndpoints()`   | `->create($url, $enabledEvents, ...)` / `->update($id, ...)`   | Returns `\Stripe\WebhookEndpoint`.                                                                       |
 |                                 | `->retrieve($id)` / `->delete($id)` / `->list($limit?)`        | Delete returns the WebhookEndpoint with `$deleted = true`.                                               |
 
-All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. The core retries GET 3 times and non-GET 1 time. Because a non-GET retry re-runs the closure, every money-moving POST accepts an optional idempotency key and auto-generates a UUID when absent, so a transient retry inside a single call collapses to one Stripe-side operation.
+All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. Every money-moving POST accepts an optional `$idempotencyKey` and auto-generates a UUID when absent, so a transient retry inside one call collapses to a single Stripe-side operation. Pass your own stable key when you need idempotency across separate calls (e.g. re-issuing from a queued job retry).
 
 ## Input validation
 
@@ -70,7 +70,7 @@ Resource methods reject empty ids, non-positive amounts and limits, and blank id
 
 ## Webhooks
 
-`StripeProvider` implements `HandlesWebhooks` with a generic dispatch model: every verified delivery fires a `StripeWebhookReceived` event carrying the integration, event type, event id, and raw payload array. Consumers listen for the event and route by type in their own code. `webhookHandlers()` returns an empty array by design, so the core falls back to `handleWebhook()` and dispatches the event for every type.
+Every verified delivery fires a `StripeWebhookReceived` event carrying the integration, event type, event id, and raw payload array. Listen for the event and route by type:
 
 ```php
 Event::listen(StripeWebhookReceived::class, function (StripeWebhookReceived $event) {
@@ -82,12 +82,8 @@ Event::listen(StripeWebhookReceived::class, function (StripeWebhookReceived $eve
 });
 ```
 
-Signature verification uses `\Stripe\Webhook::constructEvent()` with the stored `webhook_secret`. Requests with missing or invalid signatures return `false` from `verifyWebhookSignature()` and are rejected by the core webhook controller.
+Signature verification uses `\Stripe\Webhook::constructEvent()` with the stored `webhook_secret`. Requests with missing or invalid signatures are rejected before the event fires.
 
 ## Health check
 
-`healthCheck()` calls `$sdk->balance->retrieve()`. Any `\Throwable` (Stripe API error, bad credentials, network failure, or the `RuntimeException` thrown when the stored credentials aren't a `StripeCredentials` instance) returns `false`.
-
-## Return types
-
-Every resource method returns a Stripe SDK object (`\Stripe\PaymentIntent`, `\Stripe\Refund`, etc.) or `\Stripe\Collection<T>` for list endpoints. There are no local Data classes. The SDK already models its types with phpdoc generics, and `\Stripe\StripeObject` implements `JsonSerializable` so request logs still contain a full JSON body. Runtime narrowing of the `mixed` return from `Integration::request()` happens via a small `expectInstance()` helper on `StripeResource`.
+`healthCheck()` calls `$sdk->balance->retrieve()` and returns `false` on any error (API error, bad credentials, network failure).
