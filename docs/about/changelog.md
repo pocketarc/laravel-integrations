@@ -4,10 +4,10 @@ All notable changes to this project are documented here. This project follows [S
 
 ## 2.0.0
 
-- **Breaking**: Renamed the request API to `at()` / `as()`. The fluent builder reads as one English sentence ("at this endpoint, as this Data class"), and the typed / untyped pair collapses into one entry point with one optional chain step.
+- Renamed the request API. The fluent `to()` / `toAs()` pair becomes `at()->as()`, and the standalone `request()` / `requestAs()` methods collapse into one `request()` with an optional `$responseClass` argument.
   - `$integration->to($endpoint)` is now `$integration->at($endpoint)`.
   - `$integration->toAs($endpoint, $class)` is now `$integration->at($endpoint)->as($class)`.
-  - `$integration->requestAs($endpoint, $method, $class, $callback, ...)` is now `$integration->request($endpoint, $method, $callback, $class, ...)` — the typed and untyped methods are one `request()` with an optional `?string $responseClass = null`.
+  - `$integration->requestAs($endpoint, $method, $class, $callback, ...)` is now `$integration->request($endpoint, $method, $callback, $class, ...)`, with `$class` optional.
   - `PendingRequest::as(class-string<Data> $class)` is the new chain step for typing responses.
 
   See [Making requests](/core-concepts/making-requests) for the full builder.
