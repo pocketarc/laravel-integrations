@@ -177,9 +177,9 @@
       </div>
       <div class="code-body">
         <div class="line"><span class="var">$ticket</span> <span class="punct">=</span> <span class="var">$integration</span></div>
-        <div class="line">    <span class="arrow">-></span><span class="method">at</span><span class="punct">(</span><span class="string">"tickets/{$id}.json"</span><span class="punct">)</span></div>
-        <div class="line">    <span class="arrow">-></span><span class="method">as</span><span class="punct">(</span><span class="class">ZendeskTicketData</span><span class="punct">::</span><span class="keyword">class</span><span class="punct">)</span></div>
-        <div class="line">    <span class="arrow">-></span><span class="method">get</span><span class="punct">(</span><span class="keyword">fn</span> <span class="punct">()</span> <span class="arrow">=></span> <span class="var">$sdk</span><span class="arrow">-></span><span class="method">tickets</span><span class="punct">()</span><span class="arrow">-></span><span class="method">find</span><span class="punct">(</span><span class="var">$id</span><span class="punct">));</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">at</span><span class="punct">(</span><span class="string">"tickets/{$id}.json"</span><span class="punct">)</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">as</span><span class="punct">(</span><span class="class">ZendeskTicketData</span><span class="punct">::</span><span class="keyword">class</span><span class="punct">)</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">get</span><span class="punct">(</span><span class="keyword">fn</span> <span class="punct">()</span> <span class="arrow">=&gt;</span> <span class="var">$sdk</span><span class="arrow">-&gt;</span><span class="method">tickets</span><span class="punct">()</span><span class="arrow">-&gt;</span><span class="method">find</span><span class="punct">(</span><span class="var">$id</span><span class="punct">));</span></div>
         <div class="line"></div>
         <div class="line"><span class="comment">// Logged, cached, rate-limited, retried, health-tracked.</span></div>
       </div>

@@ -237,6 +237,14 @@ class Integration extends Model
             throw new InvalidArgumentException('$maxAttempts must be at least 1.');
         }
 
+        if ($responseClass !== null && ! is_subclass_of($responseClass, Data::class, true)) {
+            throw new InvalidArgumentException(sprintf(
+                '$responseClass must be a class-string of %s or null, got %s.',
+                Data::class,
+                $responseClass,
+            ));
+        }
+
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
         $fake = IntegrationRequestFake::active();

@@ -122,7 +122,7 @@ $client = new PostmarkClient($integration);
 |                                   | `->create($url, $messageStream?, $httpAuth?, $httpHeaders?, $triggers?)`               | Register a new webhook. Returns `?PostmarkWebhookEndpointData`.                                                         |
 |                                   | `->delete($id)`                                                                        | Delete a webhook subscription. Returns `bool`.                                                                          |
 
-All methods route through `Integration::request()` / `requestAs()`, so every call is logged, rate-limited, retried, and tracked against the integration's health. Date filters (`fromdate`/`todate` on stats, etc.) are validated locally with `Carbon::hasFormat()` before the SDK sees them, giving a clear `InvalidArgumentException` instead of a 422 round-trip.
+All methods route through the fluent `at(...)->as(...)->get()/post()` builder (`Integration::request()` under the hood), so every call is logged, rate-limited, retried, and tracked against the integration's health. Date filters (`fromdate`/`todate` on stats, etc.) are validated locally with `Carbon::hasFormat()` before the SDK sees them, giving a clear `InvalidArgumentException` instead of a 422 round-trip.
 
 When `messagestream` is omitted from a list call, the resource falls back to the integration's metadata default (`outbound` unless overridden), not to the SDK's hardcoded default. This matters for tenants on a non-default stream like `broadcasts`.
 

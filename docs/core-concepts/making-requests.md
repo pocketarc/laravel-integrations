@@ -34,17 +34,18 @@ If you cache an untyped response and the response is an object, a warning is log
 
 ### URL shortcut
 
-Terminal verbs accept a URL string instead of a closure. The builder uses Laravel's HTTP client to make the call, picking up `withData()` as query string (GET) or JSON body (other methods):
+Untyped terminal verbs accept a URL string instead of a closure. The builder uses Laravel's HTTP client to make the call. An array `withData()` becomes a query string on `GET` and a JSON body on other methods; a string `withData()` is sent as the raw body on non-`GET` requests:
 
 ```php
-$issues = $integration
+$response = $integration
     ->at('/repos/{owner}/{repo}/issues')
-    ->as(IssueListResponse::class)
     ->withData(['state' => 'open'])
     ->get('https://api.github.com/repos/acme/widgets/issues');
 ```
 
-The `endpoint` argument passed to `at()` is a logical identifier. It can be a real HTTP path or an SDK operation name; the value is only used for logging, caching, and rate-limit bucketing.
+This shortcut is only available on the untyped builder. Typed callers (after `->as(...)`) always pass a closure, since they're typically wrapping an SDK call.
+
+The `endpoint` argument passed to `at()` is a logical identifier. It can be a real HTTP path or an SDK operation name; the value is used for logging, caching, rate-limit bucketing, and matching in the request-fake/assertion layer.
 
 ```php
 // SDK-style: the endpoint name is purely a label
