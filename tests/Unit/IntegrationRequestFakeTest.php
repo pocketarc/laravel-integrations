@@ -37,7 +37,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/tickets',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -53,7 +53,7 @@ class IntegrationRequestFakeTest extends TestCase
             'customers.create' => ['ok' => true],
         ]);
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: 'customers.create',
             method: 'POST',
             responseClass: TestOkResponse::class,
@@ -68,7 +68,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: '/api/unknown',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -82,8 +82,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('/api/tickets');
         IntegrationRequest::assertRequested('/api/tickets', times: 2);
@@ -93,7 +93,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/tickets', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertNotRequested('/api/users');
     }
@@ -102,7 +102,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: 'customers.create',
             method: 'POST',
             responseClass: TestOkResponse::class,
@@ -127,8 +127,8 @@ class IntegrationRequestFakeTest extends TestCase
             },
         ]);
 
-        $result1 = $this->integration->requestAs(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $result2 = $this->integration->requestAs(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $result1 = $this->integration->request(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $result2 = $this->integration->request(endpoint: '/api/counter', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertSame('1', $result1->data);
         $this->assertSame('2', $result2->data);
@@ -140,9 +140,9 @@ class IntegrationRequestFakeTest extends TestCase
             '/api/items' => new ResponseSequence(['data' => 'first'], ['data' => 'second'], ['data' => 'third']),
         ]);
 
-        $r1 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $r2 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $r3 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r3 = $this->integration->request(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertSame('first', $r1->data);
         $this->assertSame('second', $r2->data);
@@ -155,8 +155,8 @@ class IntegrationRequestFakeTest extends TestCase
             '/api/items' => new ResponseSequence(['data' => 'only']),
         ]);
 
-        $r1 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $r2 = $this->integration->requestAs(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r1 = $this->integration->request(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $r2 = $this->integration->request(endpoint: '/api/items', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertSame('only', $r1->data);
         $this->assertNull($r2);
@@ -171,15 +171,15 @@ class IntegrationRequestFakeTest extends TestCase
         $this->expectException(\RuntimeException::class);
         $this->expectExceptionMessage('API is down');
 
-        $this->integration->requestAs(endpoint: '/api/fail', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/fail', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
     }
 
     public function test_assert_request_count(): void
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: '/api/a', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: '/api/b', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/a', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/b', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequestCount(2);
     }
@@ -194,12 +194,12 @@ class IntegrationRequestFakeTest extends TestCase
     public function test_stop_faking_resumes_real_calls(): void
     {
         IntegrationRequest::fake();
-        $this->integration->requestAs(endpoint: '/api/fake', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: '/api/fake', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
         $this->assertDatabaseCount('integration_requests', 0);
 
         IntegrationRequest::stopFaking();
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/real',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -215,7 +215,7 @@ class IntegrationRequestFakeTest extends TestCase
             'tickets/*.json' => ['ok' => true],
         ]);
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: 'tickets/123.json',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -233,7 +233,7 @@ class IntegrationRequestFakeTest extends TestCase
             'tickets/123.json' => ['data' => 'exact'],
         ]);
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: 'tickets/123.json',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -251,7 +251,7 @@ class IntegrationRequestFakeTest extends TestCase
             'tickets/*/comments.json' => ['data' => 'specific'],
         ]);
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: 'tickets/42/comments.json',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -268,8 +268,8 @@ class IntegrationRequestFakeTest extends TestCase
             'tickets/*.json' => ['data' => 'single-segment'],
         ]);
 
-        $match = $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $miss = $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $match = $this->integration->request(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $miss = $this->integration->request(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertInstanceOf(TestDataResponse::class, $match);
         $this->assertNull($miss);
@@ -279,7 +279,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('tickets/*.json');
     }
@@ -291,14 +291,14 @@ class IntegrationRequestFakeTest extends TestCase
             'PUT:tickets/123.json' => ['data' => 'updated'],
         ]);
 
-        $getResult = $this->integration->requestAs(
+        $getResult = $this->integration->request(
             endpoint: 'tickets/123.json',
             method: 'GET',
             responseClass: TestDataResponse::class,
             callback: fn () => null,
         );
 
-        $putResult = $this->integration->requestAs(
+        $putResult = $this->integration->request(
             endpoint: 'tickets/123.json',
             method: 'PUT',
             responseClass: TestDataResponse::class,
@@ -315,8 +315,8 @@ class IntegrationRequestFakeTest extends TestCase
             'tickets/*.json' => ['ok' => true],
         ]);
 
-        $getResult = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $postResult = $this->integration->requestAs(endpoint: 'tickets/2.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
+        $getResult = $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $postResult = $this->integration->request(endpoint: 'tickets/2.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
 
         $this->assertInstanceOf(TestOkResponse::class, $getResult);
         $this->assertInstanceOf(TestOkResponse::class, $postResult);
@@ -329,14 +329,14 @@ class IntegrationRequestFakeTest extends TestCase
             'GET:tickets/*.json' => ['data' => 'get-specific'],
         ]);
 
-        $getResult = $this->integration->requestAs(
+        $getResult = $this->integration->request(
             endpoint: 'tickets/1.json',
             method: 'GET',
             responseClass: TestDataResponse::class,
             callback: fn () => null,
         );
 
-        $postResult = $this->integration->requestAs(
+        $postResult = $this->integration->request(
             endpoint: 'tickets/2.json',
             method: 'POST',
             responseClass: TestDataResponse::class,
@@ -353,7 +353,7 @@ class IntegrationRequestFakeTest extends TestCase
             'GET:tickets/*/comments.json' => ['data' => 'comments'],
         ]);
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: 'tickets/42/comments.json',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -364,7 +364,7 @@ class IntegrationRequestFakeTest extends TestCase
         $this->assertSame('comments', $result->data);
 
         // Different method should not match
-        $miss = $this->integration->requestAs(
+        $miss = $this->integration->request(
             endpoint: 'tickets/42/comments.json',
             method: 'POST',
             responseClass: TestDataResponse::class,
@@ -383,8 +383,8 @@ class IntegrationRequestFakeTest extends TestCase
             ->forIntegration($this->integration, ['tickets/*.json' => ['data' => 'integration-a']])
             ->forIntegration($other, ['tickets/*.json' => ['data' => 'integration-b']]);
 
-        $resultA = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $resultB = $other->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $resultA = $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $resultB = $other->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertSame('integration-a', $resultA->data);
         $this->assertSame('integration-b', $resultB->data);
@@ -395,8 +395,8 @@ class IntegrationRequestFakeTest extends TestCase
         IntegrationRequest::fake(['fallback/endpoint' => ['data' => 'global']])
             ->forIntegration($this->integration, ['scoped/endpoint' => ['data' => 'scoped']]);
 
-        $scoped = $this->integration->requestAs(endpoint: 'scoped/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
-        $global = $this->integration->requestAs(endpoint: 'fallback/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $scoped = $this->integration->request(endpoint: 'scoped/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
+        $global = $this->integration->request(endpoint: 'fallback/endpoint', method: 'GET', responseClass: TestDataResponse::class, callback: fn () => null);
 
         $this->assertSame('scoped', $scoped->data);
         $this->assertSame('global', $global->data);
@@ -407,7 +407,7 @@ class IntegrationRequestFakeTest extends TestCase
         IntegrationRequestFake::activate()
             ->forIntegration($this->integration->id, ['tickets/*.json' => ['ok' => true]]);
 
-        $result = $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $result = $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         $this->assertInstanceOf(TestOkResponse::class, $result);
         $this->assertTrue($result->ok);
@@ -417,8 +417,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, method: 'GET');
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, method: 'PUT');
@@ -432,8 +432,8 @@ class IntegrationRequestFakeTest extends TestCase
 
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $other->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $other->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $this->integration->id);
         IntegrationRequest::assertRequested('tickets/1.json', times: 1, integrationId: $other->id);
@@ -444,8 +444,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: 'tickets/123.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/123.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/123.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('GET:tickets/123.json');
         IntegrationRequest::assertRequested('PUT:tickets/123.json');
@@ -457,8 +457,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/42.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: 'tickets/7.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/42.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/7.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('PUT:tickets/*.json', times: 2);
         IntegrationRequest::assertRequested('tickets/*.json', times: 2, method: 'PUT');
@@ -468,7 +468,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertNotRequested('PUT:tickets/1.json');
         IntegrationRequest::assertNotRequested('DELETE:tickets/*.json');
@@ -478,7 +478,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         $this->expectException(AssertionFailedError::class);
 
@@ -489,7 +489,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: 'tickets/1.json',
             method: 'PUT',
             requestData: '{"subject":"updated"}',
@@ -507,7 +507,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
         $this->expectException(\InvalidArgumentException::class);
         $this->expectExceptionMessage("Method prefix 'PUT' in endpoint 'PUT:tickets/1.json' conflicts with explicit method argument 'GET'.");
@@ -519,7 +519,7 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
         // Same method, same case — no conflict.
         IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'PUT');
@@ -532,8 +532,8 @@ class IntegrationRequestFakeTest extends TestCase
     {
         IntegrationRequest::fake();
 
-        $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
-        $this->integration->requestAs(endpoint: 'tickets/42/comments.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/42/comments.json', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'tickets/42/comments.json', method: 'POST', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('GET:tickets/*/comments.json', times: 1);
         IntegrationRequest::assertRequested('POST:tickets/*/comments.json', times: 1);
@@ -546,7 +546,7 @@ class IntegrationRequestFakeTest extends TestCase
 
         // "FOO" is not an HTTP method, so parseKey() leaves the string intact
         // and it behaves as a literal endpoint match — consistent with findResponse().
-        $this->integration->requestAs(endpoint: 'FOO:bar', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
+        $this->integration->request(endpoint: 'FOO:bar', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('FOO:bar');
     }

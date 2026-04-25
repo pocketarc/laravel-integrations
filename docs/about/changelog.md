@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.0.0
+
+- Renamed the request API. The fluent `to()` / `toAs()` pair becomes `at()->as()`, and the standalone `request()` / `requestAs()` methods collapse into one `request()` with an optional `$responseClass` argument.
+  - `$integration->to($endpoint)` is now `$integration->at($endpoint)`.
+  - `$integration->toAs($endpoint, $class)` is now `$integration->at($endpoint)->as($class)`.
+  - `$integration->requestAs($endpoint, $method, $class, $callback, ...)` is now `$integration->request($endpoint, $method, $callback, $class, ...)`, with `$class` optional.
+  - `PendingRequest::as(class-string<Data> $class)` is the new chain step for typing responses.
+
+  See [Making requests](/core-concepts/making-requests) for the full builder.
+
 ## 1.9.1
 
 - Migration fix: the `integration_mappings` unique index now uses an explicit short name so the generated identifier stays within MySQL's 64-character limit. Previously the auto-generated name caused the migration to fail on MySQL.

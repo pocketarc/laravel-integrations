@@ -35,14 +35,12 @@ class GitHubProvider implements IntegrationProvider, HasScheduledSync
     {
         $meta = $integration->metadata;
 
-        $issues = $integration->requestAs(
-            endpoint: '/repos/{owner}/{repo}/issues',
-            method: 'GET',
-            responseClass: IssueListResponse::class,
-            callback: fn () => Http::withHeaders([
+        $issues = $integration
+            ->at('/repos/{owner}/{repo}/issues')
+            ->as(IssueListResponse::class)
+            ->get(fn () => Http::withHeaders([
                 'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
-            ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"),
-        );
+            ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"));
 
         $count = 0;
         foreach ($issues->issues as $issue) {
@@ -105,17 +103,15 @@ class GitHubProvider implements IntegrationProvider, HasIncrementalSync
         $since = $cursor ?? now()->subDay()->toIso8601String();
         $meta = $integration->metadata;
 
-        $issues = $integration->requestAs(
-            endpoint: '/repos/{owner}/{repo}/issues',
-            method: 'GET',
-            responseClass: IssueListResponse::class,
-            callback: fn () => Http::withHeaders([
+        $issues = $integration
+            ->at('/repos/{owner}/{repo}/issues')
+            ->as(IssueListResponse::class)
+            ->get(fn () => Http::withHeaders([
                 'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
             ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues", [
                 'since' => $since,
                 'state' => 'all',
-            ]),
-        );
+            ]));
 
         // Process issues...
 

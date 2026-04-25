@@ -26,14 +26,14 @@ class SyncTimelineTest extends TestCase
 
         $integration->setSyncContext(42);
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/first',
             method: 'GET',
             responseClass: TestOkResponse::class,
             callback: fn () => ['ok' => true],
         );
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/second',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -52,7 +52,7 @@ class SyncTimelineTest extends TestCase
         $integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
         $integration->refresh();
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/test',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -70,7 +70,7 @@ class SyncTimelineTest extends TestCase
 
         $integration->setSyncContext(1);
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/test',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -80,7 +80,7 @@ class SyncTimelineTest extends TestCase
         $integration->clearSyncContext();
 
         // After clearing, new requests should not be tracked
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/test2',
             method: 'GET',
             responseClass: TestOkResponse::class,

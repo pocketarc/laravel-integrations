@@ -134,6 +134,7 @@ export default defineConfig({
           { text: "GitHub", link: "/adapters/github" },
           { text: "Zendesk", link: "/adapters/zendesk" },
           { text: "Stripe", link: "/adapters/stripe" },
+          { text: "Postmark", link: "/adapters/postmark" },
           {
             text: "Building adapters",
             link: "/adapters/building-adapters",

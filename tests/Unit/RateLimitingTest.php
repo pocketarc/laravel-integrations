@@ -37,7 +37,7 @@ class RateLimitingTest extends TestCase
 
         $this->expectException(RateLimitExceededException::class);
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/next',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -47,7 +47,7 @@ class RateLimitingTest extends TestCase
 
     public function test_allows_requests_under_limit(): void
     {
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: '/api/second',
             method: 'GET',
             responseClass: TestOkResponse::class,

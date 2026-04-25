@@ -75,7 +75,7 @@ Patterns to follow:
 
 ## Resource classes
 
-Resources handle the actual API calls. They go through `Integration::request()` / `requestAs()` so everything is logged, rate-limited, and health-tracked:
+Resources handle the actual API calls. They go through the fluent `at()->...->get()` builder (or the underlying `Integration::request()`) so everything is logged, rate-limited, and health-tracked:
 
 ```php
 class LinearIssues extends LinearResource
@@ -84,12 +84,10 @@ class LinearIssues extends LinearResource
 
     public function get(string $id): LinearIssueData
     {
-        return $this->integration->requestAs(
-            endpoint: "issues/{$id}",
-            method: 'GET',
-            responseClass: LinearIssueData::class,
-            callback: fn () => $this->sdk->issues()->find($id),
-        );
+        return $this->integration
+            ->at("issues/{$id}")
+            ->as(LinearIssueData::class)
+            ->get(fn () => $this->sdk->issues()->find($id));
     }
 
     public function since(string $cursor, Closure $callback): void
@@ -138,7 +136,7 @@ public function retrieve(string $id): Refund
     $this->assertId($id); // '' would otherwise build `refunds/`, hitting the list endpoint
 
     return $this->expectInstance(
-        $this->integration->to("refunds/{$id}")->get(...),
+        $this->integration->at("refunds/{$id}")->get(...),
         Refund::class,
     );
 }
@@ -168,7 +166,7 @@ public function create(
 
     return $this->expectInstance(
         $this->integration
-            ->to('payment_intents')
+            ->at('payment_intents')
             ->withData($params)
             ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->create(
                 $params,

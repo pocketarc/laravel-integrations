@@ -173,15 +173,13 @@
         <div class="dot dot-red"></div>
         <div class="dot dot-yellow"></div>
         <div class="dot dot-green"></div>
-        <div class="code-titlebar-text">ZendeskProvider.php</div>
+        <div class="code-titlebar-text">ZendeskTickets.php</div>
       </div>
       <div class="code-body">
-        <div class="line"><span class="var">$tickets</span> <span class="punct">=</span> <span class="var">$integration</span><span class="arrow">-></span><span class="method">requestAs</span><span class="punct">(</span></div>
-        <div class="line">    <span class="key">endpoint:</span> <span class="string">'/api/v2/tickets.json'</span><span class="punct">,</span></div>
-        <div class="line">    <span class="key">method:</span> <span class="string">'GET'</span><span class="punct">,</span></div>
-        <div class="line">    <span class="key">responseClass:</span> <span class="class">TicketListResponse</span><span class="punct">::</span><span class="keyword">class</span><span class="punct">,</span></div>
-        <div class="line">    <span class="key">callback:</span> <span class="keyword">fn</span> <span class="punct">()</span> <span class="arrow">=></span> <span class="class">Http</span><span class="punct">::</span><span class="method">get</span><span class="punct">(</span><span class="var">$url</span><span class="punct">),</span></div>
-        <div class="line"><span class="punct">);</span></div>
+        <div class="line"><span class="var">$ticket</span> <span class="punct">=</span> <span class="var">$integration</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">at</span><span class="punct">(</span><span class="string">"tickets/{$id}.json"</span><span class="punct">)</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">as</span><span class="punct">(</span><span class="class">ZendeskTicketData</span><span class="punct">::</span><span class="keyword">class</span><span class="punct">)</span></div>
+        <div class="line">    <span class="arrow">-&gt;</span><span class="method">get</span><span class="punct">(</span><span class="keyword">fn</span> <span class="punct">()</span> <span class="arrow">=&gt;</span> <span class="var">$sdk</span><span class="arrow">-&gt;</span><span class="method">tickets</span><span class="punct">()</span><span class="arrow">-&gt;</span><span class="method">find</span><span class="punct">(</span><span class="var">$id</span><span class="punct">));</span></div>
         <div class="line"></div>
         <div class="line"><span class="comment">// Logged, cached, rate-limited, retried, health-tracked.</span></div>
       </div>

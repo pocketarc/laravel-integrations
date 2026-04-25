@@ -54,14 +54,12 @@ class GitHubProvider implements IntegrationProvider, HasHealthCheck
     public function healthCheck(Integration $integration): bool
     {
         try {
-            $integration->requestAs(
-                endpoint: '/user',
-                method: 'GET',
-                responseClass: UserResponse::class,
-                callback: fn () => Http::withHeaders([
+            $integration
+                ->at('/user')
+                ->as(UserResponse::class)
+                ->get(fn () => Http::withHeaders([
                     'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
-                ])->get('https://api.github.com/user'),
-            );
+                ])->get('https://api.github.com/user'));
             return true;
         } catch (\Throwable) {
             return false;

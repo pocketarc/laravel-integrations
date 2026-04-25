@@ -4,83 +4,67 @@ declare(strict_types=1);
 
 namespace Integrations;
 
-use Carbon\CarbonInterface;
 use Closure;
-use Illuminate\Database\Eloquent\Model;
 use Illuminate\Http\Client\Response;
 use Illuminate\Support\Facades\Http;
+use Integrations\Concerns\HandlesPendingRequest;
 use Integrations\Models\Integration;
+use InvalidArgumentException;
 use Spatie\LaravelData\Data;
 
 /**
- * @template TResponse of Data
+ * Untyped fluent request builder. Use `->as(SomeData::class)` to switch into
+ * the typed builder ({@see TypedPendingRequest}) when you want a typed Data
+ * instance back from the terminal verb. Otherwise, the verbs return whatever
+ * the closure returns (or whatever Laravel's HTTP client returns when a URL
+ * is passed instead of a closure).
+ *
+ * The URL-string convenience is only available here on the untyped builder,
+ * because typed callers are always wrapping an SDK call (which they pass as
+ * a closure).
  */
 class PendingRequest
 {
-    private ?Model $relatedTo = null;
+    use HandlesPendingRequest;
 
-    /** @var string|array<string, mixed>|null */
-    private string|array|null $requestData = null;
-
-    private ?CarbonInterface $cacheFor = null;
-
-    private bool $serveStale = false;
-
-    private ?int $retryOfId = null;
-
-    private ?int $maxAttempts = null;
-
-    /**
-     * @param  class-string<TResponse>|null  $responseClass
-     */
-    public function __construct(
-        private readonly Integration $integration,
-        private readonly string $endpoint,
-        private readonly ?string $responseClass = null,
-    ) {}
-
-    /** @return self<TResponse> */
-    public function withCache(CarbonInterface|int $ttl, bool $serveStale = false): self
+    public function __construct(Integration $integration, string $endpoint)
     {
-        $this->cacheFor = is_int($ttl) ? now()->addSeconds($ttl) : $ttl;
-        $this->serveStale = $serveStale;
-
-        return $this;
-    }
-
-    /** @return self<TResponse> */
-    public function withAttempts(int $max): self
-    {
-        $this->maxAttempts = $max;
-
-        return $this;
-    }
-
-    /** @return self<TResponse> */
-    public function relatedTo(Model $model): self
-    {
-        $this->relatedTo = $model;
-
-        return $this;
+        $this->integration = $integration;
+        $this->endpoint = $endpoint;
     }
 
     /**
-     * @param  string|array<string, mixed>  $data
-     * @return self<TResponse>
+     * Switch into the typed builder. The executed callback's return value
+     * will be hydrated through `$class::from()` and the typed instance comes
+     * back from `->get()` / `->post()` / etc.
+     *
+     * @template T of Data
+     *
+     * @param  class-string<T>  $class
+     * @return TypedPendingRequest<T>
      */
-    public function withData(string|array $data): self
+    public function as(string $class): TypedPendingRequest
     {
-        $this->requestData = $data;
+        if (! is_subclass_of($class, Data::class, true)) {
+            throw new InvalidArgumentException(sprintf(
+                '%s requires a class-string of %s, got %s.',
+                __METHOD__,
+                Data::class,
+                $class,
+            ));
+        }
 
-        return $this;
-    }
-
-    /** @return self<TResponse> */
-    public function retryOf(int $id): self
-    {
-        $this->retryOfId = $id;
-
-        return $this;
+        return new TypedPendingRequest(
+            integration: $this->integration,
+            endpoint: $this->endpoint,
+            responseClass: $class,
+            relatedTo: $this->relatedTo,
+            requestData: $this->requestData,
+            cacheFor: $this->cacheFor,
+            serveStale: $this->serveStale,
+            retryOfId: $this->retryOfId,
+            maxAttempts: $this->maxAttempts,
+        );
     }
 
     /**
@@ -144,32 +128,7 @@ class PendingRequest
             ? $this->buildHttpCallback($method, $callbackOrUrl)
             : $callbackOrUrl;
 
-        if ($this->responseClass !== null) {
-            return $this->integration->requestAs(
-                endpoint: $this->endpoint,
-                method: $method,
-                responseClass: $this->responseClass,
-                callback: $callback,
-                relatedTo: $this->relatedTo,
-                requestData: $this->requestData,
-                cacheFor: $this->cacheFor,
-                serveStale: $this->serveStale,
-                retryOfId: $this->retryOfId,
-                maxAttempts: $this->maxAttempts,
-            );
-        }
-
-        return $this->integration->request(
-            endpoint: $this->endpoint,
-            method: $method,
-            callback: $callback,
-            relatedTo: $this->relatedTo,
-            requestData: $this->requestData,
-            cacheFor: $this->cacheFor,
-            serveStale: $this->serveStale,
-            retryOfId: $this->retryOfId,
-            maxAttempts: $this->maxAttempts,
-        );
+        return $this->dispatch($method, $callback, null);
     }
 
     /**

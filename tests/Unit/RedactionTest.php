@@ -57,7 +57,7 @@ class RedactionTest extends TestCase
         $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
         $integration->refresh();
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/login',
             method: 'POST',
             responseClass: TestTokenResponse::class,

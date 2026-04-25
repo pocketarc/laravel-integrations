@@ -24,7 +24,7 @@ class StatsCommandTest extends TestCase
         $integration = Integration::create(['provider' => 'test', 'name' => 'Stats Test']);
         $integration->refresh();
 
-        $integration->requestAs(
+        $integration->request(
             endpoint: '/api/success',
             method: 'GET',
             responseClass: TestOkResponse::class,

@@ -36,7 +36,7 @@ Full documentation is available at **[laravel-integrations docs](docs/getting-st
 
 ## Official adapters
 
-The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) provides ready-to-use adapters for GitHub and Zendesk, with more planned.
+The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) provides ready-to-use adapters for GitHub, Zendesk, Stripe, and Postmark.
 
 ## Contributing
 

@@ -11,6 +11,10 @@ use Integrations\Testing\IntegrationRequestFake;
 use Integrations\Tests\Fixtures\TestOkResponse;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
+use Integrations\TypedPendingRequest;
+use InvalidArgumentException;
+use Spatie\LaravelData\Data;
+use stdClass;
 
 class PendingRequestTest extends TestCase
 {
@@ -24,17 +28,31 @@ class PendingRequestTest extends TestCase
         $this->integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
     }
 
-    public function test_to_returns_pending_request(): void
+    public function test_at_returns_untyped_pending_request(): void
     {
-        $pending = $this->integration->toAs('/api/test', TestOkResponse::class);
+        $pending = $this->integration->at('/api/test');
         $this->assertInstanceOf(PendingRequest::class, $pending);
+    }
+
+    public function test_as_returns_typed_pending_request(): void
+    {
+        $typed = $this->integration->at('/api/test')->as(TestOkResponse::class);
+        $this->assertInstanceOf(TypedPendingRequest::class, $typed);
+    }
+
+    public function test_as_rejects_classes_that_do_not_extend_data(): void
+    {
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage(Data::class);
+
+        $this->integration->at('/api/test')->as(stdClass::class); // @phpstan-ignore-line argument.type
     }
 
     public function test_fluent_get_with_callback(): void
     {
         IntegrationRequestFake::activate(['/api/tickets' => ['ok' => true]]);
 
-        $result = $this->integration->toAs('/api/tickets', TestOkResponse::class)
+        $result = $this->integration->at('/api/tickets')->as(TestOkResponse::class)
             ->get(fn () => ['ok' => true]);
 
         $this->assertInstanceOf(TestOkResponse::class, $result);
@@ -46,7 +64,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/tickets' => ['ok' => true]]);
 
-        $result = $this->integration->toAs('/api/tickets', TestOkResponse::class)
+        $result = $this->integration->at('/api/tickets')->as(TestOkResponse::class)
             ->withData(['title' => 'Test'])
             ->post(fn () => ['ok' => true]);
 
@@ -59,7 +77,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/test' => ['ok' => true]]);
 
-        $this->integration->toAs('/api/test', TestOkResponse::class)
+        $this->integration->at('/api/test')->as(TestOkResponse::class)
             ->withAttempts(3)
             ->get(fn () => ['ok' => true]);
 
@@ -70,7 +88,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/search' => ['ok' => true]]);
 
-        $this->integration->toAs('/api/search', TestOkResponse::class)
+        $this->integration->at('/api/search')->as(TestOkResponse::class)
             ->withData(['q' => 'test'])
             ->get(fn () => ['ok' => true]);
 
@@ -83,7 +101,7 @@ class PendingRequestTest extends TestCase
 
     public function test_method_chaining_returns_self(): void
     {
-        $pending = $this->integration->toAs('/api/test', TestOkResponse::class);
+        $pending = $this->integration->at('/api/test')->as(TestOkResponse::class);
 
         $this->assertSame($pending, $pending->withAttempts(2));
         $this->assertSame($pending, $pending->withData('data'));
