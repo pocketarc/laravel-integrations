@@ -26,7 +26,7 @@ class PendingRequestTest extends TestCase
 
     public function test_to_returns_pending_request(): void
     {
-        $pending = $this->integration->toAs('/api/test', TestOkResponse::class);
+        $pending = $this->integration->at('/api/test')->as(TestOkResponse::class);
         $this->assertInstanceOf(PendingRequest::class, $pending);
     }
 
@@ -34,7 +34,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/tickets' => ['ok' => true]]);
 
-        $result = $this->integration->toAs('/api/tickets', TestOkResponse::class)
+        $result = $this->integration->at('/api/tickets')->as(TestOkResponse::class)
             ->get(fn () => ['ok' => true]);
 
         $this->assertInstanceOf(TestOkResponse::class, $result);
@@ -46,7 +46,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/tickets' => ['ok' => true]]);
 
-        $result = $this->integration->toAs('/api/tickets', TestOkResponse::class)
+        $result = $this->integration->at('/api/tickets')->as(TestOkResponse::class)
             ->withData(['title' => 'Test'])
             ->post(fn () => ['ok' => true]);
 
@@ -59,7 +59,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/test' => ['ok' => true]]);
 
-        $this->integration->toAs('/api/test', TestOkResponse::class)
+        $this->integration->at('/api/test')->as(TestOkResponse::class)
             ->withAttempts(3)
             ->get(fn () => ['ok' => true]);
 
@@ -70,7 +70,7 @@ class PendingRequestTest extends TestCase
     {
         IntegrationRequestFake::activate(['/api/search' => ['ok' => true]]);
 
-        $this->integration->toAs('/api/search', TestOkResponse::class)
+        $this->integration->at('/api/search')->as(TestOkResponse::class)
             ->withData(['q' => 'test'])
             ->get(fn () => ['ok' => true]);
 
@@ -83,7 +83,7 @@ class PendingRequestTest extends TestCase
 
     public function test_method_chaining_returns_self(): void
     {
-        $pending = $this->integration->toAs('/api/test', TestOkResponse::class);
+        $pending = $this->integration->at('/api/test')->as(TestOkResponse::class);
 
         $this->assertSame($pending, $pending->withAttempts(2));
         $this->assertSame($pending, $pending->withData('data'));

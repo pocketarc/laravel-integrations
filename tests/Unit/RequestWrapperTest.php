@@ -37,7 +37,7 @@ class RequestWrapperTest extends TestCase
     {
         Event::fake();
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: '/api/tickets',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -64,7 +64,7 @@ class RequestWrapperTest extends TestCase
         Event::fake();
 
         try {
-            $this->integration->requestAs(
+            $this->integration->request(
                 endpoint: '/api/fail',
                 method: 'POST',
                 responseClass: TestOkResponse::class,
@@ -98,7 +98,7 @@ class RequestWrapperTest extends TestCase
 
     public function test_request_with_explicit_request_data(): void
     {
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: 'customers.create',
             method: 'POST',
             responseClass: TestOkResponse::class,
@@ -114,7 +114,7 @@ class RequestWrapperTest extends TestCase
 
     public function test_retry_of_links_to_original(): void
     {
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/first',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -124,7 +124,7 @@ class RequestWrapperTest extends TestCase
         $originalRequest = IntegrationRequest::first();
         $this->assertNotNull($originalRequest);
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/first',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -141,7 +141,7 @@ class RequestWrapperTest extends TestCase
     public function test_health_updated_on_failure(): void
     {
         try {
-            $this->integration->requestAs(
+            $this->integration->request(
                 endpoint: '/api/fail',
                 method: 'GET',
                 responseClass: TestOkResponse::class,
@@ -159,7 +159,7 @@ class RequestWrapperTest extends TestCase
     {
         $this->integration->update(['consecutive_failures' => 3]);
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/ok',
             method: 'GET',
             responseClass: TestOkResponse::class,

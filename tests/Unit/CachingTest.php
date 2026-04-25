@@ -31,7 +31,7 @@ class CachingTest extends TestCase
     {
         $callCount = 0;
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/data',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -43,7 +43,7 @@ class CachingTest extends TestCase
             cacheFor: now()->addHour(),
         );
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: '/api/data',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -66,7 +66,7 @@ class CachingTest extends TestCase
 
     public function test_stale_cache_returned_on_failure(): void
     {
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/flaky',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -74,7 +74,7 @@ class CachingTest extends TestCase
             cacheFor: now()->subSecond(), // expired
         );
 
-        $result = $this->integration->requestAs(
+        $result = $this->integration->request(
             endpoint: '/api/flaky',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -92,7 +92,7 @@ class CachingTest extends TestCase
 
     public function test_no_stale_fallback_when_disabled(): void
     {
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/flaky',
             method: 'GET',
             responseClass: TestDataResponse::class,
@@ -102,7 +102,7 @@ class CachingTest extends TestCase
 
         $this->expectException(RuntimeException::class);
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/flaky',
             method: 'GET',
             responseClass: TestDataResponse::class,

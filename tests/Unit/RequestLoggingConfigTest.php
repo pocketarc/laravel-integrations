@@ -32,7 +32,7 @@ class RequestLoggingConfigTest extends TestCase
     {
         Event::fake();
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/data',
             method: 'GET',
             responseClass: TestOkResponse::class,
@@ -48,7 +48,7 @@ class RequestLoggingConfigTest extends TestCase
         Event::fake();
 
         $this->assertThrows(function (): void {
-            $this->integration->requestAs(
+            $this->integration->request(
                 endpoint: '/api/data',
                 method: 'GET',
                 responseClass: TestOkResponse::class,
@@ -64,7 +64,7 @@ class RequestLoggingConfigTest extends TestCase
     {
         $this->integration->update(['consecutive_failures' => 3]);
 
-        $this->integration->requestAs(
+        $this->integration->request(
             endpoint: '/api/data',
             method: 'GET',
             responseClass: TestOkResponse::class,

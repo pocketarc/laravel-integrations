@@ -90,22 +90,20 @@ php artisan integrations:install github --name="Acme GitHub"
 
 ## 4. Make API requests
 
-Both `request()` and `requestAs()` wrap your API call with logging, caching, rate limiting, retries, and health tracking:
+The fluent `at()->...->get()` builder wraps your API call with logging, caching, rate limiting, retries, and health tracking:
 
 ```php
 $meta = $integration->metadata;
 
-$issues = $integration->requestAs(
-    endpoint: '/repos/{owner}/{repo}/issues',
-    method: 'GET',
-    responseClass: IssueListResponse::class,
-    callback: fn () => Http::withHeaders([
+$issues = $integration
+    ->at('/repos/{owner}/{repo}/issues')
+    ->as(IssueListResponse::class)
+    ->get(fn () => Http::withHeaders([
         'Authorization' => 'Bearer '.$integration->credentialsArray()['token'],
-    ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"),
-);
+    ])->get("https://api.github.com/repos/{$meta['owner']}/{$meta['repo']}/issues"));
 ```
 
-Use `requestAs()` for typed responses (returns a [Spatie Data](https://spatie.be/docs/laravel-data/v4/introduction) object), or `request()` when you don't need typed responses. See [Making Requests](/core-concepts/making-requests) for the full API.
+Chain `->as(SomeData::class)` for typed responses (returns a [Spatie Data](https://spatie.be/docs/laravel-data/v4/introduction) object), or skip it if you only need the raw value. See [Making Requests](/core-concepts/making-requests) for the full API.
 
 ## Next steps
 

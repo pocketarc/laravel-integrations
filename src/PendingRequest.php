@@ -12,9 +12,6 @@ use Illuminate\Support\Facades\Http;
 use Integrations\Models\Integration;
 use Spatie\LaravelData\Data;
 
-/**
- * @template TResponse of Data
- */
 class PendingRequest
 {
     private ?Model $relatedTo = null;
@@ -30,16 +27,28 @@ class PendingRequest
 
     private ?int $maxAttempts = null;
 
-    /**
-     * @param  class-string<TResponse>|null  $responseClass
-     */
+    /** @var class-string<Data>|null */
+    private ?string $responseClass = null;
+
     public function __construct(
         private readonly Integration $integration,
         private readonly string $endpoint,
-        private readonly ?string $responseClass = null,
     ) {}
 
-    /** @return self<TResponse> */
+    /**
+     * Type the response: the executed callback's return value will be
+     * passed through `$class::from()` and the matching Data instance
+     * comes back from `->get()` / `->post()` / etc.
+     *
+     * @param  class-string<Data>  $class
+     */
+    public function as(string $class): self
+    {
+        $this->responseClass = $class;
+
+        return $this;
+    }
+
     public function withCache(CarbonInterface|int $ttl, bool $serveStale = false): self
     {
         $this->cacheFor = is_int($ttl) ? now()->addSeconds($ttl) : $ttl;
@@ -48,7 +57,6 @@ class PendingRequest
         return $this;
     }
 
-    /** @return self<TResponse> */
     public function withAttempts(int $max): self
     {
         $this->maxAttempts = $max;
@@ -56,7 +64,6 @@ class PendingRequest
         return $this;
     }
 
-    /** @return self<TResponse> */
     public function relatedTo(Model $model): self
     {
         $this->relatedTo = $model;
@@ -66,7 +73,6 @@ class PendingRequest
 
     /**
      * @param  string|array<string, mixed>  $data
-     * @return self<TResponse>
      */
     public function withData(string|array $data): self
     {
@@ -75,7 +81,6 @@ class PendingRequest
         return $this;
     }
 
-    /** @return self<TResponse> */
     public function retryOf(int $id): self
     {
         $this->retryOfId = $id;
@@ -144,25 +149,11 @@ class PendingRequest
             ? $this->buildHttpCallback($method, $callbackOrUrl)
             : $callbackOrUrl;
 
-        if ($this->responseClass !== null) {
-            return $this->integration->requestAs(
-                endpoint: $this->endpoint,
-                method: $method,
-                responseClass: $this->responseClass,
-                callback: $callback,
-                relatedTo: $this->relatedTo,
-                requestData: $this->requestData,
-                cacheFor: $this->cacheFor,
-                serveStale: $this->serveStale,
-                retryOfId: $this->retryOfId,
-                maxAttempts: $this->maxAttempts,
-            );
-        }
-
         return $this->integration->request(
             endpoint: $this->endpoint,
             method: $method,
             callback: $callback,
+            responseClass: $this->responseClass,
             relatedTo: $this->relatedTo,
             requestData: $this->requestData,
             cacheFor: $this->cacheFor,

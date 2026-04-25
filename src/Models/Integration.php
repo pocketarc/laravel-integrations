@@ -195,33 +195,35 @@ class Integration extends Model
         }
     }
 
-    /** @return PendingRequest<Data> */
-    public function to(string $endpoint): PendingRequest
+    /**
+     * Start a fluent request against this integration's endpoint. Chain
+     * `->as(SomeData::class)` to type the response, then call `->get()` /
+     * `->post()` / etc. with the closure that performs the SDK call.
+     */
+    public function at(string $endpoint): PendingRequest
     {
         return new PendingRequest($this, $endpoint);
     }
 
     /**
-     * @template TResponse of Data
+     * Execute a callback against this integration, logging the request and
+     * (when `$responseClass` is set) hydrating the result through Spatie
+     * Data. Both live and cached paths run the result through `Data::from()`,
+     * so typed responses are type-consistent regardless of cache-hit state.
      *
-     * @param  class-string<TResponse>  $responseClass
-     * @return PendingRequest<TResponse>
-     */
-    public function toAs(string $endpoint, string $responseClass): PendingRequest
-    {
-        return new PendingRequest($this, $endpoint, $responseClass);
-    }
-
-    /**
-     * Execute a callback against this integration, logging the request.
+     * Most callers should use the fluent `at()->...->get()` builder; this
+     * method is the underlying executor exposed for direct use when you
+     * already have a method/callback in hand.
      *
      * @param  Closure(): mixed  $callback
+     * @param  class-string<Data>|null  $responseClass
      * @param  string|array<string, mixed>|null  $requestData
      */
     public function request(
         string $endpoint,
         string $method,
         Closure $callback,
+        ?string $responseClass = null,
         ?Model $relatedTo = null,
         string|array|null $requestData = null,
         ?CarbonInterface $cacheFor = null,
@@ -235,58 +237,12 @@ class Integration extends Model
             throw new InvalidArgumentException('$maxAttempts must be at least 1.');
         }
 
-        $fake = IntegrationRequestFake::active();
-        if ($fake !== null) {
-            $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
-
-            return $fake->record($this, $endpoint, $method, $encodedData);
-        }
-
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
-
-        return $this->executor()->execute(
-            $endpoint, $method, null, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
-        );
-    }
-
-    /**
-     * Execute a callback against this integration with a typed response.
-     *
-     * Both live and cached paths reconstruct via Data::from(), ensuring type-consistent responses.
-     *
-     * @template TResponse of Data
-     *
-     * @param  class-string<TResponse>  $responseClass
-     * @param  Closure(): mixed  $callback
-     * @param  string|array<string, mixed>|null  $requestData
-     */
-    public function requestAs(
-        string $endpoint,
-        string $method,
-        string $responseClass,
-        Closure $callback,
-        ?Model $relatedTo = null,
-        string|array|null $requestData = null,
-        ?CarbonInterface $cacheFor = null,
-        bool $serveStale = false,
-        ?int $retryOfId = null,
-        ?int $maxAttempts = null,
-    ): mixed {
-        $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
-
-        if ($maxAttempts < 1) {
-            throw new InvalidArgumentException('$maxAttempts must be at least 1.');
-        }
 
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
-            $encodedData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
-
-            return $fake->record($this, $endpoint, $method, $encodedData, $responseClass);
+            return $fake->record($this, $endpoint, $method, $encodedRequestData, $responseClass);
         }
-
-        $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
         return $this->executor()->execute(
             $endpoint, $method, $responseClass, $callback, $relatedTo,

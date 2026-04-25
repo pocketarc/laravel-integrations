@@ -5,13 +5,11 @@ GET requests default to 3 attempts (1 original + up to 2 retries) on transient e
 ## Basic usage
 
 ```php
-$tickets = $integration->requestAs(
-    endpoint: '/api/v2/tickets.json',
-    method: 'GET',
-    responseClass: TicketListResponse::class,
-    callback: fn () => Http::get($url),
-    maxAttempts: 3,
-);
+$tickets = $integration
+    ->at('/api/v2/tickets.json')
+    ->as(TicketListResponse::class)
+    ->withAttempts(3)
+    ->get(fn () => Http::get($url));
 ```
 
 Each retry is persisted as its own `IntegrationRequest` row with `retry_of` pointing to the first attempt. Every attempt counts toward rate limiting and is visible in logs.

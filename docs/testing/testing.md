@@ -148,12 +148,10 @@ class TicketSyncTest extends TestCase
             'tickets.list' => ['tickets' => [['id' => 1, 'subject' => 'Bug report']]],
         ]);
 
-        $result = $integration->requestAs(
-            endpoint: 'tickets.list',
-            method: 'GET',
-            responseClass: TicketListResponse::class,
-            callback: fn () => Http::get('https://api.github.com/issues'),
-        );
+        $result = $integration
+            ->at('tickets.list')
+            ->as(TicketListResponse::class)
+            ->get(fn () => Http::get('https://api.github.com/issues'));
 
         IntegrationRequest::assertRequested('tickets.list');
     }
@@ -180,12 +178,10 @@ class GitHubProviderTest extends IntegrationTestCase
             'repos.get' => ['id' => 42, 'name' => 'laravel-integrations'],
         ]);
 
-        $repo = $this->integration->requestAs(
-            endpoint: 'repos.get',
-            method: 'GET',
-            responseClass: RepoData::class,
-            callback: fn () => Http::get('https://api.github.com/repos/pocketarc/laravel-integrations'),
-        );
+        $repo = $this->integration
+            ->at('repos.get')
+            ->as(RepoData::class)
+            ->get(fn () => Http::get('https://api.github.com/repos/pocketarc/laravel-integrations'));
 
         IntegrationRequest::assertRequested('repos.get');
     }
