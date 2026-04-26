@@ -162,13 +162,12 @@ class CircuitBreakerTest extends TestCase
         }
 
         // Travel past the cooldown and try again. Should transition to
-        // half-open and let the request through.
+        // half-open and let the request through. tearDown() resets the
+        // frozen clock unconditionally.
         Carbon::setTestNow(Carbon::now()->addSeconds(31));
 
         $breaker->enforce(); // should not throw, half-open probe
         $this->assertTrue(true);
-
-        Carbon::setTestNow(); // reset
     }
 
     public function test_half_open_success_closes_the_breaker(): void
@@ -190,8 +189,6 @@ class CircuitBreakerTest extends TestCase
         $breaker->recordFailure(new RetryableException('one'));
         $breaker->enforce(); // still closed
         $this->assertTrue(true);
-
-        Carbon::setTestNow();
     }
 
     public function test_half_open_failure_reopens_with_fresh_cooldown(): void
@@ -206,19 +203,13 @@ class CircuitBreakerTest extends TestCase
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
 
-        try {
-            $breaker->enforce(); // half-open
+        $breaker->enforce(); // half-open
 
-            $breaker->recordFailure(new RetryableException('still down'));
+        $breaker->recordFailure(new RetryableException('still down'));
 
-            // Should be open again.
-            $this->expectException(CircuitOpenException::class);
-            $breaker->enforce();
-        } finally {
-            // Reset frozen time even if the expected exception above
-            // skips past the next line.
-            Carbon::setTestNow();
-        }
+        // Should be open again.
+        $this->expectException(CircuitOpenException::class);
+        $breaker->enforce();
     }
 
     public function test_disabling_the_breaker_skips_all_logic(): void
@@ -275,22 +266,18 @@ class CircuitBreakerTest extends TestCase
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
 
+        // First worker claims the probe slot atomically.
+        $breakerA->enforce();
+
+        // Second worker arrives a moment later and sees the slot taken.
+        $caught = null;
         try {
-            // First worker claims the probe slot atomically.
-            $breakerA->enforce();
-
-            // Second worker arrives a moment later and sees the slot taken.
-            $caught = null;
-            try {
-                $breakerB->enforce();
-            } catch (CircuitOpenException $e) {
-                $caught = $e;
-            }
-
-            $this->assertInstanceOf(CircuitOpenException::class, $caught);
-        } finally {
-            Carbon::setTestNow();
+            $breakerB->enforce();
+        } catch (CircuitOpenException $e) {
+            $caught = $e;
         }
+
+        $this->assertInstanceOf(CircuitOpenException::class, $caught);
     }
 
     public function test_probe_slot_is_released_after_success(): void
@@ -304,25 +291,24 @@ class CircuitBreakerTest extends TestCase
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
 
-        try {
-            $breaker->enforce();    // claims probe slot
-            $breaker->recordSuccess(); // releases it, closes breaker
+        $breaker->enforce();    // claims probe slot
+        $breaker->recordSuccess(); // releases it, closes breaker
 
-            // Build the breaker back up and verify the probe slot can be
-            // reclaimed on the next cycle.
-            $breaker->recordFailure(new RetryableException('boom'));
-            $breaker->recordFailure(new RetryableException('boom'));
+        // Build the breaker back up and verify the probe slot can be
+        // reclaimed on the next cycle.
+        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(new RetryableException('boom'));
 
-            Carbon::setTestNow(Carbon::now()->addSeconds(15));
-            $breaker->enforce(); // should claim a fresh slot, not throw
-            $this->assertTrue(true);
-        } finally {
-            Carbon::setTestNow();
-        }
+        Carbon::setTestNow(Carbon::now()->addSeconds(15));
+        $breaker->enforce(); // should claim a fresh slot, not throw
+        $this->assertTrue(true);
     }
 
     protected function tearDown(): void
     {
+        // Always reset frozen time, even when a test bailed early or threw,
+        // so mocked Carbon doesn't leak into the next test.
+        Carbon::setTestNow();
         Cache::flush();
         parent::tearDown();
     }
