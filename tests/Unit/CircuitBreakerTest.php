@@ -97,14 +97,12 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        // 429 has its own structured exception in the codebase but for the
-        // breaker we need extractStatusCode to return 429. The simplest
-        // shape ResponseHelper recognises is a ConnectionException with a
-        // 429-ish message, but the cleanest is to count
-        // RetryableException (always counts) which is the typical wrapper
-        // used for 429 retries via Retry-After.
+        // Use a Symfony HttpException so ResponseHelper::extractStatusCode
+        // returns 429. This exercises the 429-as-4xx-exception branch in
+        // CircuitBreaker::shouldCount() rather than the RetryableException
+        // shortcut, which would always count regardless of status code.
         for ($i = 0; $i < 3; $i++) {
-            $breaker->recordFailure(new RetryableException('rate limited'));
+            $breaker->recordFailure(new HttpException(429, 'rate limited'));
         }
 
         $this->expectException(CircuitOpenException::class);
