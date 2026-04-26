@@ -47,6 +47,21 @@ class ProviderRequestIdTest extends TestCase
         $this->assertNull($row->provider_request_id);
     }
 
+    public function test_oversized_provider_request_id_is_truncated(): void
+    {
+        $oversized = str_repeat('x', 200);
+
+        $this->integration->at('/api/charge')->post(function (RequestContext $ctx) use ($oversized): array {
+            $ctx->reportResponseMetadata(providerRequestId: $oversized);
+
+            return ['ok' => true];
+        });
+
+        $row = IntegrationRequest::query()->latest()->first();
+        $this->assertNotNull($row);
+        $this->assertSame(128, mb_strlen((string) $row->provider_request_id));
+    }
+
     public function test_provider_request_id_resets_between_retry_attempts(): void
     {
         $attempt = 0;

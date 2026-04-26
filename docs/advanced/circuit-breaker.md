@@ -84,6 +84,8 @@ The breaker check happens before the rate limiter so an open breaker doesn't was
 
 State is stored in Laravel's cache (the same store used elsewhere by the package), keyed per-integration. That means breaker state is shared across queue workers: one worker tripping the breaker stops the others immediately, which is the point.
 
+The `open` to `half_open` transition uses an atomic probe slot (a separate cache key claimed via `Cache::add()`). When several workers see the cooldown expire at once, only one claims the slot and becomes the probe; the others throw `CircuitOpenException` until the probe outcome lands. If the probe crashes before recording success or failure, the slot expires after `cooldown_seconds * 2` and a future request can claim it.
+
 ## Tuning
 
 If you're seeing the breaker trip too often, the usual culprits are:

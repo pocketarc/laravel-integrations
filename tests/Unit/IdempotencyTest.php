@@ -86,6 +86,31 @@ class IdempotencyTest extends TestCase
         $this->integration->at('/api/charge')->withIdempotencyKey('');
     }
 
+    public function test_idempotency_key_longer_than_64_chars_throws(): void
+    {
+        $tooLong = str_repeat('a', 65);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('at most 64');
+
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey($tooLong)
+            ->post(fn (): array => ['ok' => true]);
+    }
+
+    public function test_idempotency_key_at_exactly_64_chars_works(): void
+    {
+        $atLimit = str_repeat('a', 64);
+
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey($atLimit)
+            ->post(fn (): array => ['ok' => true]);
+
+        $row = IntegrationRequest::query()->latest()->first();
+        $this->assertNotNull($row);
+        $this->assertSame($atLimit, $row->idempotency_key);
+    }
+
     public function test_idempotency_key_is_persisted_to_integration_requests(): void
     {
         $this->integration->at('/api/charge')

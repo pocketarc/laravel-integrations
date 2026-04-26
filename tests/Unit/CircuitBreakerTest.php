@@ -59,11 +59,11 @@ class CircuitBreakerTest extends TestCase
 
     public function test_circuit_open_exception_is_not_retryable(): void
     {
+        config(['integrations.circuit_breaker.threshold' => 2]);
+
         $breaker = new CircuitBreaker($this->integration);
-        // Force the breaker open.
-        for ($i = 0; $i < 5; $i++) {
-            $breaker->recordFailure(new RetryableException('boom'));
-        }
+        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(new RetryableException('boom'));
 
         try {
             $breaker->enforce();
@@ -205,15 +205,20 @@ class CircuitBreakerTest extends TestCase
         $breaker->recordFailure(new RetryableException('boom'));
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
-        $breaker->enforce(); // half-open
 
-        $breaker->recordFailure(new RetryableException('still down'));
+        try {
+            $breaker->enforce(); // half-open
 
-        // Should be open again.
-        $this->expectException(CircuitOpenException::class);
-        $breaker->enforce();
+            $breaker->recordFailure(new RetryableException('still down'));
 
-        Carbon::setTestNow();
+            // Should be open again.
+            $this->expectException(CircuitOpenException::class);
+            $breaker->enforce();
+        } finally {
+            // Reset frozen time even if the expected exception above
+            // skips past the next line.
+            Carbon::setTestNow();
+        }
     }
 
     public function test_disabling_the_breaker_skips_all_logic(): void
@@ -252,6 +257,68 @@ class CircuitBreakerTest extends TestCase
 
         $breaker->enforce(); // should not throw, still closed
         $this->assertTrue(true);
+    }
+
+    public function test_only_one_concurrent_probe_can_enter_half_open(): void
+    {
+        config(['integrations.circuit_breaker.threshold' => 2]);
+        config(['integrations.circuit_breaker.cooldown_seconds' => 10]);
+
+        // Open the breaker via a first instance.
+        $breakerA = new CircuitBreaker($this->integration);
+        $breakerA->recordFailure(new RetryableException('boom'));
+        $breakerA->recordFailure(new RetryableException('boom'));
+
+        // Two separate instances simulate two workers seeing the same
+        // open state at the same instant.
+        $breakerB = new CircuitBreaker($this->integration);
+
+        Carbon::setTestNow(Carbon::now()->addSeconds(15));
+
+        try {
+            // First worker claims the probe slot atomically.
+            $breakerA->enforce();
+
+            // Second worker arrives a moment later and sees the slot taken.
+            $caught = null;
+            try {
+                $breakerB->enforce();
+            } catch (CircuitOpenException $e) {
+                $caught = $e;
+            }
+
+            $this->assertInstanceOf(CircuitOpenException::class, $caught);
+        } finally {
+            Carbon::setTestNow();
+        }
+    }
+
+    public function test_probe_slot_is_released_after_success(): void
+    {
+        config(['integrations.circuit_breaker.threshold' => 2]);
+        config(['integrations.circuit_breaker.cooldown_seconds' => 10]);
+
+        $breaker = new CircuitBreaker($this->integration);
+        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(new RetryableException('boom'));
+
+        Carbon::setTestNow(Carbon::now()->addSeconds(15));
+
+        try {
+            $breaker->enforce();    // claims probe slot
+            $breaker->recordSuccess(); // releases it, closes breaker
+
+            // Build the breaker back up and verify the probe slot can be
+            // reclaimed on the next cycle.
+            $breaker->recordFailure(new RetryableException('boom'));
+            $breaker->recordFailure(new RetryableException('boom'));
+
+            Carbon::setTestNow(Carbon::now()->addSeconds(15));
+            $breaker->enforce(); // should claim a fresh slot, not throw
+            $this->assertTrue(true);
+        } finally {
+            Carbon::setTestNow();
+        }
     }
 
     protected function tearDown(): void

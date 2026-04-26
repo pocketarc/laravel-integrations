@@ -78,6 +78,6 @@ That suppresses the warning. Adapters are responsible for getting the key onto t
 
 There are two threats. The first is core retrying on transient failures (5xx, connection errors). The same idempotency key is preserved across attempts inside one `Integration::request()` call, so a transient retry that re-runs the closure submits the same key and the upstream collapses both attempts into one record.
 
-The second is cross-invocation: your queued job dies mid-charge and Horizon retries it. From the package's perspective that's a brand new call with a brand new auto-generated UUID, so there's no protection by default. Pass a deterministic key tied to the originating event (`"charge-{$orderId}-{$attemptedAt}"`) so the retry submits the same key and the provider dedupes.
+The second is cross-invocation: your queued job dies mid-charge and Horizon retries it. From the package's perspective that's a fresh call with a freshly-generated UUID, so there's no protection by default. Pass a deterministic key tied to the originating event (`"charge-{$orderId}-{$attemptedAt}"`) so the retry submits the same key and the provider dedupes.
 
 The second case is also the consumer-facing one: a deterministic key derived from the order ID protects against the double-click scenario regardless of how many separate workers race for the same submission.

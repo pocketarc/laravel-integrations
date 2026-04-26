@@ -92,10 +92,12 @@ return [
 
     'circuit_breaker' => [
         // When enabled, integrations that fail repeatedly are short-circuited for a
-        // cooldown window so we don't hammer a service that's clearly down. Failures
-        // counted: 5xx responses, connection errors, and any RetryableException.
-        // Failures NOT counted: 4xx (client error, retrying won't help), and a
-        // CircuitOpenException itself.
+        // cooldown window so we don't hammer a service that's clearly down.
+        // Failures counted: 5xx responses, 429 (rate-limited), connection errors,
+        // and any RetryableException.
+        // Failures NOT counted: other 4xx (client error, retrying won't help) and
+        // CircuitOpenException itself. See src/CircuitBreaker.php for the full
+        // classification logic.
         'enabled' => true,
 
         // Number of consecutive failures before the breaker opens. Once open, all

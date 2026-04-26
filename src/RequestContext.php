@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations;
 
 use Carbon\CarbonInterface;
+use InvalidArgumentException;
 
 /**
  * Per-request mutable context shared between core's RequestExecutor and the
@@ -32,6 +33,17 @@ use Carbon\CarbonInterface;
  */
 final class RequestContext
 {
+    /**
+     * Match the column widths on `integration_requests`. The idempotency
+     * key is caller-controlled, so we throw when it's too long; the
+     * provider request ID comes from upstream headers and gets truncated
+     * silently rather than failing a request just because the upstream
+     * shipped a longer-than-expected value.
+     */
+    public const MAX_IDEMPOTENCY_KEY_LENGTH = 64;
+
+    public const MAX_PROVIDER_REQUEST_ID_LENGTH = 128;
+
     private ?string $providerRequestId = null;
 
     private ?int $rateLimitRemaining = null;
@@ -42,7 +54,15 @@ final class RequestContext
 
     public function __construct(
         public readonly ?string $idempotencyKey = null,
-    ) {}
+    ) {
+        if ($idempotencyKey !== null && mb_strlen($idempotencyKey) > self::MAX_IDEMPOTENCY_KEY_LENGTH) {
+            throw new InvalidArgumentException(sprintf(
+                'Idempotency key must be at most %d characters; got %d.',
+                self::MAX_IDEMPOTENCY_KEY_LENGTH,
+                mb_strlen($idempotencyKey),
+            ));
+        }
+    }
 
     /**
      * Report response metadata extracted from the provider's response.
@@ -57,7 +77,7 @@ final class RequestContext
         ?int $retryAfterSeconds = null,
     ): void {
         if ($providerRequestId !== null) {
-            $this->providerRequestId = $providerRequestId;
+            $this->providerRequestId = mb_strcut($providerRequestId, 0, self::MAX_PROVIDER_REQUEST_ID_LENGTH);
         }
         if ($rateLimitRemaining !== null) {
             $this->rateLimitRemaining = $rateLimitRemaining;

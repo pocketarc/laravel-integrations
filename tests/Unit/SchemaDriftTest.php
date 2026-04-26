@@ -85,6 +85,8 @@ class SchemaDriftTest extends TestCase
             $this->integration->at('/api/data')
                 ->as(TestDataResponse::class)
                 ->get(fn (): array => ['unexpected' => 'shape']);
+
+            $this->fail('Expected SchemaDriftException to be thrown.');
         } catch (SchemaDriftException $e) {
             $this->assertStringContainsString(TestDataResponse::class, $e->getMessage());
             $this->assertStringContainsString('live', $e->getMessage());

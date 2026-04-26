@@ -29,7 +29,11 @@ use Throwable;
  * The state is stored in a single cache key per integration. We use
  * read-modify-write rather than locks; a tiny race window where two
  * concurrent failures both flip closed -> open is harmless (they both
- * write the same end state).
+ * write the same end state). The open -> half_open transition uses a
+ * separate "probe slot" cache key claimed via Cache::add(), which is
+ * atomic on Laravel's redis/memcached/database drivers, so only one
+ * request becomes the probe even when many workers see the cooldown
+ * expire at once.
  *
  * Failures that count toward the threshold: 5xx responses, ConnectionExceptions,
  * RetryableException. Failures that do NOT count: 4xx (retrying won't help,
@@ -55,33 +59,50 @@ final class CircuitBreaker
         }
 
         $state = $this->loadState();
-        if ($state['state'] !== self::STATE_OPEN) {
+
+        if ($state['state'] === self::STATE_CLOSED) {
             return;
         }
 
         $cooldown = Config::circuitBreakerCooldownSeconds();
         $openedAt = $state['opened_at'];
-        if ($openedAt === null) {
-            // Defensive: if "opened_at" was somehow lost, treat the breaker
-            // as needing a half-open probe right now.
-            $this->writeState(self::STATE_HALF_OPEN, 0, $openedAt);
 
-            return;
+        if ($state['state'] === self::STATE_HALF_OPEN) {
+            // Another request is mid-probe: only the slot holder gets
+            // through. If the slot expired (probe crashed mid-flight), we
+            // can claim it as the new probe; otherwise back off.
+            if (Cache::add($this->probeKey(), 1, $cooldown * 2)) {
+                return;
+            }
+
+            throw new CircuitOpenException(
+                $this->integration,
+                CarbonImmutable::createFromTimestamp($openedAt ?? (int) now()->timestamp),
+                $cooldown,
+            );
         }
 
-        $elapsed = (int) now()->timestamp - $openedAt;
-
-        if ($elapsed >= $cooldown) {
-            $this->writeState(self::STATE_HALF_OPEN, 0, $openedAt);
-
-            return;
+        // STATE_OPEN: still inside the cooldown window?
+        if ($openedAt !== null && ((int) now()->timestamp - $openedAt) < $cooldown) {
+            throw new CircuitOpenException(
+                $this->integration,
+                CarbonImmutable::createFromTimestamp($openedAt),
+                $cooldown,
+            );
         }
 
-        throw new CircuitOpenException(
-            $this->integration,
-            CarbonImmutable::createFromTimestamp($openedAt),
-            $cooldown,
-        );
+        // Cooldown elapsed (or openedAt was lost): try to atomically claim
+        // the probe slot. Only one concurrent worker wins; the rest back
+        // off until the probe outcome lands.
+        if (! Cache::add($this->probeKey(), 1, $cooldown * 2)) {
+            throw new CircuitOpenException(
+                $this->integration,
+                CarbonImmutable::createFromTimestamp($openedAt ?? (int) now()->timestamp),
+                $cooldown,
+            );
+        }
+
+        $this->writeState(self::STATE_HALF_OPEN, 0, $openedAt ?? (int) now()->timestamp);
     }
 
     public function recordSuccess(): void
@@ -97,6 +118,10 @@ final class CircuitBreaker
         }
 
         $this->writeState(self::STATE_CLOSED, 0, null);
+
+        // Release the probe slot so future open -> half_open transitions
+        // can claim it. No-op when no probe slot was held.
+        Cache::forget($this->probeKey());
     }
 
     public function recordFailure(Throwable $e): void
@@ -113,9 +138,11 @@ final class CircuitBreaker
         $threshold = Config::circuitBreakerThreshold();
 
         if ($state['state'] === self::STATE_HALF_OPEN) {
-            // Half-open probe failed: back to fully open with a fresh
-            // cooldown clock.
+            // Probe failed: back to fully open with a fresh cooldown clock,
+            // and release the probe slot so a future cooldown-elapsed
+            // request can claim it.
             $this->writeState(self::STATE_OPEN, $threshold, (int) now()->timestamp);
+            Cache::forget($this->probeKey());
 
             return;
         }
@@ -195,5 +222,10 @@ final class CircuitBreaker
     private function key(): string
     {
         return Config::cachePrefix().':breaker:'.$this->integration->id;
+    }
+
+    private function probeKey(): string
+    {
+        return $this->key().':probe';
     }
 }

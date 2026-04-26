@@ -16,10 +16,10 @@ use Integrations\Exceptions\RetryableException;
 use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\CallbackInspector;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
-use ReflectionFunction;
 use RuntimeException;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -74,9 +74,6 @@ final class RequestExecutor
             }
         }
 
-        $this->circuitBreaker->enforce();
-        $this->rateLimiter->enforce();
-
         $this->context = new RequestContext($idempotencyKey);
 
         try {
@@ -118,6 +115,12 @@ final class RequestExecutor
             $allowStale = $serveStale && $isLastAttempt;
 
             try {
+                // Re-enforce both gates on every attempt so the breaker
+                // tripping or the rate limit exhausting mid-loop short-circuits
+                // the next retry instead of slipping through.
+                $this->circuitBreaker->enforce();
+                $this->rateLimiter->enforce();
+
                 $result = $this->executeRequest(
                     $endpoint, $method, $responseClass, $callback, $callbackAcceptsContext, $relatedTo,
                     $encodedRequestData, $cacheFor, $allowStale,
@@ -139,7 +142,6 @@ final class RequestExecutor
                 $delayMs = $this->resolveRetryDelay($e, $attempt);
 
                 usleep($delayMs * 1000);
-                $this->rateLimiter->enforce();
                 $this->context?->resetResponseMetadata();
             }
         }
@@ -213,16 +215,11 @@ final class RequestExecutor
     }
 
     /**
-     * Decide once per execute() whether the closure declared an arity that
-     * accepts our RequestContext. Plain closures tolerate extra positional
-     * args, but invokables and Closure::fromCallable on a strict-arity
-     * method throw ArgumentCountError. The reflection check covers both.
-     *
      * @param  Closure(RequestContext=): mixed  $callback
      */
     private function callbackAcceptsContext(Closure $callback): bool
     {
-        return (new ReflectionFunction($callback))->getNumberOfParameters() >= 1;
+        return CallbackInspector::acceptsContext($callback);
     }
 
     /**
@@ -244,12 +241,15 @@ final class RequestExecutor
             return $callback();
         }
 
+        // Save and restore so a closure that nests another integration call
+        // doesn't clobber the outer context when the inner call unwinds.
+        $previousContext = Integration::currentContext();
         Integration::setCurrentContext($context);
 
         try {
             return $callbackAcceptsContext ? $callback($context) : $callback();
         } finally {
-            Integration::setCurrentContext(null);
+            Integration::setCurrentContext($previousContext);
         }
     }
 
