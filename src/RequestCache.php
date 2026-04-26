@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations;
 
 use Illuminate\Database\Eloquent\Builder;
+use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
 use JsonException;
@@ -103,8 +104,14 @@ final class RequestCache
 
         try {
             return $responseClass::from($decoded);
-        } catch (Throwable) {
-            return null;
+        } catch (Throwable $e) {
+            throw new SchemaDriftException(
+                integration: $this->integration,
+                responseClass: $responseClass,
+                parsedData: $decoded,
+                source: 'cache',
+                previous: $e,
+            );
         }
     }
 }

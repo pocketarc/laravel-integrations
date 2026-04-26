@@ -23,6 +23,8 @@ use Integrations\Testing\IntegrationRequestFake;
  * @property string $method
  * @property string|null $request_data
  * @property string|null $request_data_hash
+ * @property string|null $idempotency_key
+ * @property string|null $provider_request_id
  * @property int|null $retry_of
  * @property int|null $response_code
  * @property string|null $response_data

@@ -90,6 +90,25 @@ return [
         'max_wait_seconds' => 10,
     ],
 
+    'circuit_breaker' => [
+        // When enabled, integrations that fail repeatedly are short-circuited for a
+        // cooldown window so we don't hammer a service that's clearly down. Failures
+        // counted: 5xx responses, connection errors, and any RetryableException.
+        // Failures NOT counted: 4xx (client error, retrying won't help), and a
+        // CircuitOpenException itself.
+        'enabled' => true,
+
+        // Number of consecutive failures before the breaker opens. Once open, all
+        // requests for this integration throw CircuitOpenException until the cooldown
+        // window passes.
+        'threshold' => 5,
+
+        // Seconds to keep the breaker open after it trips. Once this elapses, the
+        // next request becomes a half-open probe — if it succeeds, the breaker
+        // closes; if it fails, the breaker re-opens for another full cooldown.
+        'cooldown_seconds' => 60,
+    ],
+
     'health' => [
         // Number of consecutive failed requests before an integration is marked "degraded".
         // Degraded integrations sync at a reduced frequency (see degraded_backoff).
