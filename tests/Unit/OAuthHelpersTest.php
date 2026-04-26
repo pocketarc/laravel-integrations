@@ -60,7 +60,7 @@ class OAuthHelpersTest extends TestCase
         ]);
         $integration->refresh();
 
-        // TestProvider refreshThreshold is 300s, token expires in 100s — should be "soon"
+        // TestProvider refreshThreshold is 300s, token expires in 100s; should be "soon"
         $this->assertTrue($integration->tokenExpiresSoon());
     }
 

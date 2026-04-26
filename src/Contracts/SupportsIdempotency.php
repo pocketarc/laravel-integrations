@@ -11,7 +11,7 @@ namespace Integrations\Contracts;
  *
  * Adapters that implement this contract should propagate the resolved
  * `RequestContext::$idempotencyKey` to the wire inside their closure (the
- * exact mechanism is provider-specific — header, body field, SDK option).
+ * exact mechanism is provider-specific: header, body field, or SDK option).
  *
  * Providers that don't implement this still see the key persisted on the
  * `integration_requests.idempotency_key` column for searchability and

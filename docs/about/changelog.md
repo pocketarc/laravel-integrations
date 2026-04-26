@@ -2,6 +2,15 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.1.0
+
+- [Idempotency keys](/core-concepts/idempotency) as a first-class builder concern: `->withIdempotencyKey($key)` on the fluent builder, with a UUID auto-generated when called with `null`. The key persists to the new `integration_requests.idempotency_key` column and is preserved across inner retry attempts so the upstream sees the same key on every try. New [`SupportsIdempotency`](/reference/contracts#supportsidempotency) marker contract; providers without it get a warning when callers attach a key, since the upstream won't dedupe.
+- Provider request IDs captured on `integration_requests.provider_request_id`. Adapters report via `RequestContext::reportResponseMetadata(providerRequestId: ...)` after the SDK call. Stripe captures `Request-Id`; GitHub captures `X-GitHub-Request-Id` plus rate-limit headers. Postmark and Zendesk surface nothing (their SDKs hide response headers).
+- [Adaptive rate limiting](/core-concepts/rate-limiting#adaptive-rate-limits): the `RateLimiter` honours `Retry-After` and `X-RateLimit-Remaining: 0` signals when adapters report them, suppressing subsequent requests until the window clears. Falls back to the existing bucket logic when nothing's reported.
+- [Circuit breaker](/advanced/circuit-breaker) per-integration. On by default with conservative thresholds (5 consecutive failures, 60s cooldown). Opens on 5xx / connection / `RetryableException` failures; 4xx (except 429) doesn't count. New non-retryable `CircuitOpenException` short-circuits before the rate limiter and retries. Configure under `circuit_breaker.*`.
+- `SchemaDriftException` replaces silent `null` returns in the request cache and the live-path Data hydration. When a Spatie Data class fails to hydrate a response (live or cache), the exception is thrown with the parsed payload and target class attached. **Behaviour change**: cached payloads that no longer hydrate now throw on first read instead of degrading invisibly.
+- New `RequestContext` argument optionally available to terminal-verb closures (`fn (RequestContext $ctx) => ...`). Gives the closure access to the resolved idempotency key and the metadata-reporting hook. Zero-arg closures continue to work unchanged.
+
 ## 2.0.0
 
 - Renamed the request API. The fluent `to()` / `toAs()` pair becomes `at()->as()`, and the standalone `request()` / `requestAs()` methods collapse into one `request()` with an optional `$responseClass` argument.

@@ -7,7 +7,7 @@ namespace Integrations\Tests\Fixtures;
 use Integrations\Contracts\IntegrationProvider;
 
 // No Data class; rules-only fields. `note` is declared without `required`
-// or `nullable`, so it should be treated as optional — the installer must
+// or `nullable`, so it should be treated as optional. The installer must
 // not prompt for it, matching what the provider actually declared.
 class OptionalRuleProvider implements IntegrationProvider
 {

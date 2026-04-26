@@ -521,10 +521,10 @@ class IntegrationRequestFakeTest extends TestCase
 
         $this->integration->request(endpoint: 'tickets/1.json', method: 'PUT', responseClass: TestOkResponse::class, callback: fn () => null);
 
-        // Same method, same case — no conflict.
+        // Same method, same case: no conflict.
         IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'PUT');
 
-        // Same method, different case — still no conflict.
+        // Same method, different case: still no conflict.
         IntegrationRequest::assertRequested('PUT:tickets/1.json', method: 'put');
     }
 
@@ -545,7 +545,7 @@ class IntegrationRequestFakeTest extends TestCase
         IntegrationRequest::fake();
 
         // "FOO" is not an HTTP method, so parseKey() leaves the string intact
-        // and it behaves as a literal endpoint match — consistent with findResponse().
+        // and it behaves as a literal endpoint match, consistent with findResponse().
         $this->integration->request(endpoint: 'FOO:bar', method: 'GET', responseClass: TestOkResponse::class, callback: fn () => null);
 
         IntegrationRequest::assertRequested('FOO:bar');

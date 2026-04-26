@@ -93,7 +93,7 @@ final class RequestContext
     /**
      * Reset response metadata between retry attempts within a single
      * Integration::request() call. The idempotency key is intentionally not
-     * reset — it stays stable so the provider can dedupe the retry.
+     * reset; it stays stable so the provider can dedupe the retry.
      *
      * @internal Called by RequestExecutor between attempts.
      */

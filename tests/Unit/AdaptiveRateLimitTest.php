@@ -73,7 +73,7 @@ class AdaptiveRateLimitTest extends TestCase
 
     public function test_remaining_zero_without_reset_at_does_not_suppress(): void
     {
-        // Adapter reports remaining=0 but no reset window — we don't have
+        // Adapter reports remaining=0 but no reset window. We don't have
         // enough info to know how long to suppress for, so do nothing.
         $this->integration->at('/api/charge')->post(function (RequestContext $ctx): array {
             $ctx->reportResponseMetadata(rateLimitRemaining: 0);
@@ -100,7 +100,7 @@ class AdaptiveRateLimitTest extends TestCase
 
     public function test_no_metadata_falls_back_to_existing_bucket_behavior(): void
     {
-        // No reportResponseMetadata call — should pass through fine and use
+        // No reportResponseMetadata call. Should pass through fine and use
         // only the existing bucket-based rate limiter.
         $result = $this->integration->at('/api/charge')->post(fn (): array => ['ok' => true]);
         $this->assertSame(['ok' => true], $result);

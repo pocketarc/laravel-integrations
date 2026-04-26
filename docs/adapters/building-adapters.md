@@ -35,10 +35,13 @@ class LinearProvider implements
 ```
 
 Common combinations:
-- **Read-only sync**: `HasIncrementalSync` + `HasHealthCheck` + `RedactsRequestData`
-- **Full CRUD + sync**: Add `CustomizesRetry` if the SDK throws custom exceptions
-- **OAuth + sync**: Add `HasOAuth2`
-- **Webhooks only**: `HandlesWebhooks` + `HasHealthCheck`
+
+| Scenario | Contracts |
+|----------|-----------|
+| Read-only sync | `HasIncrementalSync` + `HasHealthCheck` + `RedactsRequestData` |
+| Full CRUD + sync | Add `CustomizesRetry` if the SDK throws custom exceptions |
+| OAuth + sync | Add `HasOAuth2` |
+| Webhooks only | `HandlesWebhooks` + `HasHealthCheck` |
 
 ## Client class
 
@@ -150,7 +153,7 @@ Two reasons this matters:
 
 The core retries GET requests 3 times and non-GET requests once. If a POST reaches the upstream but the response is lost in transit, the retry re-runs the closure and creates a second record: a duplicate refund, a duplicate charge capture, a duplicate dispatched message.
 
-For any state-changing POST where a duplicate would be bad, accept an optional idempotency key and auto-generate one when the caller doesn't supply it:
+For any state-changing POST where a duplicate would be bad, accept an optional idempotency key parameter on the resource method and pass it through to the builder. Core handles the generation, validation, and persistence:
 
 ```php
 public function create(
@@ -161,43 +164,74 @@ public function create(
 ): PaymentIntent {
     $this->assertPositive($amount, 'amount');
 
-    // null -> fresh UUID; '' -> throws; non-empty -> used as-is
-    $idempotencyKey = $this->resolveIdempotencyKey($idempotencyKey);
-
     return $this->expectInstance(
         $this->integration
             ->at('payment_intents')
             ->withData($params)
-            ->post(fn (): PaymentIntent => $this->sdk()->paymentIntents->create(
-                $params,
-                ['idempotency_key' => $idempotencyKey],
-            )),
+            ->withIdempotencyKey($idempotencyKey)  // null -> auto-UUID, '' -> throws
+            ->post(function (RequestContext $ctx) use ($params): PaymentIntent {
+                return $this->sdk()->paymentIntents->create(
+                    $params,
+                    ['idempotency_key' => $ctx->idempotencyKey],
+                );
+            }),
         PaymentIntent::class,
     );
 }
 ```
 
-Helper on the resource base class:
+Three things to get right:
+
+- Read the key from `$ctx->idempotencyKey` inside the closure. Core resolves the key once per call and preserves it across inner retries, so all attempts submit the same value to the upstream.
+- Callers re-issuing the same operation across job runs (e.g. a queued job that retries after a crash) should pass a stable key derived from the originating domain event. The auto-generated UUID only protects transient retries inside one adapter call, not retries across separate calls.
+- If the upstream API natively dedupes by key, mark the provider with [`SupportsIdempotency`](/reference/contracts#supportsidempotency) so core doesn't warn about decorative keys. Plumbing the key through is still useful for adapters that don't implement that contract: the value persists on `integration_requests.idempotency_key` for audit, even when the upstream ignores it.
+
+See [Idempotency](/core-concepts/idempotency) for the consumer-facing picture.
+
+## Capturing provider request IDs
+
+Most provider APIs return a request ID in the response headers (Stripe `Request-Id`, GitHub `X-GitHub-Request-Id`, Zendesk `X-Zendesk-Request-Id`). Capturing that into `integration_requests.provider_request_id` makes "what happened on call X" trivially debuggable when filing a support ticket against the provider.
+
+The `RequestContext` argument exists for this. Inside the closure, after the SDK call returns, report whatever metadata you can extract:
 
 ```php
-protected function resolveIdempotencyKey(?string $key): string
+$response = $this->integration
+    ->at("charges/{$id}")
+    ->get(function (RequestContext $ctx) use ($id): Charge {
+        $charge = $this->sdk()->charges->retrieve($id);
+
+        // Stripe SDK exposes the last response (and its headers) via the
+        // client. Other SDKs vary: GitHub's knplabs lib has getLastResponse()
+        // returning a PSR ResponseInterface; Postmark and Zendesk currently
+        // hide headers entirely.
+        $last = $this->sdk()->getLastResponse();
+        if ($last !== null) {
+            $ctx->reportResponseMetadata(
+                providerRequestId: $last->headers['Request-Id'] ?? null,
+            );
+        }
+
+        return $charge;
+    });
+```
+
+Helper on the resource base class keeps the per-call code tight:
+
+```php
+protected function reportStripeMetadata(RequestContext $ctx): void
 {
-    if ($key === null) {
-        return Str::uuid()->toString();
-    }
+    $last = $this->sdk()->getLastResponse();
+    if ($last === null) return;
 
-    if ($key === '') {
-        throw new InvalidArgumentException('idempotencyKey must not be empty when provided.');
-    }
-
-    return $key;
+    $ctx->reportResponseMetadata(
+        providerRequestId: $last->headers['Request-Id'] ?? null,
+    );
 }
 ```
 
-Three things to get right:
-- Generate the key outside the closure. The closure runs once per attempt, so generating inside it would produce a new key per retry and defeat the purpose.
-- Callers re-issuing the same operation across job runs (e.g. a queued job that retries after a crash) should pass a stable key derived from the originating domain event. The auto-generated UUID only protects transient retries inside one adapter call, not retries across separate calls.
-- Reject blank strings up front. Forwarding `['idempotency_key' => '']` silently disables the upstream's duplicate-protection behaviour without an error.
+`reportResponseMetadata()` also accepts `rateLimitRemaining`, `rateLimitResetAt`, and `retryAfterSeconds`. When provided, those feed the [adaptive rate limiter](/core-concepts/rate-limiting#adaptive-rate-limits), so the next request is suppressed until the upstream's reset window passes. GitHub's `X-RateLimit-Remaining` / `X-RateLimit-Reset` are good candidates here; Stripe only emits limit headers on 429s.
+
+If the SDK doesn't expose headers at all, the column stays `null` for that adapter. Fine, just document the limitation in the adapter's page.
 
 ## Return types
 
@@ -328,10 +362,11 @@ public function syncIncremental(Integration $integration, mixed $cursor): SyncRe
 }
 ```
 
-Important:
-- Subtract an overlap buffer from the cursor (1 hour in official adapters)
-- Don't advance the cursor past failed items
-- Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected
+Three things to get right:
+
+- Subtract an overlap buffer from the cursor (1 hour in official adapters).
+- Don't advance the cursor past failed items.
+- Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected.
 
 ## Auto-registration
 

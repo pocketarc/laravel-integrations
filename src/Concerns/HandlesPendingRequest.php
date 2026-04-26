@@ -86,20 +86,21 @@ trait HandlesPendingRequest
 
     /**
      * Tag the request with an idempotency key so the provider (if it
-     * supports them) deduplicates duplicate calls — the textbook example
-     * being a user double-clicking "Pay" across two tabs and submitting
+     * supports them) deduplicates duplicate calls. The textbook example
+     * is a user double-clicking "Pay" across two tabs and submitting
      * the same charge twice. Pass a deterministic key like
      * `"order-{$id}"` for that case.
      *
      * Calling without an argument (or with null) auto-generates a UUID
-     * at execute time, which only protects core's own retry attempts —
+     * at execute time. That only protects core's own retry attempts:
      * useful but narrower. Empty string throws, since blank silently
      * disables Stripe's dedup and similar.
      *
      * Providers that don't implement `SupportsIdempotency` still see the
      * key persisted on the `integration_requests.idempotency_key` column
      * for searchability, but core logs a warning when a key is set
-     * against a non-supporting provider — provider-side dedup won't fire.
+     * against a non-supporting provider, since provider-side dedup
+     * won't fire.
      */
     public function withIdempotencyKey(?string $key = null): static
     {

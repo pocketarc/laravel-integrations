@@ -42,6 +42,8 @@ API request/response log. One row per API call (including retries).
 | `method` | string | HTTP method or SDK operation |
 | `status_code` | int (nullable) | HTTP status code |
 | `request_data` | text (nullable) | Request body/params (redacted if applicable) |
+| `idempotency_key` | string (nullable) | Idempotency key for the call. See [Idempotency](/core-concepts/idempotency). |
+| `provider_request_id` | string (nullable) | Upstream's request ID (Stripe `Request-Id`, GitHub `X-GitHub-Request-Id`, etc.). |
 | `response_data` | text (nullable) | Response body (redacted if applicable) |
 | `error` | text (nullable) | Error message on failure |
 | `duration_ms` | int (nullable) | Request duration in milliseconds |

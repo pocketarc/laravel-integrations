@@ -22,7 +22,7 @@ return [
 
         // Maximum time (in seconds) a webhook can remain in "processing" status before
         // it is considered stale and eligible for recovery by integrations:recover-webhooks.
-        // If a queue worker dies mid-processing, the webhook gets stuck — this timeout
+        // If a queue worker dies mid-processing, the webhook gets stuck; this timeout
         // allows automatic recovery. Minimum 60 seconds.
         'processing_timeout' => 1800, // 30 minutes
 
@@ -104,7 +104,7 @@ return [
         'threshold' => 5,
 
         // Seconds to keep the breaker open after it trips. Once this elapses, the
-        // next request becomes a half-open probe — if it succeeds, the breaker
+        // next request becomes a half-open probe: if it succeeds, the breaker
         // closes; if it fails, the breaker re-opens for another full cooldown.
         'cooldown_seconds' => 60,
     ],

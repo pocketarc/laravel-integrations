@@ -74,6 +74,12 @@ Every sync (including the first one with a seeded cursor) subtracts a 1-hour buf
 
 Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 
+## Provider request IDs and idempotency
+
+Zendesk emits an `X-Zendesk-Request-Id` header that's useful when filing support tickets, but the Zendesk PHP SDK doesn't expose response headers to callers. `integration_requests.provider_request_id` stays `null` for Zendesk calls until the SDK gains accessor support or we fork it.
+
+Zendesk doesn't natively dedupe by idempotency key. `ZendeskProvider` does **not** implement `SupportsIdempotency`; the warning in [Idempotency](/core-concepts/idempotency) applies if a caller attaches one.
+
 ## Data classes
 
 | Class | Description |

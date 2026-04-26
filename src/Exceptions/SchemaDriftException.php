@@ -15,18 +15,18 @@ use Throwable;
  * from the request cache (`source: 'cache'`).
  *
  * On the live path, this signals the upstream API has changed shape (or
- * the local Data class is wrong) — either way the caller can't get the
+ * the local Data class is wrong). Either way the caller can't get the
  * typed response they asked for, so we throw rather than emit an event
  * that's easy to ignore.
  *
- * On the cache path, this signals a poisoned cache entry — typically
+ * On the cache path, this signals a poisoned cache entry, typically
  * because the Data class was changed in a way that doesn't match
  * previously-stored payloads. Throwing forces the user to clear the
  * cache or fix the class, both of which are bug-class problems that
  * shouldn't be silently swallowed.
  *
- * Callers who genuinely want to degrade gracefully can catch this and
- * fall back. The default behavior is a loud failure.
+ * Callers who want to degrade gracefully can catch this and fall back.
+ * The default behaviour is to throw.
  */
 class SchemaDriftException extends RuntimeException
 {

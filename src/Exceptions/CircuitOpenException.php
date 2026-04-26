@@ -12,7 +12,7 @@ use RuntimeException;
  * Thrown when the circuit breaker for an integration is open and an
  * inbound request is short-circuited before reaching the provider. Not
  * retryable: there's no point hammering an integration we already know
- * is failing — that's the whole point of having a breaker.
+ * is failing, which is the whole point of having a breaker.
  *
  * The breaker re-opens automatically after the cooldown elapses, at
  * which point a single half-open probe is allowed through to test the

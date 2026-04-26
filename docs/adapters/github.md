@@ -65,7 +65,15 @@ $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 
 Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their event listeners since overlap is expected.
 
-Defaults: 5-minute sync interval, 60 requests/minute rate limit.
+Defaults: 5-minute sync interval, 60 requests/minute rate limit. The adapter also feeds the [adaptive rate limiter](/core-concepts/rate-limiting#adaptive-rate-limits) from GitHub's `X-RateLimit-Remaining` / `X-RateLimit-Reset` headers, so when a token's hourly bucket runs out, subsequent requests are suppressed until the reset window passes.
+
+## Provider request IDs
+
+GitHub's `X-GitHub-Request-Id` is captured on `integration_requests.provider_request_id` for every call. Useful when filing issues against the SDK or [GitHub's own bug tracker](https://github.com/orgs/community/discussions). Asset downloads (raw `Http::` calls outside the SDK) capture the same header.
+
+## Idempotency
+
+GitHub doesn't natively dedupe by idempotency key, so `GitHubProvider` does **not** implement `SupportsIdempotency`. `GitHubIssues::create()` and `GitHubComments::add()` accept an optional `$idempotencyKey` for visibility (the value is persisted on the request log), but core logs a warning when a key is set, since GitHub itself ignores it. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 

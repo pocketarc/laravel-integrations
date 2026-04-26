@@ -100,7 +100,7 @@ class CircuitBreakerTest extends TestCase
         // 429 has its own structured exception in the codebase but for the
         // breaker we need extractStatusCode to return 429. The simplest
         // shape ResponseHelper recognises is a ConnectionException with a
-        // 429-ish message — but actually the cleanest is to count
+        // 429-ish message, but the cleanest is to count
         // RetryableException (always counts) which is the typical wrapper
         // used for 429 retries via Retry-After.
         for ($i = 0; $i < 3; $i++) {
@@ -161,11 +161,11 @@ class CircuitBreakerTest extends TestCase
             // expected
         }
 
-        // Travel past the cooldown and try again — should transition to
+        // Travel past the cooldown and try again. Should transition to
         // half-open and let the request through.
         Carbon::setTestNow(Carbon::now()->addSeconds(31));
 
-        $breaker->enforce(); // should not throw — half-open probe
+        $breaker->enforce(); // should not throw, half-open probe
         $this->assertTrue(true);
 
         Carbon::setTestNow(); // reset
@@ -242,7 +242,7 @@ class CircuitBreakerTest extends TestCase
         // Build up the breaker just below the threshold.
         $breaker->recordFailure(new RetryableException('boom'));
 
-        // A CircuitOpenException itself shouldn't count — that would open
+        // A CircuitOpenException itself shouldn't count. That would open
         // the breaker forever after the first trip.
         $breaker->recordFailure(new CircuitOpenException(
             $this->integration,
@@ -250,7 +250,7 @@ class CircuitBreakerTest extends TestCase
             60,
         ));
 
-        $breaker->enforce(); // should not throw — still closed
+        $breaker->enforce(); // should not throw, still closed
         $this->assertTrue(true);
     }
 

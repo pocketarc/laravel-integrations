@@ -90,7 +90,7 @@ class Integration extends Model
      * they're wrapped behind another layer, for example) can read this via
      * Integration::currentContext() instead.
      *
-     * Single static slot, like Laravel's Auth — accurate under sync PHP,
+     * Single static slot, like Laravel's Auth: accurate under sync PHP,
      * shared across coroutines under Swoole/RoadRunner.
      */
     private static ?RequestContext $currentContext = null;
@@ -177,7 +177,7 @@ class Integration extends Model
      * Read the active request context from inside a callback. Returns null
      * when called outside of an in-flight request, so wrapped closures can
      * defensively check before reading. Most callers should accept the
-     * context as a typed first parameter on the closure instead — this is
+     * context as a typed first parameter on the closure instead. This is
      * the escape hatch for layered/wrapped invocations.
      */
     public static function currentContext(): ?RequestContext

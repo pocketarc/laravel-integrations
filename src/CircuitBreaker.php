@@ -19,20 +19,20 @@ use Throwable;
  * executor calls recordSuccess() / recordFailure() afterwards.
  *
  * State machine:
- *   closed   → fully open for traffic. Failures increment a counter; when
- *              the counter hits the threshold, transition to "open".
- *   open     → all requests short-circuit with CircuitOpenException until
- *              the cooldown elapses, then transition to "half_open".
- *   half_open → one probe request is allowed through. Success → "closed".
- *              Failure → "open" again, fresh cooldown.
+ *   closed    -> fully open for traffic. Failures increment a counter; when
+ *               the counter hits the threshold, transition to "open".
+ *   open      -> all requests short-circuit with CircuitOpenException until
+ *               the cooldown elapses, then transition to "half_open".
+ *   half_open -> one probe request is allowed through. Success -> "closed".
+ *               Failure -> "open" again, fresh cooldown.
  *
  * The state is stored in a single cache key per integration. We use
  * read-modify-write rather than locks; a tiny race window where two
- * concurrent failures both flip closed→open is harmless (they both write
- * the same end state).
+ * concurrent failures both flip closed -> open is harmless (they both
+ * write the same end state).
  *
  * Failures that count toward the threshold: 5xx responses, ConnectionExceptions,
- * RetryableException. Failures that do NOT count: 4xx (retrying won't help —
+ * RetryableException. Failures that do NOT count: 4xx (retrying won't help,
  * the caller has the wrong input), and a CircuitOpenException itself (we
  * already know the breaker is open).
  */
@@ -113,7 +113,7 @@ final class CircuitBreaker
         $threshold = Config::circuitBreakerThreshold();
 
         if ($state['state'] === self::STATE_HALF_OPEN) {
-            // Half-open probe failed — back to fully open with a fresh
+            // Half-open probe failed: back to fully open with a fresh
             // cooldown clock.
             $this->writeState(self::STATE_OPEN, $threshold, (int) now()->timestamp);
 
