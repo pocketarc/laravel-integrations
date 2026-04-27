@@ -59,7 +59,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -70,7 +70,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -81,7 +81,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -92,7 +92,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -103,7 +103,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -114,7 +114,7 @@ class TypedPendingRequest
     }
 
     /**
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback
@@ -129,7 +129,7 @@ class TypedPendingRequest
      * `T::from()` inside `Integration::request()`, so it's safe to assert
      * the typed return here.
      *
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @return T
      *
      * @param-immediately-invoked-callable $callback

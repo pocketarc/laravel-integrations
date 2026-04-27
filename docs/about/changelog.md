@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.1.1
+
+- PHPDoc fix: the closure parameter on the fluent builder's terminal verbs (`get()`, `post()`, etc.) and on `Integration::request()` now declares `Closure(RequestContext=): mixed`, matching what the executor actually accepts. 2.1.0 already accepted the typed-arg shape at runtime, but PHPStan flagged any adapter passing one as a type error. No behaviour change.
+
 ## 2.1.0
 
 - [Idempotency keys](/core-concepts/idempotency) as a first-class builder concern: `->withIdempotencyKey($key)` on the fluent builder, with a UUID auto-generated when called with `null`. The key persists to the new `integration_requests.idempotency_key` column and is preserved across inner retry attempts so the upstream sees the same key on every try. New [`SupportsIdempotency`](/reference/contracts#supportsidempotency) marker contract; providers without it get a warning when callers attach a key, since the upstream won't dedupe.

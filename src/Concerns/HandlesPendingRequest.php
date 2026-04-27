@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Str;
 use Integrations\Models\Integration;
+use Integrations\RequestContext;
 use InvalidArgumentException;
 use Spatie\LaravelData\Data;
 
@@ -119,7 +120,7 @@ trait HandlesPendingRequest
      * `$responseClass` argument is null for the untyped builder and the
      * bound `class-string<T>` for the typed builder.
      *
-     * @param  Closure(): mixed  $callback
+     * @param  Closure(RequestContext=): mixed  $callback
      * @param  class-string<Data>|null  $responseClass
      *
      * @param-immediately-invoked-callable $callback
