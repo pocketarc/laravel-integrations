@@ -7,7 +7,9 @@ namespace Integrations\Concerns;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Str;
 use Integrations\Models\Integration;
+use InvalidArgumentException;
 use Spatie\LaravelData\Data;
 
 /**
@@ -38,6 +40,10 @@ trait HandlesPendingRequest
     protected ?int $retryOfId = null;
 
     protected ?int $maxAttempts = null;
+
+    protected ?string $idempotencyKey = null;
+
+    protected bool $idempotencyKeyRequested = false;
 
     public function withCache(CarbonInterface|int $ttl, bool $serveStale = false): static
     {
@@ -79,6 +85,36 @@ trait HandlesPendingRequest
     }
 
     /**
+     * Tag the request with an idempotency key so the provider (if it
+     * supports them) deduplicates duplicate calls. The textbook example
+     * is a user double-clicking "Pay" across two tabs and submitting
+     * the same charge twice. Pass a deterministic key like
+     * `"order-{$id}"` for that case.
+     *
+     * Calling without an argument (or with null) auto-generates a UUID
+     * at execute time. That only protects core's own retry attempts:
+     * useful but narrower. Empty string throws, since blank silently
+     * disables Stripe's dedup and similar.
+     *
+     * Providers that don't implement `SupportsIdempotency` still see the
+     * key persisted on the `integration_requests.idempotency_key` column
+     * for searchability, but core logs a warning when a key is set
+     * against a non-supporting provider, since provider-side dedup
+     * won't fire.
+     */
+    public function withIdempotencyKey(?string $key = null): static
+    {
+        if ($key === '') {
+            throw new InvalidArgumentException('Idempotency key must not be empty when provided.');
+        }
+
+        $this->idempotencyKey = $key;
+        $this->idempotencyKeyRequested = true;
+
+        return $this;
+    }
+
+    /**
      * Forward the assembled request through `Integration::request()`. The
      * `$responseClass` argument is null for the untyped builder and the
      * bound `class-string<T>` for the typed builder.
@@ -101,6 +137,23 @@ trait HandlesPendingRequest
             serveStale: $this->serveStale,
             retryOfId: $this->retryOfId,
             maxAttempts: $this->maxAttempts,
+            idempotencyKey: $this->resolveIdempotencyKey(),
         );
+    }
+
+    /**
+     * Resolve the idempotency key right before the request fires. A null
+     * key with `idempotencyKeyRequested = true` (i.e. the caller said
+     * `withIdempotencyKey()` with no args) becomes a fresh UUID. A null
+     * key with `requested = false` (the caller never opted in) stays
+     * null, signalling "no key on this request".
+     */
+    private function resolveIdempotencyKey(): ?string
+    {
+        if (! $this->idempotencyKeyRequested) {
+            return null;
+        }
+
+        return $this->idempotencyKey ?? (string) Str::uuid();
     }
 }

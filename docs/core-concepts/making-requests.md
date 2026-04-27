@@ -65,7 +65,42 @@ $issue = $integration
 | `withAttempts(int $max)` | Set max retry attempts |
 | `relatedTo(Model $model)` | Link request to a model |
 | `withData(string\|array $data)` | Attach request data for logging (and as query/body when using the URL shortcut) |
+| `withIdempotencyKey(?string $key = null)` | Tag the request with an idempotency key. Null auto-generates a UUID; see [Idempotency](/core-concepts/idempotency). |
 | `retryOf(int $id)` | Mark as retry of a previous request |
+
+### RequestContext in closures
+
+The closure passed to a terminal verb can optionally accept a `RequestContext` as its first argument. When it does, core passes the active context through, giving the closure read access to the resolved idempotency key and write access to the request log via `reportResponseMetadata()`:
+
+```php
+$intent = $integration
+    ->at('payment_intents')
+    ->withIdempotencyKey('order-42')
+    ->post(function (RequestContext $ctx) use ($params) {
+        $intent = $sdk->paymentIntents->create(
+            $params,
+            ['idempotency_key' => $ctx->idempotencyKey],
+        );
+
+        // Capture metadata from the response for the integration_requests row.
+        $ctx->reportResponseMetadata(
+            providerRequestId: $sdk->getLastResponse()?->headers['Request-Id'] ?? null,
+        );
+
+        return $intent;
+    });
+```
+
+Closures with no parameter (`fn () => ...`) keep working unchanged. The argument is gated by reflection so invokables and callables with strict zero-arg signatures don't trip an `ArgumentCountError`.
+
+When a closure is wrapped behind a layer that swallows the argument (some helper traits do this), reach for `Integration::currentContext()` instead. Same context, same lifetime, just retrieved statically:
+
+```php
+->post(function () use ($params) {
+    $ctx = Integration::currentContext();
+    // ... same as before
+});
+```
 
 ## Direct `request()` for unusual cases
 
@@ -93,11 +128,13 @@ $issue = $integration->request(
 
 ```mermaid
 flowchart TD
-    A[Incoming request] --> B{Rate limit check}
-    B -->|Exceeded| C[RateLimitExceededException]
-    B -->|OK| D{Cache lookup}
+    A[Incoming request] --> D{Cache lookup}
     D -->|Hit| E[Return cached response]
-    D -->|Miss| F[Execute callback]
+    D -->|Miss| BR{Circuit breaker}
+    BR -->|Open| BRX[CircuitOpenException]
+    BR -->|Closed/half-open| B{Rate limit check}
+    B -->|Exceeded| C[RateLimitExceededException]
+    B -->|OK| F[Execute callback]
     F --> G[Normalize response]
     G -->|Success| H[Save IntegrationRequest]
     G -->|Failure| I{Stale cache?}
@@ -106,7 +143,7 @@ flowchart TD
     E --> H
     J --> H
     K --> H
-    H --> L[Update health status]
+    H --> L[Update health + breaker]
     L --> M[Dispatch event]
 ```
 

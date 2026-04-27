@@ -68,7 +68,15 @@ $client = new StripeClient($integration);
 | `$client->webhookEndpoints()`   | `->create($url, $enabledEvents, ...)` / `->update($id, ...)`   | Returns `\Stripe\WebhookEndpoint`.                                                                       |
 |                                 | `->retrieve($id)` / `->delete($id)` / `->list($limit?)`        | Delete returns the WebhookEndpoint with `$deleted = true`.                                               |
 
-All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. Every money-moving POST accepts an optional `$idempotencyKey` and auto-generates a UUID when absent, so a transient retry inside one call collapses to a single Stripe-side operation. Pass your own stable key when you need idempotency across separate calls (e.g. re-issuing from a queued job retry).
+All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. Every money-moving POST accepts an optional `$idempotencyKey` and auto-generates a UUID when absent, so a transient retry inside one call collapses to a single Stripe-side operation. Pass your own stable key when you need idempotency across separate calls (e.g. re-issuing from a queued job retry). See [Idempotency](/core-concepts/idempotency) for the full picture.
+
+Stripe's `Request-Id` response header is captured on `integration_requests.provider_request_id` for every call. When a Stripe support ticket asks for the request ID, that's the column to grep:
+
+```php
+IntegrationRequest::where('provider_request_id', 'req_ABC123')->first();
+```
+
+`StripeProvider` implements `SupportsIdempotency`, so callers attaching a key won't trigger the "provider doesn't support dedup" warning that other adapters surface.
 
 ## Input validation
 

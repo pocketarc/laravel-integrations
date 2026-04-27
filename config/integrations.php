@@ -22,7 +22,7 @@ return [
 
         // Maximum time (in seconds) a webhook can remain in "processing" status before
         // it is considered stale and eligible for recovery by integrations:recover-webhooks.
-        // If a queue worker dies mid-processing, the webhook gets stuck — this timeout
+        // If a queue worker dies mid-processing, the webhook gets stuck; this timeout
         // allows automatic recovery. Minimum 60 seconds.
         'processing_timeout' => 1800, // 30 minutes
 
@@ -88,6 +88,27 @@ return [
         // When > 0, sleeps in 1-second intervals and re-checks until capacity is available
         // or the max wait time is exceeded.
         'max_wait_seconds' => 10,
+    ],
+
+    'circuit_breaker' => [
+        // When enabled, integrations that fail repeatedly are short-circuited for a
+        // cooldown window so we don't hammer a service that's clearly down.
+        // Failures counted: 5xx responses, 429 (rate-limited), connection errors,
+        // and any RetryableException.
+        // Failures NOT counted: other 4xx (client error, retrying won't help) and
+        // CircuitOpenException itself. See src/CircuitBreaker.php for the full
+        // classification logic.
+        'enabled' => true,
+
+        // Number of consecutive failures before the breaker opens. Once open, all
+        // requests for this integration throw CircuitOpenException until the cooldown
+        // window passes.
+        'threshold' => 5,
+
+        // Seconds to keep the breaker open after it trips. Once this elapses, the
+        // next request becomes a half-open probe: if it succeeds, the breaker
+        // closes; if it fails, the breaker re-opens for another full cooldown.
+        'cooldown_seconds' => 60,
     ],
 
     'health' => [

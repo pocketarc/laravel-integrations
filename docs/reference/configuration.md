@@ -55,6 +55,16 @@ php artisan vendor:publish --tag=integrations-config
 |-----|------|---------|-------------|
 | `rate_limiting.max_wait_seconds` | `int` | `10` | Wait for capacity before throwing (0 = immediate) |
 
+## Circuit breaker
+
+See [Circuit breaker](/advanced/circuit-breaker) for the full state machine.
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `circuit_breaker.enabled` | `bool` | `true` | Master switch. `false` disables breaker entirely. |
+| `circuit_breaker.threshold` | `int` | `5` | Consecutive failures before the breaker opens. |
+| `circuit_breaker.cooldown_seconds` | `int` | `60` | Seconds to stay open before allowing a half-open probe. |
+
 ## Health
 
 | Key | Type | Default | Description |

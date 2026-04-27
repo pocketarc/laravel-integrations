@@ -316,7 +316,7 @@ class InstallCommandTest extends TestCase
 
     public function test_rules_only_field_without_required_marker_is_not_prompted(): void
     {
-        // OptionalRuleProvider declares `note` as just 'string' — no required,
+        // OptionalRuleProvider declares `note` as just 'string': no required,
         // no nullable. The installer should not prompt for it; only the
         // required `api_key` should be asked. If the installer prompted for
         // `note`, expectsQuestion would fail because we only expect one prompt.

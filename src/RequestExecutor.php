@@ -13,8 +13,10 @@ use Integrations\Contracts\RedactsRequestData;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
 use Integrations\Exceptions\RetryableException;
+use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\CallbackInspector;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
@@ -30,11 +32,16 @@ final class RequestExecutor
 
     private readonly RateLimiter $rateLimiter;
 
+    private readonly CircuitBreaker $circuitBreaker;
+
+    private ?RequestContext $context = null;
+
     public function __construct(
         private readonly Integration $integration,
     ) {
         $this->cache = new RequestCache($integration);
         $this->rateLimiter = new RateLimiter($integration);
+        $this->circuitBreaker = new CircuitBreaker($integration);
     }
 
     /**
@@ -56,6 +63,7 @@ final class RequestExecutor
         bool $serveStale,
         ?int $retryOfId,
         int $maxAttempts,
+        ?string $idempotencyKey = null,
     ): mixed {
         $encodedRequestData = $this->redactRequestData($encodedRequestData);
 
@@ -66,12 +74,16 @@ final class RequestExecutor
             }
         }
 
-        $this->rateLimiter->enforce();
+        $this->context = new RequestContext($idempotencyKey);
 
-        return $this->requestWithRetries(
-            $endpoint, $method, $responseClass, $callback, $relatedTo,
-            $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
-        );
+        try {
+            return $this->requestWithRetries(
+                $endpoint, $method, $responseClass, $callback, $relatedTo,
+                $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
+            );
+        } finally {
+            $this->context = null;
+        }
     }
 
     /**
@@ -96,13 +108,21 @@ final class RequestExecutor
 
         $this->lastCreatedRequestId = null;
 
+        $callbackAcceptsContext = $this->callbackAcceptsContext($callback);
+
         for ($attempt = 1; $attempt <= $maxAttempts; $attempt++) {
             $isLastAttempt = $attempt >= $maxAttempts;
             $allowStale = $serveStale && $isLastAttempt;
 
             try {
+                // Re-enforce both gates on every attempt so the breaker
+                // tripping or the rate limit exhausting mid-loop short-circuits
+                // the next retry instead of slipping through.
+                $this->circuitBreaker->enforce();
+                $this->rateLimiter->enforce();
+
                 $result = $this->executeRequest(
-                    $endpoint, $method, $responseClass, $callback, $relatedTo,
+                    $endpoint, $method, $responseClass, $callback, $callbackAcceptsContext, $relatedTo,
                     $encodedRequestData, $cacheFor, $allowStale,
                     retryOfId: $firstRequestId,
                 );
@@ -122,7 +142,7 @@ final class RequestExecutor
                 $delayMs = $this->resolveRetryDelay($e, $attempt);
 
                 usleep($delayMs * 1000);
-                $this->rateLimiter->enforce();
+                $this->context?->resetResponseMetadata();
             }
         }
 
@@ -140,6 +160,7 @@ final class RequestExecutor
         string $method,
         ?string $responseClass,
         Closure $callback,
+        bool $callbackAcceptsContext,
         ?Model $relatedTo,
         ?string $encodedRequestData,
         ?CarbonInterface $cacheFor,
@@ -154,12 +175,18 @@ final class RequestExecutor
         $result = null;
 
         try {
-            $raw = $callback();
+            $raw = $this->invokeCallback($callback, $callbackAcceptsContext);
+
+            if ($this->context !== null) {
+                $this->rateLimiter->recordUsage($this->context);
+            }
 
             [$responseCode, $responseData, $parsed] = ResponseHelper::normalize($raw);
             $result = $this->convertResponse($parsed, $responseClass, $endpoint, $cacheFor);
             $responseSuccess = true;
         } catch (Throwable $e) {
+            $this->circuitBreaker->recordFailure($e);
+
             [$responseCode, $error, $result] = $this->handleRequestError(
                 $e, $startTime, $endpoint, $method, $responseClass, $encodedRequestData,
                 $retryOfId, $relatedTo, $responseData, $cacheFor, $serveStale,
@@ -176,6 +203,7 @@ final class RequestExecutor
         $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
         if ($responseSuccess) {
+            $this->circuitBreaker->recordSuccess();
             RequestCompleted::dispatch($this->integration, $request);
             $this->integration->recordSuccess();
         } else {
@@ -184,6 +212,45 @@ final class RequestExecutor
         }
 
         return $result;
+    }
+
+    /**
+     * @param  Closure(RequestContext=): mixed  $callback
+     */
+    private function callbackAcceptsContext(Closure $callback): bool
+    {
+        return CallbackInspector::acceptsContext($callback);
+    }
+
+    /**
+     * Invoke the user closure, passing the active RequestContext if the
+     * closure declared a parameter. The thread-local hook is also set so
+     * closures wrapped behind layers (and zero-arg ones) can reach
+     * Integration::currentContext() if they need to.
+     *
+     * @param  Closure(RequestContext=): mixed  $callback
+     */
+    private function invokeCallback(Closure $callback, bool $callbackAcceptsContext): mixed
+    {
+        $context = $this->context;
+
+        if ($context === null) {
+            // Defensive: requestWithRetries is only reachable through
+            // execute(), which always assigns $this->context first. If we
+            // got here without one, something has gone wrong upstream.
+            return $callback();
+        }
+
+        // Save and restore so a closure that nests another integration call
+        // doesn't clobber the outer context when the inner call unwinds.
+        $previousContext = Integration::currentContext();
+        Integration::setCurrentContext($context);
+
+        try {
+            return $callbackAcceptsContext ? $callback($context) : $callback();
+        } finally {
+            Integration::setCurrentContext($previousContext);
+        }
     }
 
     /**
@@ -268,6 +335,8 @@ final class RequestExecutor
             'method' => $method,
             'request_data' => $truncatedRequestData,
             'request_data_hash' => $truncatedRequestData !== null ? hash('xxh128', $truncatedRequestData) : null,
+            'idempotency_key' => $this->context?->idempotencyKey,
+            'provider_request_id' => $this->context?->providerRequestId(),
             'retry_of' => $retryOfId,
             'related_type' => $relatedTo !== null ? $relatedTo->getMorphClass() : null,
             'related_id' => $relatedTo !== null ? self::keyToString($relatedTo->getKey()) : null,
@@ -312,14 +381,27 @@ final class RequestExecutor
         throw $e;
     }
 
+    /**
+     * @param  class-string<Data>|null  $responseClass
+     */
     private function convertResponse(mixed $parsed, ?string $responseClass, string $endpoint, ?CarbonInterface $cacheFor): mixed
     {
         if ($responseClass !== null && (is_array($parsed) || is_object($parsed))) {
-            return $responseClass::from($parsed);
+            try {
+                return $responseClass::from($parsed);
+            } catch (Throwable $e) {
+                throw new SchemaDriftException(
+                    integration: $this->integration,
+                    responseClass: $responseClass,
+                    parsedData: $parsed,
+                    source: 'live',
+                    previous: $e,
+                );
+            }
         }
 
         if ($cacheFor !== null && $responseClass === null && is_object($parsed)) {
-            Log::warning("Caching response for '{$endpoint}' without a responseClass — cached responses will be returned as arrays, not ".get_class($parsed).'. Use requestAs() or toAs() for type-consistent caching.');
+            Log::warning("Caching response for '{$endpoint}' without a responseClass: cached responses will be returned as arrays, not ".get_class($parsed).'. Use ->as(...) on the fluent builder for type-consistent caching.');
         }
 
         return $parsed;

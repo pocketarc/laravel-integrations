@@ -92,7 +92,7 @@ class CustomizesRetryTest extends TestCase
                 maxAttempts: 3,
             );
         } catch (RuntimeException) {
-            // expected — core doesn't recognise this as retryable
+            // expected: core doesn't recognise this as retryable
         }
 
         $this->assertSame(1, $attempts);

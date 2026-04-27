@@ -155,6 +155,12 @@ When `messagestream` is omitted from a list call, the resource falls back to the
 
 Every Data class stores the original API/webhook response in an `original` array, so consumers can dig into fields the typed properties don't surface (Headers, Attachments, FromFull/ToFull, Geo, Client/OS detail, etc.) without us having to anticipate every use case.
 
+## Provider request IDs and idempotency
+
+Postmark's PHP SDK doesn't expose response headers to callers, so `integration_requests.provider_request_id` stays `null` for Postmark calls. The `X-PM-Message-Id` header on send responses isn't reachable without forking the SDK. Flagged for follow-up if and when Postmark support tickets become a regular thing.
+
+Postmark also doesn't natively dedupe by idempotency key. `PostmarkProvider` does **not** implement `SupportsIdempotency`; setting a key against it triggers the warning documented in [Idempotency](/core-concepts/idempotency).
+
 ## Enums
 
 | Enum                            | Values                                                                                                                                                                                                                                              |

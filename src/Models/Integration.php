@@ -14,10 +14,12 @@ use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Illuminate\Support\Facades\Log;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\Contracts\SupportsIdempotency;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
 use Integrations\Events\IntegrationDisabled;
@@ -28,6 +30,7 @@ use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
+use Integrations\RequestContext;
 use Integrations\RequestExecutor;
 use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
@@ -79,6 +82,18 @@ class Integration extends Model
     protected $guarded = [];
 
     private ?RequestExecutor $executor = null;
+
+    /**
+     * Thread-local-ish slot for the active RequestContext during a closure
+     * call. Set by RequestExecutor before invoking the user closure and
+     * cleared in a `finally`. Closures that can't take an argument (because
+     * they're wrapped behind another layer, for example) can read this via
+     * Integration::currentContext() instead.
+     *
+     * Single static slot, like Laravel's Auth: accurate under sync PHP,
+     * shared across coroutines under Swoole/RoadRunner.
+     */
+    private static ?RequestContext $currentContext = null;
 
     #[\Override]
     protected static function booted(): void
@@ -158,6 +173,26 @@ class Integration extends Model
         throw new InvalidArgumentException('Model key must be a string or integer.');
     }
 
+    /**
+     * Read the active request context from inside a callback. Returns null
+     * when called outside of an in-flight request, so wrapped closures can
+     * defensively check before reading. Most callers should accept the
+     * context as a typed first parameter on the closure instead. This is
+     * the escape hatch for layered/wrapped invocations.
+     */
+    public static function currentContext(): ?RequestContext
+    {
+        return self::$currentContext;
+    }
+
+    /**
+     * @internal Called by RequestExecutor around the closure invocation.
+     */
+    public static function setCurrentContext(?RequestContext $context): void
+    {
+        self::$currentContext = $context;
+    }
+
     private ?int $activeSyncLogId = null;
 
     /** @var list<int> */
@@ -230,6 +265,7 @@ class Integration extends Model
         bool $serveStale = false,
         ?int $retryOfId = null,
         ?int $maxAttempts = null,
+        ?string $idempotencyKey = null,
     ): mixed {
         $maxAttempts ??= mb_strtoupper($method) === 'GET' ? 3 : 1;
 
@@ -247,6 +283,12 @@ class Integration extends Model
 
         $encodedRequestData = is_array($requestData) ? json_encode($requestData, JSON_THROW_ON_ERROR) : $requestData;
 
+        if ($idempotencyKey !== null && ! ($this->provider() instanceof SupportsIdempotency)) {
+            Log::warning(
+                "Idempotency key set on {$this->provider} request to '{$endpoint}', but the provider does not implement SupportsIdempotency. The key is persisted on integration_requests for searchability, but the provider will not deduplicate the call on its end."
+            );
+        }
+
         $fake = IntegrationRequestFake::active();
         if ($fake !== null) {
             return $fake->record($this, $endpoint, $method, $encodedRequestData, $responseClass);
@@ -255,6 +297,7 @@ class Integration extends Model
         return $this->executor()->execute(
             $endpoint, $method, $responseClass, $callback, $relatedTo,
             $encodedRequestData, $cacheFor, $serveStale, $retryOfId, $maxAttempts,
+            $idempotencyKey,
         );
     }
 

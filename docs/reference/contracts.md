@@ -141,6 +141,18 @@ interface RedactsRequestData
 | `sensitiveRequestFields()` | `array` | Dot-notation field paths in request data |
 | `sensitiveResponseFields()` | `array` | Dot-notation field paths in response data |
 
+## SupportsIdempotency
+
+Marker interface declaring that the upstream API natively dedupes requests by idempotency key. No methods.
+
+```php
+interface SupportsIdempotency {}
+```
+
+Implement on a provider when the underlying API recognises an idempotency key (Stripe's `Idempotency-Key` header, for example) and dedupes server-side. Without this marker, core logs a warning when a caller attaches a key. The key still persists to `integration_requests.idempotency_key` for searchability, but it's a no-op upstream.
+
+See [Idempotency](/core-concepts/idempotency) for how the key gets onto the wire.
+
 ## CustomizesRetry
 
 Provider-specific retry decisions for SDKs with custom exceptions.

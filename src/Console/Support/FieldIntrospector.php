@@ -109,8 +109,8 @@ final class FieldIntrospector
 
     /**
      * Matches only the discrete `required` token, not conditional variants
-     * like `required_if` / `required_with` — those depend on sibling field
-     * state we can't evaluate at prompt time.
+     * like `required_if` / `required_with`, since those depend on sibling
+     * field state we can't evaluate at prompt time.
      */
     private static function ruleIsRequired(mixed $rule): bool
     {

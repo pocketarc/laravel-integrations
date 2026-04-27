@@ -20,9 +20,9 @@ The central model. Represents a configured connection to an external service.
 
 | Method | Description |
 |--------|-------------|
-| `request()` | Make an untyped API request |
-| `requestAs()` | Make a typed API request |
-| `to()` / `toAs()` | Fluent request builder |
+| `at($endpoint)` | Open the fluent request builder. Chain `->as(SomeData::class)` to type the response. |
+| `request()` | Lower-level direct API request entry point (the builder funnels into this). |
+| `currentContext()` | Static. Read the active `RequestContext` from inside a closure when the closure can't take it as an argument. See [Making requests](/core-concepts/making-requests#requestcontext-in-closures). |
 | `logOperation()` | Create an operation log entry |
 | `mapExternalId()` | Map an external ID to an internal model |
 | `resolveMapping()` | Resolve external ID to internal model (returns typed `TModel`) |
@@ -54,6 +54,13 @@ Represents a single API request/response.
 | `integration()` | belongsTo | `Integration` |
 | `related()` | morphTo | Polymorphic (linked model) |
 | `retryOf()` | belongsTo | `IntegrationRequest` (original attempt) |
+
+### Notable properties
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `idempotency_key` | `?string` | Idempotency key, if one was set via `withIdempotencyKey()`. See [Idempotency](/core-concepts/idempotency). |
+| `provider_request_id` | `?string` | Upstream's request ID (e.g. Stripe `Request-Id`, GitHub `X-GitHub-Request-Id`). Populated by adapter closures via `RequestContext::reportResponseMetadata()`. Useful when filing support tickets against the provider. |
 
 ### Testing methods
 

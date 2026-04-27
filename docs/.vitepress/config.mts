@@ -91,6 +91,7 @@ export default defineConfig({
           },
           { text: "Retries", link: "/core-concepts/retries" },
           { text: "Rate limiting", link: "/core-concepts/rate-limiting" },
+          { text: "Idempotency", link: "/core-concepts/idempotency" },
           {
             text: "Health monitoring",
             link: "/core-concepts/health-monitoring",
@@ -145,6 +146,7 @@ export default defineConfig({
         text: "Advanced",
         items: [
           { text: "Custom retry logic", link: "/advanced/custom-retry" },
+          { text: "Circuit breaker", link: "/advanced/circuit-breaker" },
           {
             text: "Health notifications",
             link: "/advanced/notifications",

@@ -122,6 +122,23 @@ final class Config
         return self::boundedInt(config('integrations.retry.retry_after_max_seconds', 600), 600, 1) * 1000;
     }
 
+    public static function circuitBreakerEnabled(): bool
+    {
+        $value = config('integrations.circuit_breaker.enabled', true);
+
+        return is_bool($value) ? $value : true;
+    }
+
+    public static function circuitBreakerThreshold(): int
+    {
+        return self::boundedInt(config('integrations.circuit_breaker.threshold', 5), 5, 1);
+    }
+
+    public static function circuitBreakerCooldownSeconds(): int
+    {
+        return self::boundedInt(config('integrations.circuit_breaker.cooldown_seconds', 60), 60, 1);
+    }
+
     public static function degradedAfter(): int
     {
         return self::boundedInt(config('integrations.health.degraded_after', 5), 5, 1);
