@@ -21,7 +21,7 @@ use ReflectionUnionType;
 final class CallbackInspector
 {
     /**
-     * @param  Closure(RequestContext=): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     public static function acceptsContext(Closure $callback): bool
     {

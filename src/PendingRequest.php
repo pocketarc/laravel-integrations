@@ -70,7 +70,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */
@@ -80,7 +80,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */
@@ -90,7 +90,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */
@@ -100,7 +100,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */
@@ -110,7 +110,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */
@@ -120,7 +120,7 @@ class PendingRequest
     }
 
     /**
-     * @param  (Closure(RequestContext=): mixed)|string  $callbackOrUrl
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)|string  $callbackOrUrl
      *
      * @param-immediately-invoked-callable $callbackOrUrl
      */

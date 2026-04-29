@@ -50,7 +50,7 @@ final class RequestExecutor
      * @template TResponse of Data
      *
      * @param  class-string<TResponse>|null  $responseClass
-     * @param  Closure(): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     public function execute(
         string $endpoint,
@@ -90,7 +90,7 @@ final class RequestExecutor
      * @template TResponse of Data
      *
      * @param  class-string<TResponse>|null  $responseClass
-     * @param  Closure(): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     private function requestWithRetries(
         string $endpoint,
@@ -153,7 +153,7 @@ final class RequestExecutor
      * @template TResponse of Data
      *
      * @param  class-string<TResponse>|null  $responseClass
-     * @param  Closure(): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     private function executeRequest(
         string $endpoint,
@@ -215,7 +215,7 @@ final class RequestExecutor
     }
 
     /**
-     * @param  Closure(RequestContext=): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     private function callbackAcceptsContext(Closure $callback): bool
     {
@@ -228,7 +228,7 @@ final class RequestExecutor
      * closures wrapped behind layers (and zero-arg ones) can reach
      * Integration::currentContext() if they need to.
      *
-     * @param  Closure(RequestContext=): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      */
     private function invokeCallback(Closure $callback, bool $callbackAcceptsContext): mixed
     {
