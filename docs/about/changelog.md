@@ -4,11 +4,11 @@ All notable changes to this project are documented here. This project follows [S
 
 ## 2.1.2
 
-- PHPDoc correction: 2.1.1 declared the terminal-verb callback as `Closure(RequestContext=): mixed`, but PHPStan reads the optional-arg form contravariantly (the wrapper might call the closure without the arg, so a closure that requires the arg can't satisfy the type). Switched to `(Closure(): mixed)|(Closure(RequestContext): mixed)`, which is the actual contract: the closure either takes no args or accepts a `RequestContext`. Adapters with typed-arg closures now type-check cleanly. No behaviour change.
+- Closure docblock corrected on the fluent builder's terminal verbs (`get()`, `post()`, etc.), on `Integration::request()`, and on `RequestExecutor::execute()`. 2.1.1 used `Closure(RequestContext=): mixed`, which PHPStan reads contravariantly: an optional-arg signature means the wrapper might call the closure with no args, so a closure that requires the arg can't satisfy the type. The new declaration is a union, `(Closure(): mixed)|(Closure(RequestContext): mixed)`, matching what the wrapper actually does (zero-arg or `RequestContext` arg, decided by reflection). Adapters with typed-arg closures now pass `phpstan analyse`. No runtime change.
 
 ## 2.1.1
 
-- PHPDoc fix: the closure parameter on the fluent builder's terminal verbs (`get()`, `post()`, etc.) and on `Integration::request()` now declares the optional-arg form so adapters passing typed-arg closures pass static analysis. _Note: this declaration was contravariantly wrong; 2.1.2 supersedes it._
+- Attempted PHPDoc fix for typed-arg adapter closures. The declaration shipped in this release (`Closure(RequestContext=): mixed`) is contravariantly wrong; skip to 2.1.2.
 
 ## 2.1.0
 
