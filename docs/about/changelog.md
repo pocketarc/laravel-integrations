@@ -2,9 +2,13 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.1.2
+
+- PHPDoc correction: 2.1.1 declared the terminal-verb callback as `Closure(RequestContext=): mixed`, but PHPStan reads the optional-arg form contravariantly (the wrapper might call the closure without the arg, so a closure that requires the arg can't satisfy the type). Switched to `(Closure(): mixed)|(Closure(RequestContext): mixed)`, which is the actual contract: the closure either takes no args or accepts a `RequestContext`. Adapters with typed-arg closures now type-check cleanly. No behaviour change.
+
 ## 2.1.1
 
-- PHPDoc fix: the closure parameter on the fluent builder's terminal verbs (`get()`, `post()`, etc.) and on `Integration::request()` now declares `Closure(RequestContext=): mixed`, matching what the executor actually accepts. 2.1.0 already accepted the typed-arg shape at runtime, but PHPStan flagged any adapter passing one as a type error. No behaviour change.
+- PHPDoc fix: the closure parameter on the fluent builder's terminal verbs (`get()`, `post()`, etc.) and on `Integration::request()` now declares the optional-arg form so adapters passing typed-arg closures pass static analysis. _Note: this declaration was contravariantly wrong; 2.1.2 supersedes it._
 
 ## 2.1.0
 

@@ -120,7 +120,7 @@ trait HandlesPendingRequest
      * `$responseClass` argument is null for the untyped builder and the
      * bound `class-string<T>` for the typed builder.
      *
-     * @param  Closure(RequestContext=): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      * @param  class-string<Data>|null  $responseClass
      *
      * @param-immediately-invoked-callable $callback

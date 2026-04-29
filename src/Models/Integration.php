@@ -250,7 +250,7 @@ class Integration extends Model
      * method is the underlying executor exposed for direct use when you
      * already have a method/callback in hand.
      *
-     * @param  Closure(RequestContext=): mixed  $callback
+     * @param  (Closure(): mixed)|(Closure(RequestContext): mixed)  $callback
      * @param  class-string<Data>|null  $responseClass
      * @param  string|array<string, mixed>|null  $requestData
      */
