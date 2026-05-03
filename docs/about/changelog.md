@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.2.0
+
+- [Application-level idempotency reservations](/core-concepts/reservations): `$integration->withReservation($key, $callback)` reserves a `(integration_id, key)` row before running the callback, throws `ReservationConflict` if another caller already reserved that key, and releases the row if the callback throws. Complements the 2.1 transport-level [`withIdempotencyKey()`](/core-concepts/idempotency) for providers that don't natively dedupe (Zendesk, Postmark, etc.). Refuses to run inside a `DB::transaction()` because an outer rollback would also roll back the reservation INSERT and break at-most-once. New `integration_idempotency_reservations` table; `integrations:prune` sweeps rows older than `pruning.reservations_days` (default 90, matching `requests_days`).
+
 ## 2.1.2
 
 - Closure docblock corrected on the fluent builder's terminal verbs (`get()`, `post()`, etc.), on `Integration::request()`, and on `RequestExecutor::execute()`. 2.1.1 used `Closure(RequestContext=): mixed`, which PHPStan reads contravariantly: an optional-arg signature means the wrapper might call the closure with no args, so a closure that requires the arg can't satisfy the type. The new declaration is a union, `(Closure(): mixed)|(Closure(RequestContext): mixed)`, matching what the wrapper actually does (zero-arg or `RequestContext` arg, decided by reflection). Adapters with typed-arg closures now pass `phpstan analyse`. No runtime change.

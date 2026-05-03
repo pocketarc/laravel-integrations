@@ -12,6 +12,7 @@ A Laravel 11-13 package for production-ready third-party integrations. Provides 
 * API request logging
 * Rate limiting
 * Retry logic
+* Idempotency (transport-level keys and application-level reservations)
 * Sync scheduling
 * OAuth2
 * Health monitoring

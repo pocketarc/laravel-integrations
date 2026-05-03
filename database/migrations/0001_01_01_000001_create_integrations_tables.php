@@ -26,6 +26,7 @@ return new class extends Migration
             $table->timestamp('last_synced_at')->nullable();
             $table->unsignedInteger('sync_interval_minutes')->nullable();
             $table->timestamp('next_sync_at')->nullable();
+            $table->json('sync_cursor')->nullable();
             $table->nullableMorphs('owner');
             $table->timestamps();
 
@@ -41,6 +42,8 @@ return new class extends Migration
             $table->string('endpoint');
             $table->string('method', 10);
             $table->text('request_data')->nullable();
+            $table->string('idempotency_key', 64)->nullable();
+            $table->string('provider_request_id', 128)->nullable();
             $table->foreignId('retry_of')->nullable()->constrained("{$prefix}_requests")->nullOnDelete();
             $table->unsignedSmallInteger('response_code')->nullable();
             $table->longText('response_data')->nullable();
@@ -57,6 +60,8 @@ return new class extends Migration
             $table->index(['integration_id', 'created_at']);
             $table->index(['endpoint', 'method', 'response_success']);
             $table->index('retry_of');
+            $table->index('idempotency_key');
+            $table->index('provider_request_id');
         });
 
         Schema::create("{$prefix}_logs", function (Blueprint $table) use ($prefix): void {
@@ -69,6 +74,7 @@ return new class extends Migration
             $table->string('external_id')->nullable();
             $table->string('summary')->nullable();
             $table->json('metadata')->nullable();
+            $table->json('result_data')->nullable();
             $table->text('error')->nullable();
             $table->unsignedInteger('duration_ms')->nullable();
             $table->timestamps();
@@ -94,12 +100,42 @@ return new class extends Migration
             );
             $table->index(['internal_type', 'internal_id']);
         });
+
+        Schema::create("{$prefix}_webhooks", function (Blueprint $table) use ($prefix): void {
+            $table->id();
+            $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
+            $table->string('delivery_id');
+            $table->string('event_type')->nullable();
+            $table->text('payload');
+            $table->json('headers');
+            $table->string('status')->default('pending');
+            $table->text('error')->nullable();
+            $table->timestamp('processed_at')->nullable();
+            $table->timestamps();
+
+            $table->unique(['integration_id', 'delivery_id']);
+            $table->index(['integration_id', 'created_at']);
+        });
+
+        Schema::create("{$prefix}_idempotency_reservations", function (Blueprint $table) use ($prefix): void {
+            $table->id();
+            $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
+            // Length must match IntegrationIdempotencyReservation::MAX_KEY_LENGTH.
+            $table->string('key', 191);
+            $table->timestamps();
+
+            $table->unique(['integration_id', 'key'], "{$prefix}_idempotency_reservations_unique");
+            $table->index(['integration_id', 'created_at']);
+            $table->index(['created_at', 'id']);
+        });
     }
 
     public function down(): void
     {
         $prefix = Config::tablePrefix();
 
+        Schema::dropIfExists("{$prefix}_idempotency_reservations");
+        Schema::dropIfExists("{$prefix}_webhooks");
         Schema::dropIfExists("{$prefix}_mappings");
         Schema::dropIfExists("{$prefix}_logs");
         Schema::dropIfExists("{$prefix}_requests");

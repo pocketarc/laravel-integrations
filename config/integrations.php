@@ -144,6 +144,13 @@ return [
         // (syncs, imports) rather than individual API calls.
         'logs_days' => 365,
 
+        // Delete integration_idempotency_reservations older than this many days when running
+        // integrations:prune. A reservation row is the "we already did this" marker for
+        // Integration::withReservation(); pruning it allows the same key to run again, so set
+        // this comfortably longer than your longest queue retry window. Defaults to match
+        // requests_days so a single retention knob covers most setups.
+        'reservations_days' => 90,
+
         // Number of rows to delete per batch. Deleting in chunks avoids holding a table lock
         // for the entire duration of a large delete, keeping the table responsive for normal
         // operations while pruning runs.
