@@ -64,6 +64,24 @@ $integration->withReservation("send-receipt:{$order->id}", function () use ($ord
 });
 ```
 
+## Don't swallow exceptions inside the callback
+
+`withReservation()` decides whether to keep or release the reservation by watching whether the callback returned or threw. If the callback catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, and every future call with the same key throws `ReservationConflict` even though nothing was actually reserved.
+
+Don't:
+
+```php
+$integration->withReservation("send-receipt:{$order->id}", function () use ($postmark, $order) {
+    try {
+        return $postmark->send($order->email, $template, $data);
+    } catch (\Throwable) {
+        return null; // swallowed; row stays even though nothing got sent
+    }
+});
+```
+
+Let exceptions escape. The release path inside `withReservation()` rethrows the original exception unchanged, so your caller (or Laravel's exception handler) sees exactly what the SDK threw.
+
 ## Testing
 
 `RefreshDatabase` wraps every test in a transaction, so it'll trip the transaction guard. Two options.
