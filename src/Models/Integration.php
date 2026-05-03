@@ -292,18 +292,39 @@ class Integration extends Model
         try {
             return $callback();
         } catch (\Throwable $callbackError) {
-            try {
-                IntegrationIdempotencyReservation::query()
-                    ->where('integration_id', $this->id)
-                    ->where('key', $key)
-                    ->delete();
-            } catch (\Throwable $deleteError) {
-                Log::warning(
-                    "Failed to release reservation '{$key}' for integration {$this->id} after callable failure; the row will block future attempts until manually removed: {$deleteError->getMessage()}",
-                );
-            }
+            $this->releaseReservationOnCallbackFailure($key);
 
             throw $callbackError;
+        }
+    }
+
+    /**
+     * Best-effort delete of a reservation row after the callback threw.
+     * If the callback left a transaction open the DELETE would be rolled
+     * back along with that leaked transaction, so we skip it and log
+     * loudly: the row will block future attempts until manually removed.
+     */
+    private function releaseReservationOnCallbackFailure(string $key): void
+    {
+        $level = DB::transactionLevel();
+
+        if ($level > 0) {
+            Log::warning(
+                "Reservation '{$key}' for integration {$this->id} could not be released because the callback left a database transaction open (level {$level}); the row will block future attempts until manually removed.",
+            );
+
+            return;
+        }
+
+        try {
+            IntegrationIdempotencyReservation::query()
+                ->where('integration_id', $this->id)
+                ->where('key', $key)
+                ->delete();
+        } catch (\Throwable $deleteError) {
+            Log::warning(
+                "Failed to release reservation '{$key}' for integration {$this->id} after callable failure; the row will block future attempts until manually removed: {$deleteError->getMessage()}",
+            );
         }
     }
 

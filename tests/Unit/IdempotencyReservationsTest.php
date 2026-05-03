@@ -160,4 +160,35 @@ class IdempotencyReservationsTest extends TestCase
             ->withArgs(fn (string $message): bool => str_contains($message, 'Failed to release reservation')
                 && str_contains($message, 'release-fails:1'));
     }
+
+    public function test_callback_leaking_a_transaction_skips_release_and_logs_warning(): void
+    {
+        Log::spy();
+
+        try {
+            $this->integration->withReservation('leaked-tx:1', function (): void {
+                DB::beginTransaction();
+
+                throw new RuntimeException('callable blew up after opening a tx');
+            });
+            $this->fail('Expected the callable exception to propagate.');
+        } catch (RuntimeException $e) {
+            $this->assertSame('callable blew up after opening a tx', $e->getMessage());
+        } finally {
+            while (DB::transactionLevel() > 0) {
+                DB::rollBack();
+            }
+        }
+
+        $this->assertSame(
+            1,
+            IntegrationIdempotencyReservation::query()->where('key', 'leaked-tx:1')->count(),
+            'Row must remain because we cannot safely DELETE inside a leaked transaction.',
+        );
+
+        Log::shouldHaveReceived('warning')
+            ->once()
+            ->withArgs(fn (string $message): bool => str_contains($message, 'left a database transaction open')
+                && str_contains($message, 'leaked-tx:1'));
+    }
 }

@@ -20,6 +20,7 @@ return new class extends Migration
             $table->timestamps();
 
             $table->unique(['integration_id', 'key'], "{$prefix}_idempotency_reservations_unique");
+            $table->index(['integration_id', 'created_at']);
         });
     }
 
