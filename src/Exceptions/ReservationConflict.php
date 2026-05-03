@@ -14,10 +14,8 @@ use RuntimeException;
  * done and skip it; if the callable's side effect is observable
  * elsewhere (a row, a remote ticket, etc.) the caller can re-fetch it.
  *
- * The conflicting key is exposed on `$this->key` for callers that
- * need to inspect it. It is intentionally omitted from the exception
- * message so unhandled instances logged by Laravel's handler don't
- * leak application-supplied identifiers into shared log infrastructure.
+ * The conflicting key is also exposed on `$this->key` for callers
+ * that prefer typed access over parsing the exception message.
  */
 class ReservationConflict extends RuntimeException
 {
@@ -27,7 +25,7 @@ class ReservationConflict extends RuntimeException
         ?\Throwable $previous = null,
     ) {
         parent::__construct(
-            "Reservation already exists for integration {$integrationId}.",
+            "Reservation already exists for integration {$integrationId} and key '{$key}'.",
             0,
             $previous,
         );

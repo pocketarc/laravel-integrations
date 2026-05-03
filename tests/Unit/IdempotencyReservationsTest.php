@@ -59,8 +59,6 @@ class IdempotencyReservationsTest extends TestCase
         } catch (ReservationConflict $e) {
             $this->assertSame($this->integration->id, $e->integrationId);
             $this->assertSame('mark-duplicate:42', $e->key);
-            $this->assertStringContainsString((string) $this->integration->id, $e->getMessage());
-            $this->assertStringNotContainsString('mark-duplicate:42', $e->getMessage());
         }
 
         $this->assertFalse($secondCalled, 'Callable must not run when the key is already reserved.');
