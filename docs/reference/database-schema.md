@@ -1,6 +1,6 @@
 # Database schema
 
-The package creates five tables with a configurable prefix (default: `integration`). Publish and run migrations with:
+The package creates six tables with a configurable prefix (default: `integration`). Publish and run migrations with:
 
 ```bash
 php artisan vendor:publish --tag=integrations-migrations
@@ -88,6 +88,19 @@ External ID to internal model mapping.
 | `timestamps` | | `created_at`, `updated_at` |
 
 Unique constraint on `(integration_id, external_id, internal_type)`.
+
+## integration_idempotency_reservations
+
+Application-level idempotency reservations. One row per `(integration_id, key)` pair held by a successful `Integration::withReservation()` call. See [Reservations](/core-concepts/reservations).
+
+| Column           | Type        | Description                                                       |
+|------------------|-------------|-------------------------------------------------------------------|
+| `id`             | bigint (PK) | Auto-incrementing ID                                              |
+| `integration_id` | bigint (FK) | Parent integration                                                |
+| `key`            | string(191) | Application-supplied key, unique per integration                  |
+| `timestamps`     |             | `created_at`, `updated_at`                                        |
+
+Unique constraint on `(integration_id, key)`.
 
 ## integration_webhooks
 

@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder;
+use Illuminate\Database\UniqueConstraintViolationException;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
@@ -28,6 +29,7 @@ use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
+use Integrations\Exceptions\ReservationConflict;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
 use Integrations\RequestContext;
@@ -35,6 +37,7 @@ use Integrations\RequestExecutor;
 use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
+use RuntimeException;
 use Spatie\LaravelData\Data;
 
 use function Safe\json_encode;
@@ -238,6 +241,70 @@ class Integration extends Model
     public function at(string $endpoint): PendingRequest
     {
         return new PendingRequest($this, $endpoint);
+    }
+
+    /**
+     * Reserve a `(integration_id, key)` row, then run the callback at
+     * most once per key. The reservation row is INSERTed before the
+     * callback runs: if it conflicts with an existing row, we throw
+     * {@see ReservationConflict} and the callback is skipped. If the
+     * callback returns, the row stays, so future calls with the same key
+     * will conflict and give at-most-once semantics for successful runs.
+     * If the callback throws, the row is removed so the next attempt
+     * gets a fresh shot. Use this for application-level idempotency
+     * against providers that don't natively dedupe (Zendesk, Postmark,
+     * etc.); for providers that do, prefer
+     * {@see PendingRequest::withIdempotencyKey()}.
+     *
+     * Cannot be called inside a `DB::transaction()`: an outer rollback
+     * would also roll back the reservation INSERT, defeating
+     * at-most-once. Call it before any wrapping transaction.
+     *
+     * @template T
+     *
+     * @param  Closure(): T  $callback
+     * @return T
+     *
+     * @throws RuntimeException either {@see ReservationConflict} when a reservation for this `(integration, key)` already exists, or a plain `RuntimeException` when called inside a database transaction.
+     * @throws InvalidArgumentException if the key is empty.
+     */
+    public function withReservation(string $key, Closure $callback): mixed
+    {
+        if ($key === '') {
+            throw new InvalidArgumentException('Reservation key must not be empty.');
+        }
+
+        if (DB::transactionLevel() > 0) {
+            throw new RuntimeException(
+                'withReservation() cannot run inside a database transaction; an outer rollback would also roll back the reservation row, breaking at-most-once. Call it before any DB::transaction() block.',
+            );
+        }
+
+        try {
+            IntegrationIdempotencyReservation::query()->create([
+                'integration_id' => $this->id,
+                'key' => $key,
+            ]);
+        } catch (UniqueConstraintViolationException $e) {
+            throw new ReservationConflict($this->id, $key, $e);
+        }
+
+        try {
+            return $callback();
+        } catch (\Throwable $callbackError) {
+            try {
+                IntegrationIdempotencyReservation::query()
+                    ->where('integration_id', $this->id)
+                    ->where('key', $key)
+                    ->delete();
+            } catch (\Throwable $deleteError) {
+                Log::warning(
+                    "Failed to release reservation '{$key}' for integration {$this->id} after callable failure; the row will block future attempts until manually removed: {$deleteError->getMessage()}",
+                );
+            }
+
+            throw $callbackError;
+        }
     }
 
     /**
