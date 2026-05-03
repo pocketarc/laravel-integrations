@@ -79,7 +79,10 @@ final class FieldIntrospector
         $type = $parameter->getType();
         $typeName = $type instanceof ReflectionNamedType ? $type->getName() : 'string';
         $hasDefault = $parameter->isDefaultValueAvailable();
-        $nullable = $parameter->allowsNull();
+        // ReflectionParameter::allowsNull() is deprecated in PHP 8.5; an
+        // untyped parameter implicitly allows null, otherwise delegate to
+        // the type itself.
+        $nullable = $type === null || $type->allowsNull();
 
         return [
             'type' => $typeName,
