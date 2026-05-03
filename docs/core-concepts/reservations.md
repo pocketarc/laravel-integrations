@@ -37,6 +37,7 @@ The key is whatever uniquely identifies the work. Scope it to whatever makes the
 | Callback throws                                     | Row deleted. Original exception rethrown. Next attempt is free to retry.  |
 | Conflict (row already exists)                       | `ReservationConflict` thrown. Callback never runs.                        |
 | Empty key                                           | `InvalidArgumentException` thrown.                                        |
+| Key longer than 191 characters                      | `InvalidArgumentException` thrown.                                        |
 | Called inside `DB::transaction()`                   | `RuntimeException` thrown immediately. See below.                         |
 
 ## When to use this vs `withIdempotencyKey()`

@@ -120,6 +120,7 @@ return new class extends Migration
         Schema::create("{$prefix}_idempotency_reservations", function (Blueprint $table) use ($prefix): void {
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
+            // Length must match IntegrationIdempotencyReservation::MAX_KEY_LENGTH.
             $table->string('key', 191);
             $table->timestamps();
 

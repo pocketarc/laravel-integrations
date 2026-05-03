@@ -270,9 +270,7 @@ class Integration extends Model
      */
     public function withReservation(string $key, Closure $callback): mixed
     {
-        if ($key === '') {
-            throw new InvalidArgumentException('Reservation key must not be empty.');
-        }
+        IntegrationIdempotencyReservation::validateKey($key);
 
         if (DB::transactionLevel() > 0) {
             throw new RuntimeException(

@@ -118,6 +118,26 @@ class IdempotencyReservationsTest extends TestCase
         $this->integration->withReservation('', fn (): string => 'never');
     }
 
+    public function test_key_longer_than_max_length_throws_invalid_argument(): void
+    {
+        $tooLong = str_repeat('a', IntegrationIdempotencyReservation::MAX_KEY_LENGTH + 1);
+
+        $this->expectException(InvalidArgumentException::class);
+        $this->expectExceptionMessage('at most '.IntegrationIdempotencyReservation::MAX_KEY_LENGTH);
+
+        $this->integration->withReservation($tooLong, fn (): string => 'never');
+    }
+
+    public function test_key_at_exactly_max_length_works(): void
+    {
+        $atLimit = str_repeat('a', IntegrationIdempotencyReservation::MAX_KEY_LENGTH);
+
+        $result = $this->integration->withReservation($atLimit, fn (): string => 'ran');
+
+        $this->assertSame('ran', $result);
+        $this->assertSame(1, IntegrationIdempotencyReservation::query()->count());
+    }
+
     public function test_pre_existing_row_inserted_directly_still_triggers_conflict(): void
     {
         IntegrationIdempotencyReservation::query()->create([
