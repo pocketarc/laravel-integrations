@@ -303,6 +303,11 @@ class Integration extends Model
      * If the callback left a transaction open the DELETE would be rolled
      * back along with that leaked transaction, so we skip it and log
      * loudly: the row will block future attempts until manually removed.
+     *
+     * Log messages omit the reservation key to keep application-supplied
+     * identifiers out of shared log infrastructure. To find the stuck
+     * row, query `integration_idempotency_reservations` by the logged
+     * integration_id ordered by `created_at` near the warning timestamp.
      */
     private function releaseReservationOnCallbackFailure(string $key): void
     {
@@ -310,7 +315,7 @@ class Integration extends Model
 
         if ($level > 0) {
             Log::warning(
-                "Reservation '{$key}' for integration {$this->id} could not be released because the callback left a database transaction open (level {$level}); the row will block future attempts until manually removed.",
+                "Reservation cleanup skipped for integration {$this->id}: the callback left a database transaction open (level {$level}). The row will block future attempts until manually removed.",
             );
 
             return;
@@ -323,7 +328,7 @@ class Integration extends Model
                 ->delete();
         } catch (\Throwable $deleteError) {
             Log::warning(
-                "Failed to release reservation '{$key}' for integration {$this->id} after callable failure; the row will block future attempts until manually removed: {$deleteError->getMessage()}",
+                "Reservation cleanup failed for integration {$this->id} (".$deleteError::class.'). The row will block future attempts until manually removed.',
             );
         }
     }

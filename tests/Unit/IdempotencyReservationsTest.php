@@ -157,8 +157,13 @@ class IdempotencyReservationsTest extends TestCase
 
         Log::shouldHaveReceived('warning')
             ->once()
-            ->withArgs(fn (string $message): bool => str_contains($message, 'Failed to release reservation')
-                && str_contains($message, 'release-fails:1'));
+            ->withArgs(function (string $message): bool {
+                $integrationId = $this->integration->id;
+
+                return str_contains($message, 'Reservation cleanup failed')
+                    && str_contains($message, "integration {$integrationId}")
+                    && ! str_contains($message, 'release-fails:1');
+            });
     }
 
     public function test_callback_leaking_a_transaction_skips_release_and_logs_warning(): void
@@ -188,7 +193,12 @@ class IdempotencyReservationsTest extends TestCase
 
         Log::shouldHaveReceived('warning')
             ->once()
-            ->withArgs(fn (string $message): bool => str_contains($message, 'left a database transaction open')
-                && str_contains($message, 'leaked-tx:1'));
+            ->withArgs(function (string $message): bool {
+                $integrationId = $this->integration->id;
+
+                return str_contains($message, 'left a database transaction open')
+                    && str_contains($message, "integration {$integrationId}")
+                    && ! str_contains($message, 'leaked-tx:1');
+            });
     }
 }
