@@ -53,20 +53,32 @@ The key is whatever uniquely identifies the work. Scope it to whatever makes the
 
 `withReservation()` checks `DB::transactionLevel()` and throws if it's not zero. If the INSERT happens inside an outer `DB::transaction()` and the outer transaction later rolls back (for an unrelated reason), the reservation row rolls back with it. The callback already ran, the side effect already shipped, and the next attempt sees no row and runs the callback again. At-most-once is gone.
 
-Call `withReservation()` at the top of your action or job, before any `DB::transaction()`. If you need to do DB work tied to the reservation's success, do it inside the callback:
+Call `withReservation()` at the top of your action or job, before any `DB::transaction()`.
+
+## Keep non-idempotent provider calls last in the callback
+
+A successful callback keeps the row; a failed callback releases it. So if the callback runs a non-idempotent provider call and then any DB work that can throw, a failure on that DB write releases the reservation while the upstream side effect already shipped. The next retry duplicates the send.
+
+Keep the provider call as the last thing in the callback, and move follow-up DB writes after it returns:
 
 ```php
-$integration->withReservation("send-receipt:{$order->id}", function () use ($order) {
-    DB::transaction(function () use ($order) {
-        $messageId = $postmark->send($order->email, $template, $data);
-        $order->receipts()->create(['message_id' => $messageId]);
-    });
-});
+try {
+    $messageId = $integration->withReservation(
+        "send-receipt:{$order->id}",
+        fn () => $postmark->send($order->email, $template, $data),
+    );
+
+    $order->receipts()->create(['message_id' => $messageId]);
+} catch (ReservationConflict) {
+    // already done in a prior attempt
+}
 ```
+
+If you need to do DB work *before* the provider call (validating state, marking the order as queued), do it before `withReservation()` so a local failure prevents the reservation from being created at all.
 
 ## Don't swallow exceptions inside the callback
 
-`withReservation()` decides whether to keep or release the reservation by watching whether the callback returned or threw. If the callback catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, and every future call with the same key throws `ReservationConflict` even though nothing was actually reserved.
+`withReservation()` decides whether to keep or release the reservation by watching whether the callback returned or threw. If the callback catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, and every future call with the same key throws `ReservationConflict` even though nothing was reserved.
 
 Don't:
 
@@ -84,9 +96,7 @@ Let exceptions escape. The release path inside `withReservation()` rethrows the 
 
 ## Testing
 
-`RefreshDatabase` wraps every test in a transaction, so it'll trip the transaction guard. Two options.
-
-Use `DatabaseMigrations` instead: it re-runs migrations per test, which is slower, but each test starts at `transactionLevel() === 0`.
+`RefreshDatabase` wraps every test in a transaction, so it'll trip the transaction guard. Use `DatabaseMigrations` instead: it re-runs migrations per test, which is slower, but each test starts at `transactionLevel() === 0`.
 
 Or stub the surrounding action. Move the `withReservation()` call into the action under test and unit-test the action by calling it; integration-test the side effect separately.
 

@@ -246,10 +246,10 @@ class Integration extends Model
     /**
      * Reserve a `(integration_id, key)` row, then run the callback at
      * most once per key. The reservation row is INSERTed before the
-     * callback runs: if it conflicts with an existing row, we throw
-     * {@see ReservationConflict} and the callback is skipped. If the
-     * callback returns, the row stays, so future calls with the same key
-     * will conflict and give at-most-once semantics for successful runs.
+     * callback runs: if the INSERT conflicts with an existing row, we
+     * throw {@see ReservationConflict} and the callback is skipped. If
+     * the callback returns, the row stays, so future calls with the
+     * same key will conflict and give at-most-once for successful runs.
      * If the callback throws, the row is removed so the next attempt
      * gets a fresh shot. Use this for application-level idempotency
      * against providers that don't natively dedupe (Zendesk, Postmark,
