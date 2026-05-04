@@ -44,7 +44,6 @@ class TypedPendingRequest
         ?int $retryOfId = null,
         ?int $maxAttempts = null,
         ?string $idempotencyKey = null,
-        bool $idempotencyKeyRequested = false,
     ) {
         $this->integration = $integration;
         $this->endpoint = $endpoint;
@@ -55,7 +54,6 @@ class TypedPendingRequest
         $this->retryOfId = $retryOfId;
         $this->maxAttempts = $maxAttempts;
         $this->idempotencyKey = $idempotencyKey;
-        $this->idempotencyKeyRequested = $idempotencyKeyRequested;
     }
 
     /**

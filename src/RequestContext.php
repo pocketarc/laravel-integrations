@@ -34,13 +34,17 @@ use InvalidArgumentException;
 final class RequestContext
 {
     /**
-     * Match the column widths on `integration_requests`. The idempotency
-     * key is caller-controlled, so we throw when it's too long; the
-     * provider request ID comes from upstream headers and gets truncated
+     * Maximum length, in characters, of the idempotency key carried in
+     * the request context. Aligned with `IntegrationIdempotencyKey::MAX_KEY_LENGTH`
+     * (191, the MySQL utf8mb4 InnoDB index prefix limit) so a key that
+     * fits in the context also fits in the at-most-once table.
+     *
+     * The key is caller-controlled, so we throw when it's too long; the
+     * provider request ID is upstream-controlled and gets truncated
      * silently rather than failing a request just because the upstream
      * shipped a longer-than-expected value.
      */
-    public const MAX_IDEMPOTENCY_KEY_LENGTH = 64;
+    public const MAX_IDEMPOTENCY_KEY_LENGTH = 191;
 
     public const MAX_PROVIDER_REQUEST_ID_LENGTH = 128;
 

@@ -47,17 +47,17 @@ $client = new StripeClient($integration);
 
 | Resource                        | Method                                                         | Description                                                                                              |
 |---------------------------------|----------------------------------------------------------------|----------------------------------------------------------------------------------------------------------|
-| `$client->paymentIntents()`     | `->create($amount, $currency, ..., $idempotencyKey?)`          | Create a PaymentIntent. Auto-generates an idempotency key. Returns `\Stripe\PaymentIntent`.              |
+| `$client->paymentIntents()`     | `->create($amount, $currency, ..., $idempotencyKey?)`          | Create a PaymentIntent. Returns `\Stripe\PaymentIntent`.                                                 |
 |                                 | `->retrieve($id)`                                              | Get a PaymentIntent by id.                                                                               |
 |                                 | `->update($id, ...)`                                           | Update editable fields.                                                                                  |
 |                                 | `->confirm($id, $paymentMethod?, $idempotencyKey?)`            | Confirm a PaymentIntent.                                                                                 |
 |                                 | `->capture($id, $amountToCapture?, $idempotencyKey?)`          | Capture an authorised PaymentIntent.                                                                     |
 |                                 | `->cancel($id, $cancellationReason?, $idempotencyKey?)`        | Cancel a PaymentIntent.                                                                                  |
 |                                 | `->list($customer?, $limit?)`                                  | Returns `\Stripe\Collection<\Stripe\PaymentIntent>`.                                                     |
-| `$client->refunds()`            | `->create($paymentIntent?, $charge?, ..., $idempotencyKey?)`   | Refund against exactly one of `paymentIntent` or `charge`. Auto-generates an idempotency key.            |
+| `$client->refunds()`            | `->create($paymentIntent?, $charge?, ..., $idempotencyKey?)`   | Refund against exactly one of `paymentIntent` or `charge`.                                               |
 |                                 | `->retrieve($id)` / `->list($paymentIntent?, $charge?, $limit?)` | Returns `\Stripe\Refund` or `\Stripe\Collection<\Stripe\Refund>`.                                      |
 | `$client->charges()`            | `->retrieve($id)`                                              | Get a Charge.                                                                                            |
-|                                 | `->capture($id, $amount?, $receiptEmail?, $idempotencyKey?)`   | Capture an authorised charge. Auto-generates an idempotency key.                                         |
+|                                 | `->capture($id, $amount?, $receiptEmail?, $idempotencyKey?)`   | Capture an authorised charge.                                                                            |
 |                                 | `->list($customer?, $paymentIntent?, $limit?)`                 | Returns `\Stripe\Collection<\Stripe\Charge>`.                                                            |
 | `$client->customers()`          | `->create(...)` / `->update($id, ...)`                         | Returns `\Stripe\Customer`.                                                                              |
 |                                 | `->retrieve($id)` / `->delete($id)`                            | Delete returns the Customer with `$deleted = true`.                                                      |
@@ -68,15 +68,23 @@ $client = new StripeClient($integration);
 | `$client->webhookEndpoints()`   | `->create($url, $enabledEvents, ...)` / `->update($id, ...)`   | Returns `\Stripe\WebhookEndpoint`.                                                                       |
 |                                 | `->retrieve($id)` / `->delete($id)` / `->list($limit?)`        | Delete returns the WebhookEndpoint with `$deleted = true`.                                               |
 
-All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. Every money-moving POST accepts an optional `$idempotencyKey` and auto-generates a UUID when absent, so a transient retry inside one call collapses to a single Stripe-side operation. Pass your own stable key when you need idempotency across separate calls (e.g. re-issuing from a queued job retry). See [Idempotency](/core-concepts/idempotency) for the full picture.
+All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked.
+
+### Idempotency
+
+Every money-moving POST accepts an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"charge:order-{$order->id}"`) when you need at-most-once execution. The package writes a row in `integration_idempotency_keys` before the SDK call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and forwards the key as Stripe's `Idempotency-Key` header so Stripe also dedupes upstream within its 24-hour window.
+
+Pass `null` (the default) to skip idempotency entirely. Cross-process retries from queue replays will then re-execute. See [Idempotency](/core-concepts/idempotency) for the full semantics.
+
+`StripeProvider` implements `SupportsIdempotency`, so callers attaching a key won't trigger the "provider doesn't support dedup" warning that other adapters surface.
+
+### Provider request IDs
 
 Stripe's `Request-Id` response header is captured on `integration_requests.provider_request_id` for every call. When a Stripe support ticket asks for the request ID, that's the column to grep:
 
 ```php
 IntegrationRequest::where('provider_request_id', 'req_ABC123')->first();
 ```
-
-`StripeProvider` implements `SupportsIdempotency`, so callers attaching a key won't trigger the "provider doesn't support dedup" warning that other adapters surface.
 
 ## Input validation
 

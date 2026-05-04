@@ -65,7 +65,6 @@ class PendingRequest
             retryOfId: $this->retryOfId,
             maxAttempts: $this->maxAttempts,
             idempotencyKey: $this->idempotencyKey,
-            idempotencyKeyRequested: $this->idempotencyKeyRequested,
         );
     }
 

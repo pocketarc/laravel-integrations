@@ -190,9 +190,9 @@ final class Config
         return self::boundedInt(config('integrations.pruning.logs_days', 365), 365, 1);
     }
 
-    public static function pruningReservationsDays(): int
+    public static function pruningIdempotencyKeysDays(): int
     {
-        return self::boundedInt(config('integrations.pruning.reservations_days', 90), 90, 1);
+        return self::boundedInt(config('integrations.pruning.idempotency_keys_days', 90), 90, 1);
     }
 
     public static function pruningChunkSize(): int

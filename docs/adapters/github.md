@@ -41,14 +41,14 @@ $client = new GitHubClient($integration);
 
 | Resource | Method | Description |
 |----------|--------|-------------|
-| `$client->issues()` | `->create($title, $body, $labels)` | Create an issue. Returns `GitHubIssueData`. |
+| `$client->issues()` | `->create($title, $body, $labels, $idempotencyKey?)` | Create an issue. Returns `GitHubIssueData`. |
 | | `->get($number)` | Get a single issue by number. |
 | | `->since($since, $callback)` | Iterate issues updated since a timestamp. Skips PRs. |
 | | `->close($number, $stateReason)` | Close an issue. Optional state reason (completed, not_planned, duplicate). |
 | | `->reopen($number)` | Reopen a closed issue. |
 | | `->timeline($number, $callback)` | Iterate timeline events (labels, assignments, etc.). |
 | `$client->comments()` | `->list($number, $callback)` | Iterate all comments on an issue. |
-| | `->add($number, $body)` | Add a comment to an issue. Returns `?GitHubCommentData`. |
+| | `->add($number, $body, $idempotencyKey?)` | Add a comment to an issue. Returns `?GitHubCommentData`. |
 | `$client->assets()` | `->download($url)` | Download an asset with token auth for GitHub-hosted URLs. |
 
 All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. The provider implements `CustomizesRetry` so the core handles retry for GitHub SDK exceptions (rate limits, server errors, connection failures) with method-aware defaults (GET = 3 attempts, non-GET = 1).
@@ -73,7 +73,7 @@ GitHub's `X-GitHub-Request-Id` is captured on `integration_requests.provider_req
 
 ## Idempotency
 
-GitHub doesn't natively dedupe by idempotency key, so `GitHubProvider` does **not** implement `SupportsIdempotency`. `GitHubIssues::create()` and `GitHubComments::add()` accept an optional `$idempotencyKey` for visibility (the value is persisted on the request log), but core logs a warning when a key is set, since GitHub itself ignores it. See [Idempotency](/core-concepts/idempotency) for the full picture.
+`GitHubIssues::create()` and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 

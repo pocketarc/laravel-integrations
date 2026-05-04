@@ -7,10 +7,10 @@ namespace Integrations\Concerns;
 use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
-use Illuminate\Support\Str;
+use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationIdempotencyKey;
 use Integrations\RequestContext;
-use InvalidArgumentException;
 use Spatie\LaravelData\Data;
 
 /**
@@ -43,8 +43,6 @@ trait HandlesPendingRequest
     protected ?int $maxAttempts = null;
 
     protected ?string $idempotencyKey = null;
-
-    protected bool $idempotencyKeyRequested = false;
 
     public function withCache(CarbonInterface|int $ttl, bool $serveStale = false): static
     {
@@ -86,31 +84,34 @@ trait HandlesPendingRequest
     }
 
     /**
-     * Tag the request with an idempotency key so the provider (if it
-     * supports them) deduplicates duplicate calls. The textbook example
-     * is a user double-clicking "Pay" across two tabs and submitting
-     * the same charge twice. Pass a deterministic key like
-     * `"order-{$id}"` for that case.
+     * Tag the request with an idempotency key for at-most-once
+     * execution. Before the underlying call fires, core inserts a row
+     * into `integration_idempotency_keys` so a second call with the
+     * same `(integration_id, key)` throws {@see IdempotencyConflict}
+     * and the closure is skipped. The key is also passed to the
+     * provider in the `RequestContext` so adapters that implement
+     * `SupportsIdempotency` can send it on the wire as a backstop
+     * against intra-attempt SDK retries.
      *
-     * Calling without an argument (or with null) auto-generates a UUID
-     * at execute time. That only protects core's own retry attempts:
-     * useful but narrower. Empty string throws, since blank silently
-     * disables Stripe's dedup and similar.
+     * The key must be application-meaningful and stable across retries
+     * (e.g. `"charge:order-{$id}"`, `"send-receipt:{$orderId}"`).
+     * Random per-call values defeat the purpose; if you don't have a
+     * domain key, omit this call and accept that the work isn't
+     * idempotent.
      *
-     * Providers that don't implement `SupportsIdempotency` still see the
-     * key persisted on the `integration_requests.idempotency_key` column
-     * for searchability, but core logs a warning when a key is set
-     * against a non-supporting provider, since provider-side dedup
-     * won't fire.
+     * Passing `null` is a no-op (no key, no row, no header). Empty
+     * string throws, since it silently disables provider-side dedup
+     * and would never roundtrip through the unique index correctly.
      */
-    public function withIdempotencyKey(?string $key = null): static
+    public function withIdempotencyKey(?string $key): static
     {
-        if ($key === '') {
-            throw new InvalidArgumentException('Idempotency key must not be empty when provided.');
+        if ($key === null) {
+            return $this;
         }
 
+        IntegrationIdempotencyKey::validateKey($key);
+
         $this->idempotencyKey = $key;
-        $this->idempotencyKeyRequested = true;
 
         return $this;
     }
@@ -138,23 +139,7 @@ trait HandlesPendingRequest
             serveStale: $this->serveStale,
             retryOfId: $this->retryOfId,
             maxAttempts: $this->maxAttempts,
-            idempotencyKey: $this->resolveIdempotencyKey(),
+            idempotencyKey: $this->idempotencyKey,
         );
-    }
-
-    /**
-     * Resolve the idempotency key right before the request fires. A null
-     * key with `idempotencyKeyRequested = true` (i.e. the caller said
-     * `withIdempotencyKey()` with no args) becomes a fresh UUID. A null
-     * key with `requested = false` (the caller never opted in) stays
-     * null, signalling "no key on this request".
-     */
-    private function resolveIdempotencyKey(): ?string
-    {
-        if (! $this->idempotencyKeyRequested) {
-            return null;
-        }
-
-        return $this->idempotencyKey ?? (string) Str::uuid();
     }
 }

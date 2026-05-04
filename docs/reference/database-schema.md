@@ -89,9 +89,9 @@ External ID to internal model mapping.
 
 Unique constraint on `(integration_id, external_id, internal_type)`.
 
-## integration_idempotency_reservations
+## integration_idempotency_keys
 
-Application-level idempotency reservations. One row per `(integration_id, key)` pair held by a successful `Integration::withReservation()` call. See [Reservations](/core-concepts/reservations).
+Idempotency-key ledger. One row per `(integration_id, key)` pair held by a keyed call (`at()->withIdempotencyKey($key)->post(...)`). See [Idempotency](/core-concepts/idempotency).
 
 | Column           | Type        | Description                                                       |
 |------------------|-------------|-------------------------------------------------------------------|

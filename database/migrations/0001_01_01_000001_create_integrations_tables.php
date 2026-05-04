@@ -42,7 +42,7 @@ return new class extends Migration
             $table->string('endpoint');
             $table->string('method', 10);
             $table->text('request_data')->nullable();
-            $table->string('idempotency_key', 64)->nullable();
+            $table->string('idempotency_key', 191)->nullable();
             $table->string('provider_request_id', 128)->nullable();
             $table->foreignId('retry_of')->nullable()->constrained("{$prefix}_requests")->nullOnDelete();
             $table->unsignedSmallInteger('response_code')->nullable();
@@ -117,14 +117,14 @@ return new class extends Migration
             $table->index(['integration_id', 'created_at']);
         });
 
-        Schema::create("{$prefix}_idempotency_reservations", function (Blueprint $table) use ($prefix): void {
+        Schema::create("{$prefix}_idempotency_keys", function (Blueprint $table) use ($prefix): void {
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
-            // Length must match IntegrationIdempotencyReservation::MAX_KEY_LENGTH.
+            // Length must match IntegrationIdempotencyKey::MAX_KEY_LENGTH.
             $table->string('key', 191);
             $table->timestamps();
 
-            $table->unique(['integration_id', 'key'], "{$prefix}_idempotency_reservations_unique");
+            $table->unique(['integration_id', 'key'], "{$prefix}_idempotency_keys_unique");
             $table->index(['integration_id', 'created_at']);
             $table->index(['created_at', 'id']);
         });
@@ -134,7 +134,7 @@ return new class extends Migration
     {
         $prefix = Config::tablePrefix();
 
-        Schema::dropIfExists("{$prefix}_idempotency_reservations");
+        Schema::dropIfExists("{$prefix}_idempotency_keys");
         Schema::dropIfExists("{$prefix}_webhooks");
         Schema::dropIfExists("{$prefix}_mappings");
         Schema::dropIfExists("{$prefix}_logs");

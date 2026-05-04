@@ -81,7 +81,7 @@ See [Circuit breaker](/advanced/circuit-breaker) for the full state machine.
 |-----|------|---------|-------------|
 | `pruning.requests_days` | `int` | `90` | Retention for `integration_requests` |
 | `pruning.logs_days` | `int` | `365` | Retention for `integration_logs` |
-| `pruning.reservations_days` | `int` | `90` | Retention for `integration_idempotency_reservations`. Set comfortably longer than your longest queue retry window. |
+| `pruning.idempotency_keys_days` | `int` | `90` | Retention for `integration_idempotency_keys`. Set comfortably longer than your longest queue retry window. |
 | `pruning.chunk_size` | `int` | `1000` | Rows per delete batch |
 
 ## Providers
