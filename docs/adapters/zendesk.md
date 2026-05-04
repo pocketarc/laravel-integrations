@@ -80,7 +80,13 @@ Zendesk emits an `X-Zendesk-Request-Id` header that's useful when filing support
 
 ## Idempotency
 
-Ticket close/reopen and comment writes accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"close-ticket:{$ticketId}"`, `"comment:order-{$order->id}:zendesk"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. Zendesk doesn't natively dedupe by header (`ZendeskProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
+Ticket close/reopen and comment writes accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"close-ticket:{$ticketId}"`, `"comment:order-{$order->id}:zendesk"`) when you need at-most-once execution.
+
+The package writes a row in `integration_idempotency_keys` before the call fires. A second call with the same key throws `Integrations\Exceptions\IdempotencyConflict` and skips the SDK invocation. Zendesk doesn't natively dedupe by header (`ZendeskProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here.
+
+Keys are capped at 191 characters and the row stays in place until `integrations:prune` removes it (default 90 days, configurable via `pruning.idempotency_keys_days`). If you need at-most-once across queue retries that may run later than that, raise the retention above your longest retry window.
+
+Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 
