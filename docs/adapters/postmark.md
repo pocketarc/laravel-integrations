@@ -107,11 +107,11 @@ $client = new PostmarkClient($integration);
 |-----------------------------------|----------------------------------------------------------------------------------------|-------------------------------------------------------------------------------------------------------------------------|
 | `$client->bounces()`              | `->get($bounceId)`                                                                     | Get a bounce by id. Returns `?PostmarkBounceData`.                                                                       |
 |                                   | `->list($count, $offset, $filters)`                                                    | Page through bounces. Filters: `type`, `inactive`, `emailFilter`, `tag`, `messageId`, `fromdate`, `todate`, `messagestream`. Returns `?PostmarkBounceListResponse`. |
-|                                   | `->activate($bounceId)`                                                                | Reactivate a suppressed address (only when Postmark sets `CanActivate=true`). Returns `bool`.                            |
+|                                   | `->activate($bounceId, $idempotencyKey?)`                                              | Reactivate a suppressed address (only when Postmark sets `CanActivate=true`). Returns `bool`.                            |
 |                                   | `->dump($bounceId)`                                                                    | Raw SMTP source for forensic debugging. Returns `?string`.                                                              |
 | `$client->suppressions()`         | `->list($messageStream?, $filters)`                                                    | Per-stream suppression dump. Filters: `suppressionReason`, `origin`, `fromDate`, `toDate`, `emailAddress`. Returns `?PostmarkSuppressionListResponse`. |
-|                                   | `->create($emails, $messageStream?)`                                                   | Manually suppress recipients. Returns `bool` after inspecting Postmark's per-recipient `Status`; rejected addresses log a warning and the call returns `false`. |
-|                                   | `->delete($emails, $messageStream?)`                                                   | Lift suppressions where Postmark allows it (Customer-origin manual, Recipient-origin hard bounces). Same per-recipient result handling as `create()`. |
+|                                   | `->create($emails, $messageStream?, $idempotencyKey?)`                                 | Manually suppress recipients. Returns `bool` after inspecting Postmark's per-recipient `Status`; rejected addresses log a warning and the call returns `false`. |
+|                                   | `->delete($emails, $messageStream?, $idempotencyKey?)`                                 | Lift suppressions where Postmark allows it (Customer-origin manual, Recipient-origin hard bounces). Same per-recipient result handling as `create()`. |
 | `$client->messages()`             | `->listOutbound($count, $offset, $filters)`                                            | Search outbound messages. Filters: `recipient`, `fromEmail`, `tag`, `subject`, `status`, `fromdate`, `todate`, `metadata`, `messagestream`. Returns `?PostmarkOutboundMessageListResponse`. |
 |                                   | `->getOutbound($messageId)`                                                            | Full outbound message details. Returns `?PostmarkOutboundMessageData`.                                                  |
 |                                   | `->listInbound($count, $offset, $filters)`                                             | Search inbound messages. Filters: `recipient`, `fromEmail`, `tag`, `subject`, `mailboxHash`, `status`, `fromdate`, `todate`. Returns `?PostmarkInboundMessageListResponse`. |
@@ -119,8 +119,8 @@ $client = new PostmarkClient($integration);
 | `$client->serverStats()`          | `->overview($fromDate?, $toDate?, $tag?, $messageStream?)`                             | Aggregate outbound stats. Validates dates against `YYYY-MM-DD` locally before forwarding. Returns `?PostmarkOutboundStatsData`. |
 | `$client->webhookEndpoints()`     | `->list($messageStream?)`                                                              | List webhook subscriptions. Returns `?PostmarkWebhookEndpointListResponse`. Bypasses the SDK's listing because it strips Triggers/HttpAuth blocks. |
 |                                   | `->get($id)`                                                                           | Get a single webhook subscription. Returns `?PostmarkWebhookEndpointData`.                                              |
-|                                   | `->create($url, $messageStream?, $httpAuth?, $httpHeaders?, $triggers?)`               | Register a new webhook. Returns `?PostmarkWebhookEndpointData`.                                                         |
-|                                   | `->delete($id)`                                                                        | Delete a webhook subscription. Returns `bool`.                                                                          |
+|                                   | `->create($url, $messageStream?, $httpAuth?, $httpHeaders?, $triggers?, $idempotencyKey?)` | Register a new webhook. Returns `?PostmarkWebhookEndpointData`.                                                     |
+|                                   | `->delete($id, $idempotencyKey?)`                                                      | Delete a webhook subscription. Returns `bool`.                                                                          |
 
 All methods route through the fluent `at(...)->as(...)->get()/post()` builder (`Integration::request()` under the hood), so every call is logged, rate-limited, retried, and tracked against the integration's health. Date filters (`fromdate`/`todate` on stats, etc.) are validated locally with `Carbon::hasFormat()` before the SDK sees them, giving a clear `InvalidArgumentException` instead of a 422 round-trip.
 
@@ -155,11 +155,13 @@ When `messagestream` is omitted from a list call, the resource falls back to the
 
 Every Data class stores the original API/webhook response in an `original` array, so consumers can dig into fields the typed properties don't surface (Headers, Attachments, FromFull/ToFull, Geo, Client/OS detail, etc.) without us having to anticipate every use case.
 
-## Provider request IDs and idempotency
+## Provider request IDs
 
 Postmark's PHP SDK doesn't expose response headers to callers, so `integration_requests.provider_request_id` stays `null` for Postmark calls. The `X-PM-Message-Id` header on send responses isn't reachable without forking the SDK. Flagged for follow-up if and when Postmark support tickets become a regular thing.
 
-Postmark also doesn't natively dedupe by idempotency key. `PostmarkProvider` does **not** implement `SupportsIdempotency`; setting a key against it triggers the warning documented in [Idempotency](/core-concepts/idempotency).
+## Idempotency
+
+Bounce reactivation, suppression mutations, and webhook-endpoint writes accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"reactivate-bounce:{$bounceId}"`, `"suppress:order-{$order->id}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. Postmark doesn't natively dedupe by header (`PostmarkProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Enums
 

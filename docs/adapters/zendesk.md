@@ -47,12 +47,12 @@ $client = new ZendeskClient($integration);
 | | `->list($callback)` | Iterate all tickets via the SDK iterator. |
 | | `->since($since, $callback)` | Incremental ticket export with sideloaded users. Callback receives `ZendeskTicketData` and `?ZendeskUserData`. |
 | | `->newerThan($minId, $callback)` | Fetch tickets with ID > `$minId` via Search API. For catching missed items. |
-| | `->close($ticketId)` | Set ticket status to "solved". Returns `?ZendeskTicketData`. |
-| | `->reopen($ticketId)` | Set ticket status to "open". Returns `?ZendeskTicketData`. |
+| | `->close($ticketId, $idempotencyKey?)` | Set ticket status to "solved". Returns `?ZendeskTicketData`. |
+| | `->reopen($ticketId, $idempotencyKey?)` | Set ticket status to "open". Returns `?ZendeskTicketData`. |
 | `$client->comments()` | `->list($ticketId, $callback)` | Iterate comments on a ticket (cursor-paginated). Callback receives `ZendeskCommentData`. |
 | | `->newerThan($minId, $callback, $days)` | Find comments with ID > `$minId` across tickets updated in the last `$days` (default 7). For catching missed comments. Callback receives `ZendeskCommentData` and ticket ID. |
-| | `->add($ticketId, $body)` | Add a public comment. Returns `?ZendeskCommentData`. |
-| | `->addInternalNote($ticketId, $body)` | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`. |
+| | `->add($ticketId, $body, $idempotencyKey?)` | Add a public comment. Returns `?ZendeskCommentData`. |
+| | `->addInternalNote($ticketId, $body, $idempotencyKey?)` | Add an internal note (not visible to requester). Returns `?ZendeskCommentData`. |
 | `$client->users()` | `->get($userId)` | Get a single user. Returns `?ZendeskUserData`. |
 | | `->list($callback?)` | Iterate all users. Returns `Collection<ZendeskUserData>`. |
 | `$client->attachments()` | `->download($url)` | Download an attachment by content URL. |
@@ -74,11 +74,13 @@ Every sync (including the first one with a seeded cursor) subtracts a 1-hour buf
 
 Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 
-## Provider request IDs and idempotency
+## Provider request IDs
 
 Zendesk emits an `X-Zendesk-Request-Id` header that's useful when filing support tickets, but the Zendesk PHP SDK doesn't expose response headers to callers. `integration_requests.provider_request_id` stays `null` for Zendesk calls until the SDK gains accessor support or we fork it.
 
-Zendesk doesn't natively dedupe by idempotency key. `ZendeskProvider` does **not** implement `SupportsIdempotency`; the warning in [Idempotency](/core-concepts/idempotency) applies if a caller attaches one.
+## Idempotency
+
+Ticket close/reopen and comment writes accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"close-ticket:{$ticketId}"`, `"comment:order-{$order->id}:zendesk"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. Zendesk doesn't natively dedupe by header (`ZendeskProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 
