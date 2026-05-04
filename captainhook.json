@@ -3,7 +3,7 @@
         "verbosity": "normal",
         "run-mode": "local",
         "git-directory": ".git",
-        "php-path": "php",
+        "php-path": "/opt/homebrew/opt/php/bin/php",
         "includes": [],
         "custom": {}
     },
@@ -11,7 +11,12 @@
         "enabled": true,
         "actions": [
             {
-                "action": "docker compose exec -T devtools ./vendor/bin/pint",
+                "action": "docker compose exec -T devtools ./vendor/bin/pint --dirty",
+                "options": [],
+                "conditions": []
+            },
+            {
+                "action": "git update-index --again",
                 "options": [],
                 "conditions": []
             },
