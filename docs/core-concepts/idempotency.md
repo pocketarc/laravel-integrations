@@ -14,7 +14,7 @@ The third is intra-attempt SDK retries. Some SDKs (Stripe's, for instance) retry
 
 ## Setting a key
 
-`withIdempotencyKey()` is on the fluent builder. The key is mandatory and application-meaningful:
+`withIdempotencyKey()` is on the fluent builder. When you pass a key, it must be application-meaningful (the package never auto-generates one):
 
 ```php
 use Integrations\Exceptions\IdempotencyConflict;
@@ -73,7 +73,7 @@ If you need to do DB work *before* the provider call (validating state, marking 
 
 ## Don't swallow exceptions inside the closure
 
-The package decides whether to keep or release the row by watching whether the closure returned or threw. If the closure catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, and every future call with the same key throws `IdempotencyConflict` even though nothing was reserved.
+The package decides whether to keep or release the row by watching whether the closure returned or threw. If the closure catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, so every future call with the same key throws `IdempotencyConflict` even though the work was never done.
 
 Don't:
 
