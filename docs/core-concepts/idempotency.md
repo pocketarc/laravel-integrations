@@ -38,7 +38,7 @@ Calling `withIdempotencyKey(null)` is a no-op (no key, no row, no header). Empty
 |-----------------------------------------------------|---------------------------------------------------------------------------|
 | First call with this key                            | Row INSERTed in `integration_idempotency_keys`. Closure runs. Result returned. |
 | Closure returns                                     | Row stays. Future calls with the same key throw `IdempotencyConflict`.    |
-| Closure throws                                      | Row release attempted (best-effort; can be skipped, see below). Original exception always rethrown. |
+| Closure throws                                      | Original exception always rethrown. Row release is best-effort: skipped if the closure leaves an open DB transaction, or if the DELETE itself fails (the row then blocks future attempts until removed manually or by `integrations:prune`). |
 | Conflict (row already exists)                       | `IdempotencyConflict` thrown. Closure never runs.                         |
 | Empty key                                           | `InvalidArgumentException` thrown.                                        |
 | Key longer than 191 characters                      | `InvalidArgumentException` thrown.                                        |
