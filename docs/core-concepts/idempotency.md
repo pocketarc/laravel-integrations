@@ -73,7 +73,7 @@ If you need to do DB work *before* the provider call (validating state, marking 
 
 ## Don't swallow exceptions inside the closure
 
-The package decides whether to keep or release the row by watching whether the closure returned or threw. If the closure catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell the work didn't complete. The row stays, so every future call with the same key throws `IdempotencyConflict` even though the work was never done.
+The package decides whether to keep or release the row by watching whether the closure returned or threw. If the closure catches its own exceptions and returns normally (a leftover `try { ... } catch (\Throwable) { return null; }`, typically), the package can't tell whether the work completed. The row stays, so every future call with the same key throws `IdempotencyConflict`, even when the upstream call may not have actually landed.
 
 Don't:
 
