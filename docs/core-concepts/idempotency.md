@@ -45,11 +45,11 @@ Calling `withIdempotencyKey(null)` is a no-op (no key, no row, no header). Empty
 | Called inside `DB::transaction()`                   | `RuntimeException` thrown immediately. See below.                         |
 | Called without `withIdempotencyKey()`               | No row, no header, no guard. Today's behaviour for non-keyed calls.       |
 
-## Don't call it inside a transaction
+## Don't run the keyed request inside a transaction
 
-If `withIdempotencyKey()` is called inside a wrapping `DB::transaction()`, the package throws `RuntimeException` before any work runs. Reason: the row INSERT would happen inside that outer transaction, so an outer rollback (for any unrelated reason) would also roll back the row, while the closure has already executed and shipped the upstream side effect. At-most-once is gone.
+When the keyed request executes (at the terminal `->post()`/`->put()`/etc.), the package checks `DB::transactionLevel()` and throws `RuntimeException` if it's non-zero. The check fires at request time, not when you call the `withIdempotencyKey()` setter, since the setter only stores the key. The reason: a row INSERTed inside an outer `DB::transaction()` rolls back when the outer transaction rolls back, while the closure has already executed and shipped the upstream side effect. The next attempt sees no row and runs the closure again. At-most-once is gone.
 
-Call `withIdempotencyKey()` at the top of your action or job, before any `DB::transaction()`.
+Run keyed requests at the top of your action or job, before any `DB::transaction()`.
 
 ## Keep non-idempotent provider calls last in the closure
 
@@ -69,7 +69,7 @@ try {
 }
 ```
 
-If you need to do DB work *before* the provider call (validating state, marking the order as queued), do it before `withIdempotencyKey()` so a local failure prevents the row from being created at all.
+If you need to do DB work *before* the provider call (validating state, marking the order as queued), do it before the keyed request runs so a local failure prevents the row from being created at all. The row is INSERTed when the request executes (`->post()`, `->put()`, etc.), not when you chain `withIdempotencyKey()`.
 
 ## Don't swallow exceptions inside the closure
 
