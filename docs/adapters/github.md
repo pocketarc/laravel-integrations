@@ -44,8 +44,8 @@ $client = new GitHubClient($integration);
 | `$client->issues()` | `->create($title, $body, $labels, $idempotencyKey?)` | Create an issue. Returns `GitHubIssueData`. |
 | | `->get($number)` | Get a single issue by number. |
 | | `->since($since, $callback)` | Iterate issues updated since a timestamp. Skips PRs. |
-| | `->close($number, $stateReason)` | Close an issue. Optional state reason (completed, not_planned, duplicate). |
-| | `->reopen($number)` | Reopen a closed issue. |
+| | `->close($number, $stateReason, $idempotencyKey?)` | Close an issue. Optional state reason (completed, not_planned, duplicate). |
+| | `->reopen($number, $idempotencyKey?)` | Reopen a closed issue. |
 | | `->timeline($number, $callback)` | Iterate timeline events (labels, assignments, etc.). |
 | `$client->comments()` | `->list($number, $callback)` | Iterate all comments on an issue. |
 | | `->add($number, $body, $idempotencyKey?)` | Add a comment to an issue. Returns `?GitHubCommentData`. |
@@ -73,7 +73,7 @@ GitHub's `X-GitHub-Request-Id` is captured on `integration_requests.provider_req
 
 ## Idempotency
 
-`GitHubIssues::create()` and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
+All write methods (`issues()->create`, `close`, `reopen`, `comments()->add`) accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`, `"close-issue:{$issueNumber}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 
