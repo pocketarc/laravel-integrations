@@ -20,11 +20,11 @@ use InvalidArgumentException;
  *
  * @mixin \Eloquent
  */
-class IntegrationIdempotencyReservation extends Model
+class IntegrationIdempotencyKey extends Model
 {
     /**
      * Maximum length, in characters, of the application-supplied
-     * reservation key. Bounded by the underlying VARCHAR column's index
+     * idempotency key. Bounded by the underlying VARCHAR column's index
      * limit on MySQL with utf8mb4 (191 chars x 4 bytes = 764 bytes,
      * fits within InnoDB's 767-byte index prefix). Must match the
      * `string('key', ...)` length declared in the migration.
@@ -37,7 +37,7 @@ class IntegrationIdempotencyReservation extends Model
     #[\Override]
     public function getTable(): string
     {
-        return Config::tablePrefix().'_idempotency_reservations';
+        return Config::tablePrefix().'_idempotency_keys';
     }
 
     /** @return BelongsTo<Integration, $this> */
@@ -55,13 +55,13 @@ class IntegrationIdempotencyReservation extends Model
     public static function validateKey(string $key): void
     {
         if ($key === '') {
-            throw new InvalidArgumentException('Reservation key must not be empty.');
+            throw new InvalidArgumentException('Idempotency key must not be empty.');
         }
 
         $length = mb_strlen($key);
         if ($length > self::MAX_KEY_LENGTH) {
             throw new InvalidArgumentException(sprintf(
-                'Reservation key must be at most %d characters; got %d.',
+                'Idempotency key must be at most %d characters; got %d.',
                 self::MAX_KEY_LENGTH,
                 $length,
             ));

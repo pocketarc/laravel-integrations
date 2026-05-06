@@ -34,6 +34,8 @@ final class RequestExecutor
 
     private readonly CircuitBreaker $circuitBreaker;
 
+    private readonly IdempotencyKeyManager $idempotencyKeys;
+
     private ?RequestContext $context = null;
 
     public function __construct(
@@ -42,6 +44,7 @@ final class RequestExecutor
         $this->cache = new RequestCache($integration);
         $this->rateLimiter = new RateLimiter($integration);
         $this->circuitBreaker = new CircuitBreaker($integration);
+        $this->idempotencyKeys = new IdempotencyKeyManager($integration);
     }
 
     /**
@@ -77,9 +80,12 @@ final class RequestExecutor
         $this->context = new RequestContext($idempotencyKey);
 
         try {
-            return $this->requestWithRetries(
-                $endpoint, $method, $responseClass, $callback, $relatedTo,
-                $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
+            return $this->idempotencyKeys->around(
+                $idempotencyKey,
+                fn () => $this->requestWithRetries(
+                    $endpoint, $method, $responseClass, $callback, $relatedTo,
+                    $encodedRequestData, $cacheFor, $serveStale, $maxAttempts, $retryOfId,
+                ),
             );
         } finally {
             $this->context = null;
