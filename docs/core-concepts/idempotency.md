@@ -84,7 +84,7 @@ $integration->at('messages')
         try {
             return $postmark->send($order->email, $template, $data);
         } catch (\Throwable) {
-            return null; // swallowed; row stays even though nothing got sent
+            return null; // exception swallowed; delivery status unknown, row remains
         }
     });
 ```
