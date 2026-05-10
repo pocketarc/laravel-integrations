@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.4.1
+
+- `ResponseHelper::normalize()` now converts `stdClass` payloads to associative arrays before returning them as the parsed value, instead of passing the object through unchanged. Adapters bridging SDKs that call `json_decode($body)` without `assoc=true` (e.g. `Zendesk\API\Http::send()`) flowed `stdClass` trees straight into `Spatie\LaravelData\Data::from()`, where every `Collection<int, T>` element failed validation with "The tickets.0 field must be an array" and the request fails-fast with `SchemaDriftException`. Narrowed to `stdClass` so closures returning a typed object (e.g. a Data instance with no `->as()` set) keep current pass-through semantics. Pairs with a matching SDK-boundary fix in `pocketarc/laravel-integrations-adapters`.
+
 ## 2.4.0
 
 - [`integration_mappings.external_id`](/reference/database-schema#integration-mappings) widened from 255 to 500 characters. The composite unique index `(integration_id, external_id, internal_type)` still fits under the InnoDB DYNAMIC 3072-byte ceiling, so no index strategy change. Covers real-world cases where adapter-bridged external IDs (e.g. attachment URLs flowing through the GitHub adapter) exceed 255 chars. See [ID mapping](/features/id-mapping#scoping). Existing deployments need a downstream `ALTER` migration since the canonical migration is the only one bumped; fresh installs get the new width on first migrate.
