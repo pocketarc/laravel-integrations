@@ -87,9 +87,7 @@ final class ResponseHelper
         }
 
         if (is_object($response)) {
-            $encoded = json_encode($response, JSON_THROW_ON_ERROR);
-
-            return [null, $encoded, $response];
+            return self::normalizeObject($response);
         }
 
         if (is_string($response)) {
@@ -97,5 +95,24 @@ final class ResponseHelper
         }
 
         return [null, null, $response];
+    }
+
+    /**
+     * `stdClass` trees (e.g. from `json_decode($body)` without `assoc=true`) are
+     * converted to associative arrays so `Spatie\LaravelData\Data::from()` sees
+     * the array shape its `Collection<int, T>` rules expect. Other typed objects
+     * are passed through unchanged.
+     *
+     * @return array{null, string, mixed}
+     */
+    private static function normalizeObject(object $response): array
+    {
+        $encoded = json_encode($response, JSON_THROW_ON_ERROR);
+
+        if ($response instanceof \stdClass) {
+            return [null, $encoded, json_decode($encoded, true)];
+        }
+
+        return [null, $encoded, $response];
     }
 }
