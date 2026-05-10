@@ -368,6 +368,15 @@ Three things to get right:
 - Don't advance the cursor past failed items.
 - Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected.
 
+For long-running incremental syncs (initial backfills, dormancy recovery, anything where the window can exceed `sync.job_timeout`), checkpoint the cursor as the iterator runs so a SIGKILL or mid-backfill timeout doesn't lose progress. Add one line to the per-item callback above:
+
+```php
+$safeCursor = max($safeCursor, $issue->updated_at);
+$integration->updateSyncCursor($safeCursor);   // checkpoint
+```
+
+One write per item is cheap relative to the work the callback already does (DTO hydration, event dispatch, persistence), and the next dispatch resumes from the last item processed. If your upstream iterator only exposes page boundaries (some pagers return whole pages at a time), checkpoint per page instead.
+
 ## Auto-registration
 
 Adapter packages can auto-register their providers so users don't need to manually edit `config/integrations.php`. Ship a Laravel service provider that calls `IntegrationManager::registerDefaults()`:

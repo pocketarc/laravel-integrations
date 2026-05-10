@@ -41,7 +41,7 @@ class SyncCommand extends Command
 
             $queue = Config::syncQueue($integration->provider);
 
-            SyncIntegration::dispatch($integration->id)->onQueue($queue);
+            SyncIntegration::dispatch($integration->id, Config::syncJobTimeout())->onQueue($queue);
             $dispatched++;
         }
 

@@ -129,6 +129,12 @@ class GitHubProvider implements IntegrationProvider, HasIncrementalSync
 
 The cursor is stored as JSON in the `sync_cursor` column and passed to `syncIncremental()` on the next sync. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
 
+### Long-running syncs and cursor checkpointing
+
+`syncIncremental()` only persists its returned cursor *after* it returns. If the job hits `sync.job_timeout`, is SIGKILLed by a deploy, or the worker OOMs mid-iteration, nothing in memory is persisted: the next dispatch starts from the same cursor, re-processes the same prefix, and may die at the same place. A backlog larger than `job_timeout` (initial backfills, dormancy recovery) becomes a stuck loop.
+
+The fix is to persist the cursor as the iterator runs by calling `$integration->updateSyncCursor($cursor)` from inside your per-item callback. Finer granularity is better: the next dispatch resumes from the last item processed rather than replaying anything. One write per item is cheap compared to the work the callback is already doing (DTO hydration, event dispatch, persistence). If your iterator only exposes page boundaries (some upstream pagers return whole pages at a time), checkpoint per page instead. See [Sync pattern](/adapters/building-adapters#sync-pattern) for the adapter-side shape.
+
 ## Sync timeline
 
 During a sync, all API requests made via the integration are tracked and their IDs stored in the parent sync log's metadata:
@@ -145,7 +151,8 @@ $requests = IntegrationRequest::whereIn('id', $requestIds)->get();
 // config/integrations.php
 'sync' => [
     'queue' => 'default',
-    'queues' => [],      // per-provider queue overrides
-    'lock_ttl' => 600,   // WithoutOverlapping lock TTL
+    'queues' => [],         // per-provider queue overrides
+    'lock_ttl' => 1800,     // WithoutOverlapping lock TTL (must be >= job_timeout)
+    'job_timeout' => 1800,  // SyncIntegration job timeout (30 min)
 ],
 ```

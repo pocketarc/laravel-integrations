@@ -72,4 +72,21 @@ class SyncCommandTest extends TestCase
         // 15 min interval * 10x backoff = 150 min. Last synced 20 min ago. Should skip.
         Queue::assertNotPushed(SyncIntegration::class);
     }
+
+    public function test_dispatches_with_configured_job_timeout(): void
+    {
+        Queue::fake();
+        config()->set('integrations.sync.job_timeout', 1234);
+
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Due',
+            'sync_interval_minutes' => 15,
+            'next_sync_at' => now()->subMinute(),
+        ]);
+
+        $this->artisan('integrations:sync')->assertSuccessful();
+
+        Queue::assertPushed(SyncIntegration::class, fn (SyncIntegration $job) => $job->timeout === 1234);
+    }
 }

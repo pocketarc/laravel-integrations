@@ -25,7 +25,7 @@ class SyncIntegration implements ShouldQueue
 
     public function __construct(
         public readonly int $integrationId,
-        public readonly int $timeout = 600,
+        public readonly int $timeout = 1800,
     ) {}
 
     /**
@@ -34,7 +34,9 @@ class SyncIntegration implements ShouldQueue
     public function middleware(): array
     {
         return [
-            (new WithoutOverlapping("integration-sync-{$this->integrationId}"))->expireAfter(Config::syncLockTtl()),
+            (new WithoutOverlapping("integration-sync-{$this->integrationId}"))
+                ->expireAfter(Config::syncLockTtl())
+                ->dontRelease(),
         ];
     }
 
