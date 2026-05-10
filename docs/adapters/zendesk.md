@@ -72,6 +72,8 @@ $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 
 Every sync (including the first one with a seeded cursor) subtracts a 1-hour buffer from the cursor. This buffer catches items updated between syncs. Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their event listeners since overlap is expected.
 
+The provider checkpoints `sync_cursor` per successful ticket, so a SIGKILL or queue-worker timeout mid-backfill leaves the cursor at the last processed item rather than back at the original `$since`. The next dispatch resumes from there. Checkpointing pauses once a failure is recorded so the cursor never advances past a known-bad ticket; `resolveSyncCursor()` then rolls the cursor back to the earliest failure at end-of-run.
+
 Defaults: 5-minute sync interval, 100 requests/minute rate limit.
 
 ## Provider request IDs
