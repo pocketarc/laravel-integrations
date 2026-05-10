@@ -96,7 +96,7 @@ class IntegrationCredentialCast implements CastsAttributes
             $arrayValue = $value;
         } else {
             throw new InvalidArgumentException(sprintf(
-                'IntegrationCredentialCast::set() expects null, an array, or a %s instance; got %s. If you pre-encrypted with Crypt::encryptString(), pass the plain array instead — the cast handles encryption.',
+                'IntegrationCredentialCast::set() expects null, an array, or a %s instance; got %s. If you pre-encrypted with Crypt::encryptString(), pass the plain array instead. The cast handles encryption.',
                 Data::class,
                 get_debug_type($value),
             ));

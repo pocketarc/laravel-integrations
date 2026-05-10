@@ -60,7 +60,7 @@ $ticket123 = $tickets->get('123'); // Ticket instance or null
 
 ## Scoping
 
-Mappings are scoped to the integration, so the same external ID can map to different internal models across integrations. The unique constraint is on `(integration_id, external_id, internal_type)`. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. very long URLs flowing in via attachments) need a downstream migration to widen further.
+Mappings are scoped to the integration, so the same external ID can map to different internal models across integrations. The unique constraint is on `(integration_id, external_id, internal_type)`. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. attachment URLs) need a downstream migration to widen further.
 
 ## Upsert behavior
 

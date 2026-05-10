@@ -160,7 +160,7 @@ class IntegrationMappingTest extends TestCase
     public function test_long_external_ids_round_trip_within_500_char_cap(): void
     {
         $target = Integration::create(['provider' => 'long', 'name' => 'Long']);
-        $longId = str_repeat('x', 400);
+        $longId = str_repeat('x', 500);
 
         $mapping = $this->integration->mapExternalId($longId, $target);
 
