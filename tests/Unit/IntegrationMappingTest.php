@@ -156,4 +156,19 @@ class IntegrationMappingTest extends TestCase
 
         $this->assertCount(0, $result);
     }
+
+    public function test_long_external_ids_round_trip_within_500_char_cap(): void
+    {
+        $target = Integration::create(['provider' => 'long', 'name' => 'Long']);
+        $longId = str_repeat('x', 400);
+
+        $mapping = $this->integration->mapExternalId($longId, $target);
+
+        $this->assertSame($longId, $mapping->external_id);
+
+        $resolved = $this->integration->resolveMapping($longId, Integration::class);
+
+        $this->assertNotNull($resolved);
+        $this->assertSame($target->id, $resolved->getKey());
+    }
 }

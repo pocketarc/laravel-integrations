@@ -82,7 +82,7 @@ External ID to internal model mapping.
 |--------|------|-------------|
 | `id` | bigint (PK) | Auto-incrementing ID |
 | `integration_id` | bigint (FK) | Parent integration |
-| `external_id` | string | External provider ID |
+| `external_id` | string (500) | External provider ID |
 | `internal_type` | string | Internal model class |
 | `internal_id` | bigint | Internal model ID |
 | `timestamps` | | `created_at`, `updated_at` |

@@ -9,6 +9,7 @@ use Illuminate\Contracts\Encryption\DecryptException;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Crypt;
 use Integrations\IntegrationManager;
+use InvalidArgumentException;
 use Override;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -94,7 +95,11 @@ class IntegrationCredentialCast implements CastsAttributes
         } elseif (is_array($value)) {
             $arrayValue = $value;
         } else {
-            return null;
+            throw new InvalidArgumentException(sprintf(
+                'IntegrationCredentialCast::set() expects null, an array, or a %s instance; got %s. If you pre-encrypted with Crypt::encryptString(), pass the plain array instead — the cast handles encryption.',
+                Data::class,
+                get_debug_type($value),
+            ));
         }
 
         return Crypt::encryptString(json_encode($arrayValue, JSON_THROW_ON_ERROR));

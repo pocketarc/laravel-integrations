@@ -88,7 +88,7 @@ return new class extends Migration
         Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix): void {
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
-            $table->string('external_id');
+            $table->string('external_id', 500);
             $table->string('internal_type');
             $table->string('internal_id');
             $table->json('metadata')->nullable();
