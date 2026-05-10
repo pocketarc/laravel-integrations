@@ -99,9 +99,9 @@ final class ResponseHelper
 
     /**
      * `stdClass` trees (e.g. from `json_decode($body)` without `assoc=true`) are
-     * converted to associative arrays so downstream `Spatie\LaravelData\Data::from()`
-     * sees the array shape its `Collection<int, T>` rules expect. Other typed
-     * objects are passed through unchanged.
+     * converted to associative arrays so `Spatie\LaravelData\Data::from()` sees
+     * the array shape its `Collection<int, T>` rules expect. Other typed objects
+     * are passed through unchanged.
      *
      * @return array{null, string, mixed}
      */

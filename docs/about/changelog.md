@@ -4,7 +4,7 @@ All notable changes to this project are documented here. This project follows [S
 
 ## 2.4.1
 
-- `ResponseHelper::normalize()` now converts `stdClass` payloads to associative arrays before returning them as the parsed value, instead of passing the object through unchanged. Adapters bridging SDKs that call `json_decode($body)` without `assoc=true` (e.g. `Zendesk\API\Http::send()`) flowed `stdClass` trees straight into `Spatie\LaravelData\Data::from()`, where every `Collection<int, T>` element failed validation with "The tickets.0 field must be an array" and the request fails-fast with `SchemaDriftException`. Narrowed to `stdClass` so closures returning a typed object (e.g. a Data instance with no `->as()` set) keep current pass-through semantics. Pairs with a matching SDK-boundary fix in `pocketarc/laravel-integrations-adapters`.
+- `ResponseHelper::normalize()` now converts `stdClass` payloads to associative arrays before returning them as the parsed value, instead of passing the object through unchanged. Adapters bridging SDKs that call `json_decode($body)` without `assoc=true` (e.g. `Zendesk\API\Http::send()`) flowed `stdClass` trees straight into `Spatie\LaravelData\Data::from()`, where every `Collection<int, T>` element failed validation with "The tickets.0 field must be an array" and the request throws `SchemaDriftException`. Narrowed to `stdClass` so closures returning a typed object (e.g. a Data instance with no `->as()` set) keep current pass-through semantics. Pairs with a matching SDK-boundary fix in `pocketarc/laravel-integrations-adapters`.
 
 ## 2.4.0
 
