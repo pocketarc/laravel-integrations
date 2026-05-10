@@ -109,7 +109,7 @@ final class Config
 
     public static function syncLockTtl(): int
     {
-        return self::boundedInt(config('integrations.sync.lock_ttl', 600), 600, 1);
+        return self::boundedInt(config('integrations.sync.lock_ttl', 1800), 1800, 1);
     }
 
     public static function syncJobTimeout(): int

@@ -368,17 +368,14 @@ Three things to get right:
 - Don't advance the cursor past failed items.
 - Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected.
 
-For adapters that walk pages internally (a `since()` iterator on top of a paginated API), persist the cursor per page so a SIGKILL or timeout mid-backfill doesn't lose progress:
+For long-running incremental syncs (initial backfills, dormancy recovery, anything where the window can exceed `sync.job_timeout`), checkpoint the cursor as the iterator runs so a SIGKILL or mid-backfill timeout doesn't lose progress. Add one line to the per-item callback above:
 
 ```php
-$client->issues()->since(
-    $bufferedStart,
-    onIssue: function ($issue) use (...) { /* process */ },
-    onPageComplete: fn (string $cursor) => $integration->updateSyncCursor($cursor),
-);
+$safeCursor = max($safeCursor, $issue->updated_at);
+$integration->updateSyncCursor($safeCursor);   // checkpoint
 ```
 
-This costs one write per page rather than per item. The next dispatch resumes from the last completed page instead of replaying the whole backfill. Matters most for initial syncs and dormancy recovery, where the window can exceed `sync.job_timeout`.
+One write per item is cheap relative to the work the callback already does (DTO hydration, event dispatch, persistence), and the next dispatch resumes from the last item processed. If your upstream iterator only exposes page boundaries (some pagers return whole pages at a time), checkpoint per page instead.
 
 ## Auto-registration
 

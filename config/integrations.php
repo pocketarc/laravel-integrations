@@ -71,9 +71,10 @@ return [
 
         // Maximum time (in seconds) a sync job can hold its WithoutOverlapping lock.
         // Prevents a crashed sync from blocking all future syncs for that integration.
-        // Should be longer than your slowest expected sync, and at least as long as
-        // sync.job_timeout so the lock outlasts the job that holds it.
-        'lock_ttl' => 600,
+        // Must be at least as long as sync.job_timeout so the lock outlasts the job
+        // that holds it; otherwise the lock can auto-expire mid-sync and let a
+        // sibling dispatch start running concurrently.
+        'lock_ttl' => 1800,
 
         // Maximum time (in seconds) the SyncIntegration job can run before the queue
         // worker SIGKILLs it. 30 minutes is generous for first-run backfills (e.g. a

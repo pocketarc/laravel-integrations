@@ -41,7 +41,7 @@ php artisan vendor:publish --tag=integrations-config
 |-----|------|---------|-------------|
 | `sync.queue` | `string` | `'default'` | Default queue for sync jobs |
 | `sync.queues` | `array` | `[]` | Per-provider queue overrides (key = provider, value = queue) |
-| `sync.lock_ttl` | `int` | `600` | `WithoutOverlapping` lock TTL in seconds (should be ≥ `job_timeout`) |
+| `sync.lock_ttl` | `int` | `1800` | `WithoutOverlapping` lock TTL in seconds (must be ≥ `job_timeout`) |
 | `sync.job_timeout` | `int` | `1800` | `SyncIntegration` job timeout in seconds (30 min). `integrations:sync` reads this on dispatch; direct callers can override via the constructor. |
 
 ## Retry
