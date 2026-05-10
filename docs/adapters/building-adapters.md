@@ -368,6 +368,18 @@ Three things to get right:
 - Don't advance the cursor past failed items.
 - Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected.
 
+For adapters that walk pages internally (a `since()` iterator on top of a paginated API), persist the cursor per page so a SIGKILL or timeout mid-backfill doesn't lose progress:
+
+```php
+$client->issues()->since(
+    $bufferedStart,
+    onIssue: function ($issue) use (...) { /* process */ },
+    onPageComplete: fn (string $cursor) => $integration->updateSyncCursor($cursor),
+);
+```
+
+This costs one write per page rather than per item. The next dispatch resumes from the last completed page instead of replaying the whole backfill. Matters most for initial syncs and dormancy recovery, where the window can exceed `sync.job_timeout`.
+
 ## Auto-registration
 
 Adapter packages can auto-register their providers so users don't need to manually edit `config/integrations.php`. Ship a Laravel service provider that calls `IntegrationManager::registerDefaults()`:

@@ -112,6 +112,11 @@ final class Config
         return self::boundedInt(config('integrations.sync.lock_ttl', 600), 600, 1);
     }
 
+    public static function syncJobTimeout(): int
+    {
+        return self::boundedInt(config('integrations.sync.job_timeout', 1800), 1800, 1);
+    }
+
     public static function rateLimitMaxWaitSeconds(): int
     {
         return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);

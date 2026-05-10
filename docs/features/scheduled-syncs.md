@@ -129,6 +129,12 @@ class GitHubProvider implements IntegrationProvider, HasIncrementalSync
 
 The cursor is stored as JSON in the `sync_cursor` column and passed to `syncIncremental()` on the next sync. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
 
+### Long-running syncs and per-page checkpointing
+
+`syncIncremental()` only persists its returned cursor *after* it returns. If the job hits `sync.job_timeout`, is SIGKILLed by a deploy, or the worker OOMs mid-iteration, nothing in memory is persisted: the next dispatch starts from the same cursor, re-processes the same prefix, and may die at the same place. A backlog larger than `job_timeout` (initial backfills, dormancy recovery) becomes a stuck loop.
+
+For adapters that walk pages internally, persist the cursor as you go by calling `$integration->updateSyncCursor($cursor)` from inside your iterator (per page, not per item). The next dispatch resumes from the last completed page. See [Sync pattern](/adapters/building-adapters#sync-pattern) for the adapter-side shape.
+
 ## Sync timeline
 
 During a sync, all API requests made via the integration are tracked and their IDs stored in the parent sync log's metadata:
@@ -145,7 +151,8 @@ $requests = IntegrationRequest::whereIn('id', $requestIds)->get();
 // config/integrations.php
 'sync' => [
     'queue' => 'default',
-    'queues' => [],      // per-provider queue overrides
-    'lock_ttl' => 600,   // WithoutOverlapping lock TTL
+    'queues' => [],         // per-provider queue overrides
+    'lock_ttl' => 600,      // WithoutOverlapping lock TTL (>= job_timeout)
+    'job_timeout' => 1800,  // SyncIntegration job timeout (30 min)
 ],
 ```
