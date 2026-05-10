@@ -75,7 +75,7 @@ GitHub's `X-GitHub-Request-Id` is captured on `integration_requests.provider_req
 
 ## Idempotency
 
-`GitHubIssues::create()` and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
+All `GitHubIssues` write methods (`create()`, `close()`, `reopen()`) and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`, `"close-issue:{$issueNumber}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and lets you skip the work. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 
