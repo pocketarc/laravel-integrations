@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 2.5.1
+
+- `RequestExecutor::persistRequest()` now sanitizes non-UTF-8 byte sequences in both `request_data` and `response_data` before insert, replacing them with a `[BINARY <length> bytes sha256=<hash>]` marker. Previously, adapter resources that returned raw bytes (Zendesk `attachments()->download()`, GitHub `assets()->download()`, anything else handing `Http::...->body()` straight through a closure) crashed the INSERT with `SQLSTATE[22007] ... Incorrect string value`, because the columns are `longText` (utf8mb4) and MariaDB/MySQL reject bytes that don't decode as UTF-8. The audit row is still written with the marker for diagnostics. `expires_at` is nulled out on binary responses so the row never becomes a cache source. New `Integrations\Support\BinaryGuard` helper exposes the check. No schema change.
+
 ## 2.5.0
 
 - `SyncIntegration::middleware()` now calls `->dontRelease()` on its `WithoutOverlapping` middleware. Previously, when a sibling sync held the lock, the duplicate dispatch was released with `releaseAfter=0` (Laravel's default), which re-popped it instantly and burned through `tries=3` in milliseconds, minting `MaxAttemptsExceededException` events on every overlap even though the actual sync was completing successfully. The schedule cycle (`Schedule::command('integrations:sync')->everyMinute()`) re-dispatches if the integration is still due, so dropping duplicates is information-free. See [Scheduled syncs](/features/scheduled-syncs).

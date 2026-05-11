@@ -16,6 +16,7 @@ use Integrations\Exceptions\RetryableException;
 use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\BinaryGuard;
 use Integrations\Support\CallbackInspector;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
@@ -334,7 +335,12 @@ final class RequestExecutor
             $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
         }
 
-        $truncatedRequestData = $requestData !== null ? mb_strcut($requestData, 0, 65530) : null;
+        $sanitizedRequestData = BinaryGuard::sanitize($requestData);
+        $truncatedRequestData = $sanitizedRequestData !== null
+            ? mb_strcut($sanitizedRequestData, 0, 65530)
+            : null;
+
+        [$responseData, $cacheFor] = BinaryGuard::sanitizeResponseBody($responseData, $cacheFor);
 
         $request = $this->integration->requests()->create([
             'endpoint' => $endpoint,
