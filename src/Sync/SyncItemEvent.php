@@ -15,7 +15,7 @@ use Illuminate\Queue\SerializesModels;
  * `SyncSession::dispatch()`; the framework wraps it in a `ProcessSyncItem`
  * queue job and invokes its listeners synchronously inside that job. The
  * job's success or failure then reflects the listeners', so the sync
- * cursor only advances past items whose listeners actually completed.
+ * cursor only advances past items whose listeners completed.
  *
  * Because of that, listeners for these events MUST NOT implement
  * `ShouldQueue`. The wrapper job is already the queued unit, and a queued

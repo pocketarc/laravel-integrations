@@ -104,7 +104,7 @@ Unique constraint on `(integration_id, key)`.
 
 ## integration_sync_items
 
-One row per item dispatched during a sync run. Tracks whether the item's listeners completed, so the cursor only advances past items that actually finished. See [Scheduled syncs](/features/scheduled-syncs).
+One row per item dispatched during a sync run. Tracks whether the item's listeners completed, so the cursor only advances past finished items. See [Scheduled syncs](/features/scheduled-syncs).
 
 | Column             | Type           | Description                                                                  |
 |--------------------|----------------|------------------------------------------------------------------------------|

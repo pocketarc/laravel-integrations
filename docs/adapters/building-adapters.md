@@ -326,7 +326,7 @@ That's the only event an adapter ships. The core fires [`SyncCompleted`](/refere
 
 ## Sync pattern
 
-A provider's `sync()` / `syncIncremental()` enumerates the items to sync and hands each one to `$session->dispatch()`. It doesn't process items, doesn't touch the cursor, and doesn't return a result. The framework wraps each item in a queued job, batches them, runs the listeners, and advances the cursor once every job has succeeded.
+A provider's `sync()` / `syncIncremental()` enumerates the items to sync and hands each one to `$session->dispatch()`. It doesn't process items, touch the cursor, or return a result. The framework wraps each item in a queued job, batches them, runs the listeners, and advances the cursor once every job has succeeded.
 
 ```php
 use Integrations\Concerns\ReducesCheckpointsByMax;

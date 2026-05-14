@@ -98,9 +98,10 @@ return [
         // Backoff schedule (seconds between retries) for ProcessSyncItem jobs.
         'item_backoff' => [10, 30, 120, 300, 900],
 
-        // Maximum number of ProcessSyncItem jobs per Bus batch. A sync run with more
-        // items than this is split into sequential batches, each advancing the cursor
-        // as it completes, so a huge first-run backfill doesn't build one giant batch.
+        // Soft cap on the number of items in one sync run. A run that enumerates
+        // more than this is still processed as a single Bus batch, but
+        // SyncIntegration logs a warning so you can narrow the sync window or
+        // page the provider more aggressively.
         'max_items_per_batch' => 10000,
     ],
 

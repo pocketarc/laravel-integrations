@@ -55,7 +55,7 @@ All methods go through `Integration::request()` / `requestAs()` internally, so e
 
 ## Sync
 
-The adapter syncs issues via `$client->issues()->since()`. For each issue it calls `$session->dispatch()` with a `GitHubIssueSynced` event. The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every issue's job has succeeded. See [Scheduled syncs](/features/scheduled-syncs) for the per-item model — note that listeners for `GitHubIssueSynced` must not implement `ShouldQueue`.
+The adapter syncs issues via `$client->issues()->since()`. For each issue it calls `$session->dispatch()` with a `GitHubIssueSynced` event. The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every issue's job has succeeded. Listeners for `GitHubIssueSynced` must not implement `ShouldQueue` (see [Scheduled syncs](/features/scheduled-syncs) for the per-item model).
 
 First sync (null cursor) fetches all issues from timestamp 0. Set `sync_cursor` on the integration to control the starting point:
 

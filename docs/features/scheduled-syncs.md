@@ -1,6 +1,6 @@
 # Scheduled syncs
 
-Providers that implement `HasScheduledSync` get automated sync scheduling with health-aware backoff. The framework owns the hard parts: it wraps each synced item in a queued job, tracks per-item completion, and only advances the cursor past items whose listeners actually finished.
+Providers that implement `HasScheduledSync` get automated sync scheduling with health-aware backoff. The framework owns the hard parts: it wraps each synced item in a queued job, tracks per-item completion, and only advances the cursor past items whose listeners finished.
 
 ## The HasScheduledSync interface
 
@@ -89,7 +89,7 @@ For every item handed to `$session->dispatch()`, the framework:
 3. When the job runs, it invokes the event's listeners **synchronously** and marks the row `success` (or `failed` once its retries are exhausted).
 4. When the whole batch finishes, `FinaliseSyncRun` reconciles: if every item succeeded it advances the cursor (via `reduceCheckpoints()`), marks the run's log `success`, and fires `SyncCompleted`. If anything failed, the cursor stays put and the log is marked `partial` (or `failed`).
 
-Because the cursor only advances once the per-item jobs have actually completed, an item whose listener keeps failing can't be silently skipped: the cursor stops at it until it's resolved.
+Because the cursor only advances once the per-item jobs have completed, an item whose listener keeps failing can't be silently skipped: the cursor stops at it until it's resolved.
 
 ## Listeners must not be queued
 
@@ -172,7 +172,7 @@ class GitHubProvider implements IntegrationProvider, HasIncrementalSync
 
 Read the previous cursor with `$session->cursor()` (it's `null` on the first run) and scope the upstream request by it. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
 
-There is no longer any need to checkpoint the cursor mid-iteration. The framework's per-item tracking is the checkpoint: if the `SyncIntegration` job is SIGKILLed or times out while enumerating, the next run simply starts over from the unchanged cursor; once the batch is dispatched, the cursor advances per completed item regardless of what happens to the enumerating job.
+There is no longer any need to checkpoint the cursor mid-iteration. The framework's per-item tracking is the checkpoint: if the `SyncIntegration` job is SIGKILLed or times out while enumerating, the next run starts over from the unchanged cursor; once the batch is dispatched, the cursor advances per completed item regardless of what happens to the enumerating job.
 
 ## Per-integration intervals
 

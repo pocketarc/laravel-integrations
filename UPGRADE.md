@@ -80,11 +80,11 @@ class MyProvider implements IntegrationProvider, HasIncrementalSync
 
 What changed:
 
-- **No try/catch.** A listener failure is now the `ProcessSyncItem` job's failure; the framework retries it and records it. Don't catch it in the provider.
-- **No counting, no `SyncResult`.** The framework derives success/failure counts from the `integration_sync_items` rows.
-- **No cursor handling.** Pass each item's `checkpointValue`; the framework reduces the run's checkpoints into the next `sync_cursor` via `reduceCheckpoints()`.
-- **`reduceCheckpoints()` is required.** `use ReducesCheckpointsByMax` for the common case (max of ISO-8601 timestamps / lexicographic ids), or implement it directly for non-comparable cursors.
-- **`sync()` changes the same way:** `sync(Integration $integration, SyncSession $session): void`.
+- No try/catch. A listener failure is now the `ProcessSyncItem` job's failure; the framework retries it and records it. Don't catch it in the provider.
+- No counting and no `SyncResult`. The framework derives success/failure counts from the `integration_sync_items` rows.
+- No cursor handling. Pass each item's `checkpointValue`; the framework reduces the run's checkpoints into the next `sync_cursor` via `reduceCheckpoints()`.
+- `reduceCheckpoints()` is required. `use ReducesCheckpointsByMax` for the common case (max of ISO-8601 timestamps / lexicographic ids), or implement it directly for non-comparable cursors.
+- `sync()` changes the same way: `sync(Integration $integration, SyncSession $session): void`.
 
 ### 3. Update per-item events
 

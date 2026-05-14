@@ -62,7 +62,7 @@ All resource methods go through `Integration::request()` / `requestAs()` interna
 
 ## Sync
 
-The adapter syncs tickets via the Zendesk Incremental Tickets API (`$client->tickets()->since()`). For each ticket it calls `$session->dispatch()` with a `ZendeskTicketSynced` event carrying the ticket data and the requester's user data (sideloaded). The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every ticket's job has succeeded. See [Scheduled syncs](/features/scheduled-syncs) for the per-item model — note that listeners for `ZendeskTicketSynced` must not implement `ShouldQueue`.
+The adapter syncs tickets via the Zendesk Incremental Tickets API (`$client->tickets()->since()`). For each ticket it calls `$session->dispatch()` with a `ZendeskTicketSynced` event carrying the ticket data and the requester's user data (sideloaded). The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every ticket's job has succeeded. Listeners for `ZendeskTicketSynced` must not implement `ShouldQueue` (see [Scheduled syncs](/features/scheduled-syncs) for the per-item model).
 
 First sync (null cursor) fetches all tickets from timestamp 0. Set `sync_cursor` on the integration to control the starting point:
 

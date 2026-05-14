@@ -160,8 +160,8 @@ final class Config
     }
 
     /**
-     * Maximum number of ProcessSyncItem jobs per Bus batch. A sync run with
-     * more items than this is split into sequential batches.
+     * Soft cap on the number of items in one sync run. A run with more items
+     * is still processed as a single batch, but SyncIntegration logs a warning.
      */
     public static function syncMaxItemsPerBatch(): int
     {
