@@ -115,6 +115,15 @@ parameters:
         # Eloquent's fluent interface triggers this incorrectly.
         - identifier: staticMethod.dynamicCall
 
+        # ReducesCheckpointsByMax is public API for adapter authors (it satisfies
+        # HasScheduledSync::reduceCheckpoints()). No provider ships in this package,
+        # so the trait is legitimately unused within it.
+        -
+            rawMessage: 'Trait Integrations\Concerns\ReducesCheckpointsByMax is used zero times and is not analysed.'
+            identifier: trait.unused
+            count: 1
+            path: src/Concerns/ReducesCheckpointsByMax.php
+
         # IntegrationManager needs the container to lazily resolve provider classes via $container->make().
         -
             rawMessage: 'Method Integrations\IntegrationManager::__construct() has a parameter $container with a type declaration of Illuminate\Contracts\Container\Container, but containers should not be injected.'

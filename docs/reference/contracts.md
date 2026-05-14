@@ -32,17 +32,23 @@ Adds automated sync scheduling.
 ```php
 interface HasScheduledSync
 {
-    public function sync(Integration $integration): SyncResult;
+    public function sync(Integration $integration, SyncSession $session): void;
     public function defaultSyncInterval(): int;
     public function defaultRateLimit(): ?int;
+    public function reduceCheckpoints(array $checkpoints): mixed;
 }
 ```
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `sync()` | `SyncResult` | Execute a full sync |
+| `sync()` | `void` | Enumerate items and hand each to `$session->dispatch()` |
 | `defaultSyncInterval()` | `int` | Default interval in minutes |
 | `defaultRateLimit()` | `?int` | Requests per minute, null = unlimited |
+| `reduceCheckpoints()` | `mixed` | Reduce a run's completed checkpoint values into the next `sync_cursor` |
+
+`sync()` doesn't process items or return a result. It hands each item to `$session->dispatch($event, $checkpointValue, $externalId)`, and the framework wraps each one in a queued `ProcessSyncItem` job, batches them, runs the listeners, and advances the cursor once every job has succeeded. See [Scheduled syncs](/features/scheduled-syncs).
+
+`reduceCheckpoints()` turns the run's completed checkpoint values into the next cursor. `use Integrations\Concerns\ReducesCheckpointsByMax` for the common "max wins" reduction (correct for ISO-8601 timestamps and lexicographic ids), or implement it directly for non-comparable cursors.
 
 ## HasIncrementalSync
 
@@ -51,15 +57,15 @@ Extends `HasScheduledSync` with delta sync support.
 ```php
 interface HasIncrementalSync extends HasScheduledSync
 {
-    public function syncIncremental(Integration $integration, mixed $cursor): SyncResult;
+    public function syncIncremental(Integration $integration, SyncSession $session): void;
 }
 ```
 
 | Method | Returns | Description |
 |--------|---------|-------------|
-| `syncIncremental()` | `SyncResult` | Sync only changed records since cursor |
+| `syncIncremental()` | `void` | Like `sync()`, but fetches only items changed since `$session->cursor()` |
 
-The `SyncResult` can carry a `cursor` value that gets stored in `sync_cursor` for the next run.
+Read the previous cursor with `$session->cursor()` (null on the first run) and scope the upstream request by it. When a provider implements `HasIncrementalSync`, the sync job calls `syncIncremental()` instead of `sync()`.
 
 ## HandlesWebhooks
 

@@ -308,13 +308,13 @@ Patterns to follow:
 
 ## Events
 
-Dispatch events during sync so consuming applications can process the data:
+Each synced item gets its own event. It must extend `Integrations\Sync\SyncItemEvent`, the base class the framework uses to identify per-item events:
 
 ```php
-class LinearIssueSynced
-{
-    use Dispatchable;
+use Integrations\Sync\SyncItemEvent;
 
+class LinearIssueSynced extends SyncItemEvent
+{
     public function __construct(
         public readonly Integration $integration,
         public readonly LinearIssueData $issue,
@@ -322,60 +322,49 @@ class LinearIssueSynced
 }
 ```
 
-Typical events per adapter:
-- `LinearIssueSynced` -- per successful item
-- `LinearIssueSyncFailed` -- per failed item
-- `LinearSyncCompleted` -- after the full sync
+That's the only event an adapter ships. The core fires [`SyncCompleted`](/reference/events#sync) once a run reconciles and [`SyncItemFailed`](/reference/events#sync) when an item exhausts its retries, so adapters no longer define their own per-failure or per-completion events.
 
 ## Sync pattern
 
-For incremental sync with safe cursor advancement:
+A provider's `sync()` / `syncIncremental()` enumerates the items to sync and hands each one to `$session->dispatch()`. It doesn't process items, doesn't touch the cursor, and doesn't return a result. The framework wraps each item in a queued job, batches them, runs the listeners, and advances the cursor once every job has succeeded.
 
 ```php
-public function syncIncremental(Integration $integration, mixed $cursor): SyncResult
+use Integrations\Concerns\ReducesCheckpointsByMax;
+use Integrations\Sync\SyncSession;
+
+class LinearProvider implements IntegrationProvider, HasIncrementalSync
 {
-    $client = new LinearClient($integration);
-    $startTime = $cursor ?? now()->subDay()->toIso8601String();
+    use ReducesCheckpointsByMax;
 
-    // Subtract overlap buffer to catch items updated between syncs
-    $bufferedStart = Carbon::parse($startTime)->subHour()->toIso8601String();
+    public function syncIncremental(Integration $integration, SyncSession $session): void
+    {
+        $client = new LinearClient($integration);
+        $startTime = $session->cursor() ?? now()->subDay()->toIso8601String();
 
-    $success = 0;
-    $failures = 0;
-    $safeCursor = $startTime;
+        // Subtract an overlap buffer to catch items updated between syncs.
+        $bufferedStart = Carbon::parse($startTime)->subHour()->toIso8601String();
 
-    $client->issues()->since($bufferedStart, function ($issue) use ($integration, &$success, &$failures, &$safeCursor) {
-        try {
-            LinearIssueSynced::dispatch($integration, $issue);
-            $success++;
-            $safeCursor = max($safeCursor, $issue->updated_at);
-        } catch (\Throwable $e) {
-            LinearIssueSyncFailed::dispatch($integration, $issue, $e);
-            $failures++;
-            // Don't advance cursor past failed items
-        }
-    });
+        $client->issues()->since($bufferedStart, function ($issue) use ($integration, $session): void {
+            $session->dispatch(
+                new LinearIssueSynced($integration, $issue),
+                checkpointValue: $issue->updated_at,
+                externalId: (string) $issue->id,
+            );
+        });
+    }
 
-    LinearSyncCompleted::dispatch($integration, new SyncResult($success, $failures, now(), $safeCursor));
-
-    return new SyncResult($success, $failures, now(), $safeCursor);
+    // sync() (full re-sync), defaultSyncInterval(), defaultRateLimit()...
 }
 ```
 
-Three things to get right:
+Things to get right:
 
-- Subtract an overlap buffer from the cursor (1 hour in official adapters).
-- Don't advance the cursor past failed items.
-- Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) since overlap is expected.
+- Subtract an overlap buffer from the cursor (1 hour in the official adapters). The framework's monotonic cursor advance means re-presenting items inside that window is safe; it won't regress progress.
+- Pass each item's checkpoint value (its `updated_at`, an id) so the framework can reduce the run into the next cursor. `use ReducesCheckpointsByMax;` gives you the common "max wins" reduction; override `reduceCheckpoints()` for non-comparable cursors.
+- Don't track success/failure or advance the cursor yourself; the framework does both from the `integration_sync_items` rows.
+- Consumers should use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their listeners since overlap is expected, and their listeners must not implement `ShouldQueue` (see [Scheduled syncs](/features/scheduled-syncs#listeners-must-not-be-queued)).
 
-For long-running incremental syncs (initial backfills, dormancy recovery, anything where the window can exceed `sync.job_timeout`), checkpoint the cursor as the iterator runs so a SIGKILL or mid-backfill timeout doesn't lose progress. Add one line to the per-item callback above:
-
-```php
-$safeCursor = max($safeCursor, $issue->updated_at);
-$integration->updateSyncCursor($safeCursor);   // checkpoint
-```
-
-One write per item is cheap relative to the work the callback already does (DTO hydration, event dispatch, persistence), and the next dispatch resumes from the last item processed. If your upstream iterator only exposes page boundaries (some pagers return whole pages at a time), checkpoint per page instead.
+There's no longer any need to checkpoint the cursor mid-iteration: per-item tracking is the checkpoint. If the enumerating job is SIGKILLed or times out, the next run starts over from the unchanged cursor; once the batch is dispatched, the cursor advances per completed item.
 
 ## Auto-registration
 

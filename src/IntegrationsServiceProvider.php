@@ -7,13 +7,16 @@ namespace Integrations;
 use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
+use Integrations\Console\AdvanceCursorCommand;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\InstallCommand;
 use Integrations\Console\ListCommand;
+use Integrations\Console\ListFailedItemsCommand;
 use Integrations\Console\MakeProviderCommand;
 use Integrations\Console\PruneCommand;
 use Integrations\Console\RecoverWebhooksCommand;
 use Integrations\Console\ReplayWebhookCommand;
+use Integrations\Console\SkipSyncItemCommand;
 use Integrations\Console\StatsCommand;
 use Integrations\Console\SyncCommand;
 use Integrations\Console\TestCommand;
@@ -76,6 +79,9 @@ class IntegrationsServiceProvider extends ServiceProvider
                 StatsCommand::class,
                 MakeProviderCommand::class,
                 InstallCommand::class,
+                SkipSyncItemCommand::class,
+                AdvanceCursorCommand::class,
+                ListFailedItemsCommand::class,
             ]);
         }
 

@@ -117,6 +117,57 @@ final class Config
         return self::boundedInt(config('integrations.sync.job_timeout', 1800), 1800, 1);
     }
 
+    /**
+     * Queue for the per-item ProcessSyncItem jobs. Defaults to the same
+     * queue as the parent sync job for the given provider.
+     */
+    public static function syncItemQueue(?string $provider = null): string
+    {
+        $value = config('integrations.sync.item_queue');
+
+        if (is_string($value) && $value !== '') {
+            return $value;
+        }
+
+        return self::syncQueue($provider);
+    }
+
+    public static function syncItemTries(): int
+    {
+        return self::boundedInt(config('integrations.sync.item_tries', 5), 5, 1);
+    }
+
+    /**
+     * Backoff schedule (seconds between retries) for ProcessSyncItem jobs.
+     *
+     * @return list<int>
+     */
+    public static function syncItemBackoff(): array
+    {
+        $default = [10, 30, 120, 300, 900];
+        $value = config('integrations.sync.item_backoff', $default);
+
+        if (! is_array($value)) {
+            return $default;
+        }
+
+        $backoff = array_values(array_filter(
+            $value,
+            static fn (mixed $seconds): bool => is_int($seconds) && $seconds >= 0,
+        ));
+
+        return $backoff === [] ? $default : $backoff;
+    }
+
+    /**
+     * Maximum number of ProcessSyncItem jobs per Bus batch. A sync run with
+     * more items than this is split into sequential batches.
+     */
+    public static function syncMaxItemsPerBatch(): int
+    {
+        return self::boundedInt(config('integrations.sync.max_items_per_batch', 10_000), 10_000, 1);
+    }
+
     public static function rateLimitMaxWaitSeconds(): int
     {
         return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);
@@ -198,6 +249,11 @@ final class Config
     public static function pruningIdempotencyKeysDays(): int
     {
         return self::boundedInt(config('integrations.pruning.idempotency_keys_days', 90), 90, 1);
+    }
+
+    public static function pruningSyncItemsDays(): int
+    {
+        return self::boundedInt(config('integrations.pruning.sync_items_days', 30), 30, 1);
     }
 
     public static function pruningChunkSize(): int

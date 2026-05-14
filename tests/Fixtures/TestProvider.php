@@ -5,17 +5,30 @@ declare(strict_types=1);
 namespace Integrations\Tests\Fixtures;
 
 use Illuminate\Http\Request;
+use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\HandlesWebhooks;
 use Integrations\Contracts\HasHealthCheck;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
-use Integrations\Sync\SyncResult;
+use Integrations\Sync\SyncSession;
 
 class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasScheduledSync, IntegrationProvider
 {
+    use ReducesCheckpointsByMax;
+
     public bool $syncCalled = false;
+
+    /**
+     * Items the next sync() call dispatches. Tests can override this to
+     * shape the run; defaults to a single item.
+     *
+     * @var list<array{id: string, checkpoint: mixed}>
+     */
+    public array $syncItems = [
+        ['id' => 'item-1', 'checkpoint' => '2026-01-01T00:00:00+00:00'],
+    ];
 
     public bool $healthCheckResult = true;
 
@@ -42,11 +55,16 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
         return [];
     }
 
-    public function sync(Integration $integration): SyncResult
+    public function sync(Integration $integration, SyncSession $session): void
     {
         $this->syncCalled = true;
 
-        return new SyncResult(1, 0, now());
+        foreach ($this->syncItems as $item) {
+            $session->dispatch(
+                new TestSyncItemEvent($integration, $item['id']),
+                checkpointValue: $item['checkpoint'],
+            );
+        }
     }
 
     public function defaultSyncInterval(): int

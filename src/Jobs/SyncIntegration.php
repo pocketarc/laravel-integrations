@@ -9,14 +9,33 @@ use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
+use Illuminate\Support\Facades\Bus;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\HasScheduledSync;
+use Integrations\Events\SyncCompleted;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationLog;
+use Integrations\Models\IntegrationSyncItem;
 use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
+use Integrations\Sync\SyncResult;
+use Integrations\Sync\SyncSession;
 use Throwable;
 
+use function Safe\json_encode;
+
+/**
+ * Runs one sync for an integration. The provider enumerates the items to
+ * sync into a `SyncSession`; this job turns them into `integration_sync_items`
+ * rows and a `Bus::batch` of `ProcessSyncItem` jobs, then returns. Cursor
+ * advancement and log finalisation happen asynchronously once the batch
+ * finishes; see `FinaliseSyncRun`.
+ *
+ * The job itself stays short: the long-running work is the per-item jobs,
+ * not this one. `WithoutOverlapping` still guards it, and a preflight check
+ * refuses to dispatch a second batch while a previous one is still in flight.
+ */
 class SyncIntegration implements ShouldQueue
 {
     use Dispatchable;
@@ -42,7 +61,7 @@ class SyncIntegration implements ShouldQueue
 
     public function handle(): void
     {
-        $integration = Integration::find($this->integrationId);
+        $integration = Integration::query()->find($this->integrationId);
 
         if ($integration === null || ! $integration->is_active) {
             return;
@@ -54,57 +73,37 @@ class SyncIntegration implements ShouldQueue
             return;
         }
 
+        // A crash between row insert and batch dispatch can orphan in-flight
+        // rows that never got a batch_id (so no ProcessSyncItem job exists for
+        // them). Left alone they'd block the preflight check forever. They're
+        // only safe to delete once old enough that any dispatched-but-not-yet-
+        // stamped batch would have run, so bound that by the job timeout.
+        IntegrationSyncItem::query()
+            ->forIntegration($integration->id)
+            ->inFlight()
+            ->whereNull('batch_id')
+            ->where('created_at', '<', now()->subSeconds(Config::syncJobTimeout()))
+            ->delete();
+
+        // A previous run's batch may still be processing items. Don't pile a
+        // second batch on top of it; the next scheduled tick will try again.
+        $inFlight = IntegrationSyncItem::query()
+            ->forIntegration($integration->id)
+            ->inFlight()
+            ->exists();
+
+        if ($inFlight) {
+            Log::info("Sync for integration '{$integration->name}' skipped: a previous batch is still in flight.");
+
+            return;
+        }
+
         IntegrationContext::push($integration, 'sync');
-        $startTime = microtime(true);
-        $parentLog = null;
 
         try {
-            $parentLog = $integration->logOperation(
-                operation: 'sync',
-                direction: 'inbound',
-                status: 'processing',
-            );
-
-            $integration->setSyncContext($parentLog->id);
-
-            $result = $provider instanceof HasIncrementalSync
-                ? $provider->syncIncremental($integration, $integration->sync_cursor)
-                : $provider->sync($integration);
-
-            $requestIds = $integration->clearSyncContext();
-            $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
-
-            if ($result->cursor !== null) {
-                $integration->updateSyncCursor($result->cursor);
-            }
-
-            $integration->markSynced($result->safeSyncedAt);
-
-            try {
-                $parentLog->update([
-                    'status' => $result->hasFailures() ? 'partial' : 'success',
-                    'summary' => "Scheduled sync completed: {$result->successCount} succeeded, {$result->failureCount} failed.",
-                    'metadata' => [
-                        'success_count' => $result->successCount,
-                        'failure_count' => $result->failureCount,
-                        'request_ids' => $requestIds,
-                    ],
-                    'duration_ms' => $durationMs,
-                ]);
-            } catch (Throwable $logException) {
-                Log::warning("Failed to update sync log for '{$integration->name}': {$logException->getMessage()}");
-            }
+            $this->runSync($integration, $provider);
         } catch (Throwable $e) {
             $integration->clearSyncContext();
-            $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
-
-            if ($parentLog !== null) {
-                $parentLog->update([
-                    'status' => 'failed',
-                    'error' => $e->getMessage(),
-                    'duration_ms' => $durationMs,
-                ]);
-            }
 
             Log::error("Integration sync failed for '{$integration->name}': {$e->getMessage()}", [
                 'integration_id' => $integration->id,
@@ -115,5 +114,140 @@ class SyncIntegration implements ShouldQueue
         } finally {
             IntegrationContext::clear();
         }
+    }
+
+    private function runSync(Integration $integration, HasScheduledSync $provider): void
+    {
+        $log = $integration->logOperation(
+            operation: 'sync',
+            direction: 'inbound',
+            status: 'processing',
+        );
+
+        $session = new SyncSession($integration, $log->id);
+
+        $integration->setSyncContext($log->id);
+
+        if ($provider instanceof HasIncrementalSync) {
+            $provider->syncIncremental($integration, $session);
+        } else {
+            $provider->sync($integration, $session);
+        }
+
+        $requestIds = $integration->clearSyncContext();
+        $log->update(['metadata' => ['request_ids' => $requestIds]]);
+
+        if ($session->isEmpty()) {
+            $this->finaliseEmptyRun($integration, $log, $requestIds);
+
+            return;
+        }
+
+        $this->dispatchBatch($integration, $log, $session);
+    }
+
+    /**
+     * A run that enumerated nothing still completes; there's just no batch.
+     * Finalise it inline rather than spinning up a no-op batch.
+     *
+     * @param  list<int>  $requestIds
+     */
+    private function finaliseEmptyRun(Integration $integration, IntegrationLog $log, array $requestIds): void
+    {
+        $integration->markSynced(now());
+
+        $log->update([
+            'status' => 'success',
+            'summary' => 'Sync completed: 0 succeeded, 0 failed.',
+            'metadata' => [
+                'success_count' => 0,
+                'failure_count' => 0,
+                'request_ids' => $requestIds,
+            ],
+        ]);
+
+        SyncCompleted::dispatch(
+            $integration,
+            new SyncResult(0, 0, now(), $integration->sync_cursor),
+        );
+    }
+
+    private function dispatchBatch(Integration $integration, IntegrationLog $log, SyncSession $session): void
+    {
+        $items = $session->pendingItems();
+        $itemCount = count($items);
+
+        if ($itemCount > Config::syncMaxItemsPerBatch()) {
+            Log::warning(sprintf(
+                "Sync for integration '%s' enumerated %d items, above the configured "
+                .'max_items_per_batch of %d. It will still be processed as a single batch; '
+                .'consider narrowing the sync window or paging the provider more aggressively.',
+                $integration->name,
+                $itemCount,
+                Config::syncMaxItemsPerBatch(),
+            ));
+        }
+
+        // Insert the rows first (chunked, so a huge backfill doesn't build one
+        // enormous INSERT), then re-read them in id order to pair each row
+        // with the event it represents. sync_log_id uniquely scopes this run.
+        $now = now();
+        $rows = [];
+        foreach ($items as $item) {
+            $rows[] = [
+                'integration_id' => $integration->id,
+                'batch_id' => null,
+                'sync_log_id' => $log->id,
+                'event_class' => $item->event::class,
+                'external_id' => $item->externalId,
+                'checkpoint_value' => json_encode($item->checkpointValue),
+                'status' => IntegrationSyncItem::STATUS_PENDING,
+                'attempts' => 0,
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk($rows, 500) as $chunk) {
+            IntegrationSyncItem::query()->insert($chunk);
+        }
+
+        // Re-read the rows in id order (the order they were inserted, which is
+        // the order of $items) to pair each row id with its event.
+        /** @var list<int> $rowIds */
+        $rowIds = IntegrationSyncItem::query()
+            ->forSyncLog($log->id)
+            ->orderBy('id')
+            ->pluck('id')
+            ->all();
+
+        $jobs = [];
+        foreach ($items as $index => $item) {
+            $rowId = $rowIds[$index] ?? null;
+            if ($rowId === null) {
+                continue;
+            }
+
+            $jobs[] = new ProcessSyncItem($rowId, $item->event, $log->id);
+        }
+
+        $integrationId = $integration->id;
+        $syncLogId = $log->id;
+
+        $batch = Bus::batch($jobs)
+            ->name("integration-sync-{$integrationId}")
+            ->onQueue(Config::syncItemQueue($integration->provider))
+            ->allowFailures()
+            ->finally(function () use ($integrationId, $syncLogId): void {
+                FinaliseSyncRun::dispatch($integrationId, $syncLogId);
+            })
+            ->dispatch();
+
+        // Stamp the batch id for ops visibility (Horizon / job_batches
+        // correlation). The core flow keys on sync_log_id, not this; under
+        // the `sync` queue driver the jobs above have already run by now.
+        IntegrationSyncItem::query()
+            ->forSyncLog($syncLogId)
+            ->update(['batch_id' => $batch->id]);
     }
 }

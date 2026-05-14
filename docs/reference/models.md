@@ -14,6 +14,7 @@ The central model. Represents a configured connection to an external service.
 | `logs()` | hasMany | `IntegrationLog` |
 | `mappings()` | hasMany | `IntegrationMapping` |
 | `webhooks()` | hasMany | `IntegrationWebhook` |
+| `syncItems()` | hasMany | `IntegrationSyncItem` |
 | `owner()` | morphTo | Polymorphic (Team, User, etc.) |
 
 ### Methods
@@ -36,6 +37,7 @@ The central model. Represents a configured connection to an external service.
 | `recordSuccess()` | Record a successful request |
 | `recordFailure()` | Record a failed request |
 | `credentialsArray()` | Get raw credentials array |
+| `pendingSyncItemCount()` | Count of sync items still in flight (`pending` or `processing`) |
 
 ### Query scopes
 
@@ -116,3 +118,34 @@ Stores received webhook payloads for audit and replay.
 | Relationship | Type | Target |
 |-------------|------|--------|
 | `integration()` | belongsTo | `Integration` |
+
+## IntegrationSyncItem
+
+One row per item dispatched during a sync run. The framework uses these to track per-item completion and decide when the cursor can advance. See [Scheduled syncs](/features/scheduled-syncs).
+
+### Relationships
+
+| Relationship | Type | Target |
+|-------------|------|--------|
+| `integration()` | belongsTo | `Integration` |
+| `syncLog()` | belongsTo | `IntegrationLog` |
+
+### Methods
+
+| Method | Description |
+|--------|-------------|
+| `isTerminal()` | Whether the item reached a terminal state (`success`, `failed`, or `skipped`) |
+
+### Query scopes
+
+| Scope | Description |
+|-------|-------------|
+| `pending()` / `processing()` / `successful()` / `failed()` / `skipped()` | Filter by status |
+| `inFlight()` | Items not yet terminal (`pending` or `processing`) |
+| `forBatch($batchId)` | Items in a Bus batch |
+| `forSyncLog($syncLogId)` | Items belonging to one sync run |
+| `forIntegration($integrationId)` | Items for one integration |
+
+### Status constants
+
+`STATUS_PENDING`, `STATUS_PROCESSING`, `STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_SKIPPED`.

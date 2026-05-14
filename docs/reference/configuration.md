@@ -39,10 +39,14 @@ php artisan vendor:publish --tag=integrations-config
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `sync.queue` | `string` | `'default'` | Default queue for sync jobs |
+| `sync.queue` | `string` | `'default'` | Default queue for the `SyncIntegration` job |
 | `sync.queues` | `array` | `[]` | Per-provider queue overrides (key = provider, value = queue) |
 | `sync.lock_ttl` | `int` | `1800` | `WithoutOverlapping` lock TTL in seconds (must be ≥ `job_timeout`) |
 | `sync.job_timeout` | `int` | `1800` | `SyncIntegration` job timeout in seconds (30 min). `integrations:sync` reads this on dispatch; direct callers can override via the constructor. |
+| `sync.item_queue` | `?string` | `null` | Queue for the per-item `ProcessSyncItem` jobs. `null` = same as `sync.queue`. |
+| `sync.item_tries` | `int` | `5` | Retries per item before it's marked `failed` and lands in `failed_jobs` |
+| `sync.item_backoff` | `array` | `[10, 30, 120, 300, 900]` | Seconds between item retries |
+| `sync.max_items_per_batch` | `int` | `10000` | Soft cap; a run with more items still processes as one batch but logs a warning |
 
 ## Retry
 
@@ -83,6 +87,7 @@ See [Circuit breaker](/advanced/circuit-breaker) for the full state machine.
 | `pruning.requests_days` | `int` | `90` | Retention for `integration_requests` |
 | `pruning.logs_days` | `int` | `365` | Retention for `integration_logs` |
 | `pruning.idempotency_keys_days` | `int` | `90` | Retention for `integration_idempotency_keys`. Set comfortably longer than your longest queue retry window. |
+| `pruning.sync_items_days` | `int` | `30` | Retention for completed (`success` / `skipped`) `integration_sync_items`. `failed` rows are kept until resolved. |
 | `pruning.chunk_size` | `int` | `1000` | Rows per delete batch |
 
 ## Providers
