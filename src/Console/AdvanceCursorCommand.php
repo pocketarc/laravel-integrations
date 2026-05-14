@@ -16,7 +16,15 @@ class AdvanceCursorCommand extends Command
 
     public function handle(): int
     {
-        $integrationId = (int) $this->argument('integration');
+        $argument = $this->argument('integration');
+
+        if (! is_string($argument) || ! ctype_digit($argument)) {
+            $this->error('The integration argument must be a positive integer id.');
+
+            return self::FAILURE;
+        }
+
+        $integrationId = (int) $argument;
 
         $integration = Integration::query()->find($integrationId);
 

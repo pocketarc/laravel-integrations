@@ -16,7 +16,15 @@ class SkipSyncItemCommand extends Command
 
     public function handle(): int
     {
-        $id = (int) $this->argument('id');
+        $argument = $this->argument('id');
+
+        if (! is_string($argument) || ! ctype_digit($argument)) {
+            $this->error('The id argument must be a positive integer integration_sync_items id.');
+
+            return self::FAILURE;
+        }
+
+        $id = (int) $argument;
 
         $item = IntegrationSyncItem::query()->find($id);
 

@@ -10,6 +10,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Bus;
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\HasScheduledSync;
@@ -21,6 +22,7 @@ use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
 use Integrations\Sync\SyncResult;
 use Integrations\Sync\SyncSession;
+use RuntimeException;
 use Throwable;
 
 use function Safe\json_encode;
@@ -73,17 +75,7 @@ class SyncIntegration implements ShouldQueue
             return;
         }
 
-        // A crash between row insert and batch dispatch can orphan in-flight
-        // rows that never got a batch_id (so no ProcessSyncItem job exists for
-        // them). Left alone they'd block the preflight check forever. They're
-        // only safe to delete once old enough that any dispatched-but-not-yet-
-        // stamped batch would have run, so bound that by the job timeout.
-        IntegrationSyncItem::query()
-            ->forIntegration($integration->id)
-            ->inFlight()
-            ->whereNull('batch_id')
-            ->where('created_at', '<', now()->subSeconds(Config::syncJobTimeout()))
-            ->delete();
+        $this->cleanupOrphanedItems($integration);
 
         // A previous run's batch may still be processing items. Don't pile a
         // second batch on top of it; the next scheduled tick will try again.
@@ -223,9 +215,18 @@ class SyncIntegration implements ShouldQueue
 
         $jobs = [];
         foreach ($items as $index => $item) {
+            // The rows were just inserted in this method and re-read by
+            // sync_log_id, so every item has a row. A missing one means rows
+            // vanished or an insert partially failed; abort loudly rather
+            // than dispatching a silent subset of the run.
             $rowId = $rowIds[$index] ?? null;
             if ($rowId === null) {
-                continue;
+                throw new RuntimeException(sprintf(
+                    'Sync item row count mismatch for integration %d: no row for item %d of %d enumerated.',
+                    $integration->id,
+                    $index,
+                    count($items),
+                ));
             }
 
             $jobs[] = new ProcessSyncItem($rowId, $item->event, $log->id);
@@ -235,7 +236,7 @@ class SyncIntegration implements ShouldQueue
         $syncLogId = $log->id;
 
         $batch = Bus::batch($jobs)
-            ->name("integration-sync-{$integrationId}")
+            ->name("integration-sync-{$integrationId}-{$syncLogId}")
             ->onQueue(Config::syncItemQueue($integration->provider))
             ->allowFailures()
             ->finally(function () use ($integrationId, $syncLogId): void {
@@ -249,5 +250,85 @@ class SyncIntegration implements ShouldQueue
         IntegrationSyncItem::query()
             ->forSyncLog($syncLogId)
             ->update(['batch_id' => $batch->id]);
+    }
+
+    /**
+     * Remove sync-item rows whose batch was never dispatched.
+     *
+     * A null `batch_id` is ambiguous: the run may have crashed between
+     * inserting the rows and dispatching the batch (truly orphaned, nothing
+     * will ever process these), or after dispatch but before stamping
+     * `batch_id` back onto the rows (the `ProcessSyncItem` jobs and the
+     * `finally` callback still exist, so the run reconciles on its own).
+     * Deleting the second kind would drop items whose jobs are only waiting
+     * on a backed-up queue.
+     *
+     * Tell them apart by looking each run's batch up in `job_batches`: if
+     * it's there, the batch was dispatched and the rows are not orphans.
+     */
+    private function cleanupOrphanedItems(Integration $integration): void
+    {
+        $candidates = IntegrationSyncItem::query()
+            ->forIntegration($integration->id)
+            ->inFlight()
+            ->whereNull('batch_id')
+            ->where('created_at', '<', now()->subSeconds(Config::syncJobTimeout()))
+            ->get(['id', 'sync_log_id']);
+
+        if ($candidates->isEmpty()) {
+            return;
+        }
+
+        $dispatchedLogIds = $this->syncLogIdsWithABatch(
+            $integration->id,
+            $candidates->pluck('sync_log_id')->unique()->values()->all(),
+        );
+
+        $orphanIds = $candidates
+            ->whereNotIn('sync_log_id', $dispatchedLogIds)
+            ->pluck('id')
+            ->all();
+
+        if ($orphanIds !== []) {
+            IntegrationSyncItem::query()->whereIn('id', $orphanIds)->delete();
+        }
+    }
+
+    /**
+     * Of the given sync-run log ids, the ones whose batch made it into
+     * `job_batches` (so the batch was dispatched and its jobs exist).
+     *
+     * @param  array<int, mixed>  $syncLogIds
+     * @return list<int>
+     */
+    private function syncLogIdsWithABatch(int $integrationId, array $syncLogIds): array
+    {
+        $logIdByName = [];
+        foreach ($syncLogIds as $syncLogId) {
+            if (is_int($syncLogId)) {
+                $logIdByName["integration-sync-{$integrationId}-{$syncLogId}"] = $syncLogId;
+            }
+        }
+
+        if ($logIdByName === []) {
+            return [];
+        }
+
+        $connection = config('queue.batching.database');
+        $table = config('queue.batching.table', 'job_batches');
+
+        $names = DB::connection(is_string($connection) ? $connection : null)
+            ->table(is_string($table) ? $table : 'job_batches')
+            ->whereIn('name', array_keys($logIdByName))
+            ->pluck('name');
+
+        $dispatched = [];
+        foreach ($names as $name) {
+            if (is_string($name) && array_key_exists($name, $logIdByName)) {
+                $dispatched[] = $logIdByName[$name];
+            }
+        }
+
+        return $dispatched;
     }
 }
