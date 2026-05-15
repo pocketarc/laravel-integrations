@@ -18,6 +18,10 @@ use InvalidArgumentException;
  * @property Carbon|null $updated_at
  * @property-read Integration|null $integration
  *
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|IntegrationIdempotencyKey newModelQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|IntegrationIdempotencyKey newQuery()
+ * @method static \Illuminate\Database\Eloquent\Builder<static>|IntegrationIdempotencyKey query()
+ *
  * @mixin \Eloquent
  */
 class IntegrationIdempotencyKey extends Model

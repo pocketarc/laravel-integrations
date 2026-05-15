@@ -1,6 +1,6 @@
 # Database schema
 
-The package creates six tables with a configurable prefix (default: `integration`). Publish and run migrations with:
+The package creates several tables with a configurable prefix (default: `integration`). Publish and run migrations with:
 
 ```bash
 php artisan vendor:publish --tag=integrations-migrations
@@ -101,6 +101,27 @@ Idempotency-key ledger. One row per `(integration_id, key)` pair held by a keyed
 | `timestamps`     |             | `created_at`, `updated_at`                                        |
 
 Unique constraint on `(integration_id, key)`.
+
+## integration_sync_items
+
+One row per item dispatched during a sync run. Tracks whether the item's listeners completed, so the cursor only advances past finished items. See [Scheduled syncs](/features/scheduled-syncs).
+
+| Column             | Type           | Description                                                                  |
+|--------------------|----------------|------------------------------------------------------------------------------|
+| `id`               | bigint (PK)    | Auto-incrementing ID                                                         |
+| `integration_id`   | bigint (FK)    | Parent integration                                                           |
+| `batch_id`         | string(36, nullable) | Bus batch UUID, set after dispatch; for ops/Horizon correlation only |
+| `sync_log_id`      | bigint (FK, nullable) | Parent `integration_logs` row for the run                             |
+| `event_class`      | string         | The per-item event class, for ops/debugging                                  |
+| `external_id`      | string(500, nullable) | Adapter-provided external identifier, for ops/debugging               |
+| `checkpoint_value` | json (nullable)| The cursor token this item represents; reduced into the next `sync_cursor`   |
+| `status`           | string(16)     | `pending`, `processing`, `success`, `failed`, `skipped`                      |
+| `error`            | text (nullable)| Exception message on terminal failure                                        |
+| `attempts`         | smallint       | Attempt count at the last status change                                      |
+| `completed_at`     | timestamp (nullable) | When the item reached a terminal state                                 |
+| `timestamps`       |                | `created_at`, `updated_at`                                                   |
+
+Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(sync_log_id, status)`, `(batch_id, status)`. Completed (`success` / `skipped`) rows are pruned by `integrations:prune`; `failed` rows are kept until resolved.
 
 ## integration_webhooks
 

@@ -83,6 +83,26 @@ return [
         // and passes it on dispatch; direct callers can still override per-call via
         // the SyncIntegration constructor.
         'job_timeout' => 1800,
+
+        // Queue for the per-item ProcessSyncItem jobs. Each item a provider hands to
+        // the SyncSession becomes one of these jobs; it runs the item's listeners and
+        // records completion so the cursor only advances past finished work. Leave
+        // null to use the same queue as the parent sync job (sync.queue / sync.queues).
+        'item_queue' => null,
+
+        // How many times a ProcessSyncItem job retries before it lands in failed_jobs
+        // and its integration_sync_items row is marked "failed". Each attempt re-runs
+        // the item's listeners, so listeners must be idempotent.
+        'item_tries' => 5,
+
+        // Backoff schedule (seconds between retries) for ProcessSyncItem jobs.
+        'item_backoff' => [10, 30, 120, 300, 900],
+
+        // Soft cap on the number of items in one sync run. A run that enumerates
+        // more than this is still processed as a single Bus batch, but
+        // SyncIntegration logs a warning so you can narrow the sync window or
+        // page the provider more aggressively.
+        'max_items_per_batch' => 10000,
     ],
 
     'retry' => [
@@ -161,6 +181,12 @@ return [
         // retry window. Defaults to match requests_days so a single retention knob covers
         // most setups.
         'idempotency_keys_days' => 90,
+
+        // Delete completed integration_sync_items (status "success" or "skipped") older
+        // than this many days when running integrations:prune. Rows still in "failed"
+        // status are kept indefinitely so an operator can find and recover them; clear
+        // them by resolving the item (retry or skip) before they age out.
+        'sync_items_days' => 30,
 
         // Number of rows to delete per batch. Deleting in chunks avoids holding a table lock
         // for the entire duration of a large delete, keeping the table responsive for normal

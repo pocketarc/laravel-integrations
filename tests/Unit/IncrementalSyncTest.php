@@ -30,7 +30,7 @@ class IncrementalSyncTest extends TestCase
 
     public function test_incremental_sync_uses_cursor(): void
     {
-        IncrementalProvider::$receivedCursor = null;
+        IncrementalProvider::resetState();
 
         app(IntegrationManager::class)->register('incremental', IncrementalProvider::class);
 

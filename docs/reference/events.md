@@ -26,6 +26,15 @@ All events use Laravel's `Dispatchable` and `SerializesModels` traits.
 | `OperationCompleted` | `$integration`, `$log` | An operation is logged with status `success`    |
 | `OperationFailed`    | `$integration`, `$log` | An operation is logged with status `failed`     |
 
+## Sync
+
+| Event | Payload | When |
+|-------|---------|------|
+| `SyncCompleted` | `$integration`, `$result` | A sync run finishes reconciling, with every per-item job in a terminal state. `$result->hasFailures()` distinguishes a clean run from a partial one. |
+| `SyncItemFailed` | `$integration`, `$item`, `$exception` | A per-item `ProcessSyncItem` job exhausts its retries. The `IntegrationSyncItem` row is already marked `failed`. |
+
+These are the canonical sync events; adapters no longer ship their own per-completion or per-failure events. The per-item "synced" event (e.g. `ZendeskTicketSynced`) is still the adapter's own; it extends `SyncItemEvent` and its listeners run synchronously inside `ProcessSyncItem`. See [Scheduled syncs](/features/scheduled-syncs).
+
 ## OAuth
 
 | Event | Payload | When |

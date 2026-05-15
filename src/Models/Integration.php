@@ -73,6 +73,10 @@ use function Safe\json_encode;
  * @property-read Model $owner
  * @property-read Collection<int, IntegrationRequest> $requests
  * @property-read int|null $requests_count
+ * @property-read Collection<int, IntegrationSyncItem> $syncItems
+ * @property-read int|null $sync_items_count
+ * @property-read Collection<int, IntegrationWebhook> $webhooks
+ * @property-read int|null $webhooks_count
  *
  * @mixin \Eloquent
  */
@@ -151,6 +155,22 @@ class Integration extends Model
     public function webhooks(): HasMany
     {
         return $this->hasMany(IntegrationWebhook::class);
+    }
+
+    /** @return HasMany<IntegrationSyncItem, $this> */
+    public function syncItems(): HasMany
+    {
+        return $this->hasMany(IntegrationSyncItem::class);
+    }
+
+    /**
+     * Count of sync items still in flight (pending or processing). A non-zero
+     * count means a sync run's batch hasn't finished; `SyncIntegration` uses
+     * this to avoid piling a second batch on top of an in-progress one.
+     */
+    public function pendingSyncItemCount(): int
+    {
+        return $this->syncItems()->inFlight()->count();
     }
 
     /** @return MorphTo<Model, $this> */

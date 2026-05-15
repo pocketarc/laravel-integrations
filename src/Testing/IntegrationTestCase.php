@@ -44,6 +44,9 @@ abstract class IntegrationTestCase extends TestCase
     #[\Override]
     protected function defineDatabaseMigrations(): void
     {
+        // Brings in the framework's jobs / job_batches / failed_jobs tables.
+        // The sync flow dispatches a Bus batch, which needs job_batches.
+        $this->loadLaravelMigrations();
         $this->loadMigrationsFrom(__DIR__.'/../../database/migrations');
     }
 
@@ -59,6 +62,11 @@ abstract class IntegrationTestCase extends TestCase
             'database' => ':memory:',
             'prefix' => '',
         ]);
+
+        // Bus::batch and the failed-jobs store otherwise resolve their own
+        // connection, which under Testbench points at a non-existent file.
+        $app['config']->set('queue.batching.database', 'testing');
+        $app['config']->set('queue.failed.database', 'testing');
 
         $app['config']->set('app.key', 'base64:AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=');
     }

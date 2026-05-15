@@ -65,6 +65,37 @@ Finds all active integrations where `next_sync_at` has passed and dispatches a `
 Schedule::command('integrations:sync')->everyMinute();
 ```
 
+## integrations:list-failed-items
+
+Show sync items that exhausted their retries and need operator attention.
+
+```bash
+php artisan integrations:list-failed-items
+php artisan integrations:list-failed-items --integration=7 --since="2026-01-01"
+```
+
+Prints a table from `integration_sync_items` (id, integration, event, external id, error, attempts, created). A failed item holds the cursor at it until it's resolved: retry the underlying job with `php artisan queue:retry <uuid>`, or skip it (below).
+
+## integrations:skip-sync-item
+
+Mark a permanently-failed sync item as skipped so the cursor can advance past it.
+
+```bash
+php artisan integrations:skip-sync-item <id>
+```
+
+Only `failed` items can be skipped. The command sets the row to `skipped` and dispatches `FinaliseSyncRun` so the run reconciles and the cursor catches up.
+
+## integrations:advance-cursor
+
+Re-reconcile any sync runs for an integration that are still stuck in `processing`.
+
+```bash
+php artisan integrations:advance-cursor <integration>
+```
+
+Dispatches `FinaliseSyncRun` for each unreconciled run. `FinaliseSyncRun` bails on its own if a run's items aren't all terminal yet, so this is always safe to run. Useful as a manual nudge if a `finally` callback was lost (e.g. a queue outage).
+
 ## integrations:list
 
 Show all integrations with health, last sync, and request counts.

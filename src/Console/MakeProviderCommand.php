@@ -84,7 +84,7 @@ class MakeProviderCommand extends GeneratorCommand
 
         $map = [
             'oauth' => 'use Integrations\\Contracts\\HasOAuth2;',
-            'sync' => "use Integrations\\Contracts\\HasScheduledSync;\nuse Integrations\\Models\\Integration;\nuse Integrations\\Sync\\SyncResult;",
+            'sync' => "use Integrations\\Contracts\\HasScheduledSync;\nuse Integrations\\Models\\Integration;\nuse Integrations\\Sync\\SyncSession;",
             'webhooks' => "use Illuminate\\Http\\Request;\nuse Integrations\\Contracts\\HandlesWebhooks;\nuse Integrations\\Models\\Integration;",
             'health-check' => "use Integrations\\Contracts\\HasHealthCheck;\nuse Integrations\\Models\\Integration;",
         ];
@@ -144,10 +144,22 @@ class MakeProviderCommand extends GeneratorCommand
         if (in_array('sync', $capabilities, true)) {
             $methods .= <<<'PHP'
 
-    public function sync(Integration $integration): SyncResult
+    public function sync(Integration $integration, SyncSession $session): void
     {
-        // TODO: Implement sync logic.
-        return SyncResult::empty();
+        // TODO: Enumerate the items to sync and hand each to $session->dispatch():
+        //   $session->dispatch(new ItemSynced($integration, $item), checkpointValue: $item->updated_at);
+        // The framework wraps each one in a queued job, batches them, and only
+        // advances the cursor once every job has succeeded. Read the previous
+        // cursor (if any) with $session->cursor().
+    }
+
+    public function reduceCheckpoints(array $checkpoints): mixed
+    {
+        // The next sync_cursor is the maximum of the run's completed checkpoints.
+        // Correct for ISO-8601 timestamps and lexicographic ids. For other cursor
+        // shapes, reduce them however ordering works for your provider, or
+        // `use Integrations\Concerns\ReducesCheckpointsByMax;` for exactly this.
+        return $checkpoints === [] ? null : max($checkpoints);
     }
 
     public function defaultSyncInterval(): int
