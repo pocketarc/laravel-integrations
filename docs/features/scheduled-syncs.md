@@ -219,6 +219,8 @@ php artisan integrations:skip-sync-item <id>
 
 A retried item that succeeds, or an item that's skipped, lets the run reconcile and the cursor catch up automatically. `php artisan integrations:advance-cursor <integration>` re-runs the reconciliation for any sync run still stuck in `processing`, if you need to nudge it manually.
 
+Items stuck at `processing` usually clear themselves once the queue's visibility timeout reclaims the job and a retry runs. If they don't, check `failed_jobs` with `queue:failed` and `queue:retry`; for an abandoned row, update its status to `failed` directly so `skip-sync-item` can take over.
+
 ## Sync timeline
 
 The parent sync log records the API requests made while the provider was enumerating items:
