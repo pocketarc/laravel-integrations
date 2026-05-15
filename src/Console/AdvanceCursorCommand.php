@@ -18,7 +18,7 @@ class AdvanceCursorCommand extends Command
     {
         $argument = $this->argument('integration');
 
-        if (! is_string($argument) || ! ctype_digit($argument)) {
+        if (! is_string($argument) || ! ctype_digit($argument) || (int) $argument <= 0) {
             $this->error('The integration argument must be a positive integer id.');
 
             return self::FAILURE;

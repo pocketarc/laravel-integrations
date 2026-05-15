@@ -121,7 +121,7 @@ One row per item dispatched during a sync run. Tracks whether the item's listene
 | `completed_at`     | timestamp (nullable) | When the item reached a terminal state                                 |
 | `timestamps`       |                | `created_at`, `updated_at`                                                   |
 
-Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(batch_id, status)`. Completed (`success` / `skipped`) rows are pruned by `integrations:prune`; `failed` rows are kept until resolved.
+Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(sync_log_id, status)`, `(batch_id, status)`. Completed (`success` / `skipped`) rows are pruned by `integrations:prune`; `failed` rows are kept until resolved.
 
 ## integration_webhooks
 

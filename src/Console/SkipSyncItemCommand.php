@@ -18,7 +18,7 @@ class SkipSyncItemCommand extends Command
     {
         $argument = $this->argument('id');
 
-        if (! is_string($argument) || ! ctype_digit($argument)) {
+        if (! is_string($argument) || ! ctype_digit($argument) || (int) $argument <= 0) {
             $this->error('The id argument must be a positive integer integration_sync_items id.');
 
             return self::FAILURE;

@@ -24,7 +24,7 @@ class ListFailedItemsCommand extends Command
 
         $integrationOption = $this->option('integration');
         if (is_string($integrationOption) && $integrationOption !== '') {
-            if (! ctype_digit($integrationOption)) {
+            if (! ctype_digit($integrationOption) || (int) $integrationOption <= 0) {
                 $this->error('The --integration option must be a positive integer id.');
 
                 return self::FAILURE;
