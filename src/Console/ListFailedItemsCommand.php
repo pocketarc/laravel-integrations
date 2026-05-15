@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Str;
 use Integrations\Models\IntegrationSyncItem;
+use Throwable;
 
 class ListFailedItemsCommand extends Command
 {
@@ -23,12 +24,26 @@ class ListFailedItemsCommand extends Command
 
         $integrationOption = $this->option('integration');
         if (is_string($integrationOption) && $integrationOption !== '') {
+            if (! ctype_digit($integrationOption)) {
+                $this->error('The --integration option must be a positive integer id.');
+
+                return self::FAILURE;
+            }
+
             $query->forIntegration((int) $integrationOption);
         }
 
         $sinceOption = $this->option('since');
         if (is_string($sinceOption) && $sinceOption !== '') {
-            $query->where('created_at', '>=', Carbon::parse($sinceOption));
+            try {
+                $since = Carbon::parse($sinceOption);
+            } catch (Throwable) {
+                $this->error("Invalid --since value '{$sinceOption}'. Use a parseable date or datetime.");
+
+                return self::FAILURE;
+            }
+
+            $query->where('created_at', '>=', $since);
         }
 
         $items = $query->get();

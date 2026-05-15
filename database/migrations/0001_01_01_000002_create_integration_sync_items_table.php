@@ -38,6 +38,7 @@ return new class extends Migration
 
             $table->index(['integration_id', 'status']);
             $table->index(['integration_id', 'created_at']);
+            $table->index(['sync_log_id', 'status']);
             $table->index(['batch_id', 'status']);
         });
     }
