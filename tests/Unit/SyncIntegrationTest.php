@@ -54,7 +54,10 @@ class SyncIntegrationTest extends TestCase
         $items = IntegrationSyncItem::query()->forIntegration($integration->id)->get();
         $this->assertCount(2, $items);
         $this->assertTrue($items->every(fn (IntegrationSyncItem $i): bool => $i->status === IntegrationSyncItem::STATUS_SUCCESS));
-        $this->assertNotNull($items->first()?->batch_id);
+        $this->assertTrue(
+            $items->every(fn (IntegrationSyncItem $i): bool => $i->batch_id !== null),
+            'Expected every persisted sync item to have batch_id stamped.',
+        );
 
         $integration->refresh();
         $this->assertSame('2026-01-01T12:00:00+00:00', $integration->sync_cursor);

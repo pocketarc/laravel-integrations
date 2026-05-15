@@ -34,16 +34,28 @@ class SkipSyncItemCommand extends Command
             return self::FAILURE;
         }
 
-        if ($item->status !== IntegrationSyncItem::STATUS_FAILED) {
-            $this->error("Sync item #{$id} is '{$item->status}', not 'failed'. Only failed items can be skipped.");
+        // Atomic FAILED -> SKIPPED transition: only update if the status is
+        // still 'failed' at the moment of the UPDATE. Prevents a concurrent
+        // queue:retry that flips the row out of 'failed' from being silently
+        // overwritten by this skip.
+        $updated = IntegrationSyncItem::query()
+            ->whereKey($item->getKey())
+            ->where('status', IntegrationSyncItem::STATUS_FAILED)
+            ->update([
+                'status' => IntegrationSyncItem::STATUS_SKIPPED,
+                'completed_at' => now(),
+            ]);
+
+        if ($updated !== 1) {
+            $currentStatus = IntegrationSyncItem::query()
+                ->whereKey($item->getKey())
+                ->value('status');
+            $statusForMessage = is_string($currentStatus) ? $currentStatus : 'unknown';
+
+            $this->error("Sync item #{$id} is '{$statusForMessage}', not 'failed'. Only failed items can be skipped.");
 
             return self::FAILURE;
         }
-
-        $item->update([
-            'status' => IntegrationSyncItem::STATUS_SKIPPED,
-            'completed_at' => now(),
-        ]);
 
         $this->info("Sync item #{$id} marked as skipped.");
 

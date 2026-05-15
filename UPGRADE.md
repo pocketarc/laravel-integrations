@@ -165,7 +165,7 @@ The per-adapter aggregate and failure events are gone. Switch to the canonical c
 | 2.x | 3.0 |
 |-----|-----|
 | `{Adapter}SyncCompleted` | `Integrations\Events\SyncCompleted` |
-| `{Adapter}ItemSyncFailed` | `Integrations\Events\SyncItemFailed` |
+| `{Adapter}{ItemType}SyncFailed` | `Integrations\Events\SyncItemFailed` |
 
 `SyncCompleted` carries the `Integration` and a `SyncResult`. `SyncItemFailed` carries the `Integration`, the `IntegrationSyncItem` row, and the `Throwable`.
 
