@@ -1,6 +1,6 @@
 # Database schema
 
-The package creates six tables with a configurable prefix (default: `integration`). Publish and run migrations with:
+The package creates several tables with a configurable prefix (default: `integration`). Publish and run migrations with:
 
 ```bash
 php artisan vendor:publish --tag=integrations-migrations
