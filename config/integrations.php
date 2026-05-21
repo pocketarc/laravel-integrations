@@ -90,13 +90,21 @@ return [
         // null to use the same queue as the parent sync job (sync.queue / sync.queues).
         'item_queue' => null,
 
-        // How many times a ProcessSyncItem job retries before it lands in failed_jobs
-        // and its integration_sync_items row is marked "failed". Each attempt re-runs
-        // the item's listeners, so listeners must be idempotent.
+        // How many times a ProcessSyncItem's listeners may throw before the item is
+        // marked "failed" and the job lands in failed_jobs. Transient rate-limit
+        // deferrals are not counted; only genuine listener exceptions are. Each
+        // attempt re-runs the listeners, so listeners must be idempotent.
         'item_tries' => 5,
 
         // Backoff schedule (seconds between retries) for ProcessSyncItem jobs.
         'item_backoff' => [10, 30, 120, 300, 900],
+
+        // Absolute wall-clock window (seconds) a ProcessSyncItem may keep retrying,
+        // including transient rate-limit deferrals, before the queue gives up. Set
+        // generously so an item throttled across several of a provider's rate-limit
+        // windows still completes; a genuinely broken item is bounded sooner by
+        // item_tries (which only counts real listener exceptions).
+        'item_retry_window' => 21600, // 6 hours
 
         // Soft cap on the number of items in one sync run. A run that enumerates
         // more than this is still processed as a single Bus batch, but
@@ -113,10 +121,11 @@ return [
     ],
 
     'rate_limiting' => [
-        // Maximum seconds to wait for rate limit capacity before throwing
-        // RateLimitExceededException. When set to 0, throws immediately without waiting.
-        // When > 0, sleeps in 1-second intervals and re-checks until capacity is available
-        // or the max wait time is exceeded.
+        // Maximum seconds the rate limiter will sleep waiting for capacity before
+        // throwing RateLimitExceededException. 0 = never sleep, throw immediately.
+        // Applies independently to the provider-fed suppression gate and the local
+        // window bucket. A throw inside a sync defers the item (re-queued, see
+        // sync.item_retry_window); for other callers it surfaces as an exception.
         'max_wait_seconds' => 10,
     ],
 

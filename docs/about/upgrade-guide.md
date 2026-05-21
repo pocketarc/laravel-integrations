@@ -2,6 +2,50 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 3.x to 4.0
+
+4.0 makes rate limits window-aware and stops a throttled sync from failing. Two breaking changes, both small.
+
+### Why
+
+`HasScheduledSync::defaultRateLimit()` returned a bare `?int` the framework read as requests per minute. A per-minute integer can't express an hourly budget (5,000/hour is not 83/minute, because the hourly budget can be spent in a burst), so the unit was ambiguous and easy to get wrong. And when the limiter gave up waiting it threw an exception that failed the `ProcessSyncItem` job; since 3.0 a failed item holds the cursor, so a brief throttle could wedge the whole sync.
+
+4.0 replaces the integer with a `RateLimit` value object that names the window, and defers (re-queues) rate-limited sync items instead of failing them.
+
+### 1. Update `defaultRateLimit()`
+
+If you have a custom provider implementing `HasScheduledSync` (or `HasIncrementalSync`), change `defaultRateLimit()` to return `?Integrations\RateLimit`.
+
+**Before (3.x):**
+
+```php
+public function defaultRateLimit(): ?int
+{
+    return 83; // meant to approximate ~5000/hour
+}
+```
+
+**After (4.0):**
+
+```php
+use Integrations\RateLimit;
+
+public function defaultRateLimit(): ?RateLimit
+{
+    return RateLimit::perHour(5000);
+}
+```
+
+Pick the constructor that matches the upstream's real limit: `perMinute()`, `perHour()`, `perDay()`, or `per($limit, $seconds)`. Append `->sliding()` if the API enforces a rolling window rather than a budget that resets on a fixed boundary. Return `null` for no limit, as before.
+
+### 2. If you construct `RateLimitExceededException`
+
+Its constructor changed from `($integration, $requestsThisMinute, $limit)` to `($integration, $retryAfterSeconds, ?RateLimit $rateLimit = null)`. The framework throws it for you, so this only matters if you construct it directly (in tests, say).
+
+### Nothing else changes
+
+The rate-limit deferral inside syncs needs no action; `ProcessSyncItem` handles it. The new `sync.item_retry_window` config has a sensible 6-hour default. Official adapters (`pocketarc/laravel-integrations-adapters`) ship the matching change in their next major; bump both together.
+
 ## 2.x to 3.0
 
 3.0 reworks how scheduled syncs advance the cursor. The provider contract changes, per-item events get a base class, and there's a new table. This guide covers every change you need to make.

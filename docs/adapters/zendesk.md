@@ -72,7 +72,7 @@ $integration->updateSyncCursor('2024-05-01T00:00:00+00:00');
 
 Every incremental sync subtracts a 1-hour buffer from the cursor to catch tickets updated between runs. The framework's cursor advance is monotonic, so re-presenting items inside that window can't regress progress. Consumers should still use [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) in their listeners since overlap is expected.
 
-Defaults: 5-minute sync interval, 100 requests/minute rate limit.
+Defaults: 5-minute sync interval, a 100-requests/minute rate limit, enforced as a sliding window.
 
 ## Provider request IDs
 

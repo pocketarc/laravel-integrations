@@ -6,13 +6,14 @@ Providers that implement `HasScheduledSync` get automated sync scheduling with h
 
 ```php
 use Integrations\Contracts\HasScheduledSync;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 
 interface HasScheduledSync
 {
     public function sync(Integration $integration, SyncSession $session): void;
-    public function defaultSyncInterval(): int;  // minutes
-    public function defaultRateLimit(): ?int;     // requests/minute, null = unlimited
+    public function defaultSyncInterval(): int;     // minutes
+    public function defaultRateLimit(): ?RateLimit; // null = unlimited
     public function reduceCheckpoints(array $checkpoints): mixed;
 }
 ```
@@ -40,6 +41,7 @@ The sync flow dispatches a `Bus::batch`, which needs Laravel's `job_batches` tab
 use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 
 class GitHubProvider implements IntegrationProvider, HasScheduledSync
@@ -71,9 +73,9 @@ class GitHubProvider implements IntegrationProvider, HasScheduledSync
         return 5; // every 5 minutes
     }
 
-    public function defaultRateLimit(): ?int
+    public function defaultRateLimit(): ?RateLimit
     {
-        return 83; // ~5000 requests/hour (GitHub authenticated)
+        return RateLimit::perHour(5000); // GitHub's authenticated budget
     }
 }
 ```
@@ -243,8 +245,9 @@ Its `metadata` also carries `success_count` and `failure_count` once the run rec
     'lock_ttl' => 1800,             // WithoutOverlapping lock TTL (must be >= job_timeout)
     'job_timeout' => 1800,          // SyncIntegration job timeout (30 min)
     'item_queue' => null,           // queue for ProcessSyncItem jobs (null = same as sync.queue)
-    'item_tries' => 5,              // retries per item before it's marked failed
+    'item_tries' => 5,              // genuine listener exceptions before an item is marked failed
     'item_backoff' => [10, 30, 120, 300, 900], // seconds between item retries
+    'item_retry_window' => 21600,   // absolute retry window per item, incl. rate-limit deferrals (6h)
     'max_items_per_batch' => 10000, // soft cap; a larger run logs a warning
 ],
 ```

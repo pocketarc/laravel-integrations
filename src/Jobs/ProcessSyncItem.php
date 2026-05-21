@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Jobs;
 
+use DateTimeInterface;
 use Illuminate\Bus\Batchable;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
@@ -11,6 +12,7 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Str;
 use Integrations\Events\SyncItemFailed;
+use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\Exceptions\SyncListenerMustNotBeQueuedException;
 use Integrations\Models\IntegrationSyncItem;
 use Integrations\Support\Config;
@@ -29,6 +31,11 @@ use Throwable;
  * is already the queued unit. If a queued listener is registered, the job
  * fails immediately with `SyncListenerMustNotBeQueuedException` rather than
  * letting the listener run detached and the run report false success.
+ *
+ * A `RateLimitExceededException` surfacing from a listener is treated as a
+ * transient deferral, not a failure: the job is released back to the queue
+ * with the limiter's retry-after delay and the item stays in flight. That
+ * relies on the listener not swallowing the exception.
  */
 class ProcessSyncItem implements ShouldQueue
 {
@@ -37,14 +44,14 @@ class ProcessSyncItem implements ShouldQueue
     use InteractsWithQueue;
     use Queueable;
 
-    public readonly int $tries;
+    public readonly int $maxExceptions;
 
     public function __construct(
         public readonly int $syncItemId,
         public readonly SyncItemEvent $event,
         public readonly int $syncLogId,
     ) {
-        $this->tries = Config::syncItemTries();
+        $this->maxExceptions = Config::syncItemTries();
     }
 
     /**
@@ -53,6 +60,18 @@ class ProcessSyncItem implements ShouldQueue
     public function backoff(): array
     {
         return Config::syncItemBackoff();
+    }
+
+    /**
+     * Absolute wall-clock deadline for this job. A non-null retryUntil()
+     * makes Laravel ignore the attempt-count ceiling, so rate-limit
+     * deferrals (release()) can re-queue freely without tripping it, while
+     * genuine listener exceptions stay bounded by maxExceptions. Frozen at
+     * first dispatch.
+     */
+    public function retryUntil(): DateTimeInterface
+    {
+        return now()->addSeconds(Config::syncItemRetryWindow());
     }
 
     public function handle(): void
@@ -84,7 +103,18 @@ class ProcessSyncItem implements ShouldQueue
         // Listeners run synchronously here (we verified none are queued). A
         // throw propagates out, so the queue retries the whole job, which
         // means listeners must be idempotent.
-        event($this->event);
+        try {
+            event($this->event);
+        } catch (RateLimitExceededException $e) {
+            // A rate limit is transient, not a failure: park the item and
+            // retry once the provider's window reopens. release() re-queues
+            // this job as a still-pending member of the batch, keeping the
+            // run in flight. It does not count against maxExceptions, so a
+            // throttled item is never marked failed just for waiting.
+            $this->release($e->retryAfterSeconds);
+
+            return;
+        }
 
         $item->update([
             'status' => IntegrationSyncItem::STATUS_SUCCESS,

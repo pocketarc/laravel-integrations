@@ -12,6 +12,7 @@ use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 
 class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasScheduledSync, IntegrationProvider
@@ -30,6 +31,13 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
         ['id' => 'item-1', 'checkpoint' => '2026-01-01T00:00:00+00:00'],
     ];
 
+    /**
+     * Rate limit the provider reports. Defaults (via the constructor) to a
+     * fixed 100-per-minute limit; tests bind a configured instance to set a
+     * different limit, or null for unlimited.
+     */
+    public ?RateLimit $rateLimit;
+
     public bool $healthCheckResult = true;
 
     public bool $webhookVerified = true;
@@ -39,6 +47,11 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
 
     /** @var array<string, mixed> */
     public array $refreshTokenResult = ['access_token' => 'refreshed-token', 'token_expires_at' => '2099-01-01T00:00:00Z'];
+
+    public function __construct()
+    {
+        $this->rateLimit = RateLimit::perMinute(100);
+    }
 
     public function name(): string
     {
@@ -72,9 +85,9 @@ class TestProvider implements HandlesWebhooks, HasHealthCheck, HasOAuth2, HasSch
         return 15;
     }
 
-    public function defaultRateLimit(): ?int
+    public function defaultRateLimit(): ?RateLimit
     {
-        return 100;
+        return $this->rateLimit;
     }
 
     public function healthCheck(Integration $integration): bool

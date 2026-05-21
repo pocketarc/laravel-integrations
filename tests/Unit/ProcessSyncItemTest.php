@@ -6,6 +6,7 @@ namespace Integrations\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
 use Integrations\Events\SyncItemFailed;
+use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\ProcessSyncItem;
 use Integrations\Models\Integration;
@@ -103,6 +104,50 @@ class ProcessSyncItemTest extends TestCase
 
         $this->assertFalse($closureRan);
         $this->assertSame(IntegrationSyncItem::STATUS_PENDING, $item->refresh()->status);
+    }
+
+    public function test_rate_limit_from_a_listener_defers_the_item_instead_of_failing_it(): void
+    {
+        $integration = $this->makeIntegration();
+
+        Event::listen(TestSyncItemEvent::class, function () use ($integration): never {
+            throw new RateLimitExceededException($integration, 90);
+        });
+
+        $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
+
+        // release() is a no-op outside a real queue context (like fail()), so
+        // handle() just returns. The point: the rate limit was caught and
+        // deferred rather than propagating to fail the item.
+        (new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId))->handle();
+
+        $item->refresh();
+        $this->assertSame(IntegrationSyncItem::STATUS_PROCESSING, $item->status);
+        $this->assertNull($item->completed_at);
+        $this->assertNull($item->error);
+    }
+
+    public function test_max_exceptions_matches_the_configured_item_tries(): void
+    {
+        config(['integrations.sync.item_tries' => 7]);
+
+        $integration = $this->makeIntegration();
+        $job = new ProcessSyncItem(1, new TestSyncItemEvent($integration, 'item-1'), $this->logId);
+
+        $this->assertSame(7, $job->maxExceptions);
+    }
+
+    public function test_retry_until_reflects_the_configured_retry_window(): void
+    {
+        config(['integrations.sync.item_retry_window' => 1800]);
+
+        $integration = $this->makeIntegration();
+        $before = now()->getTimestamp();
+        $retryUntil = (new ProcessSyncItem(1, new TestSyncItemEvent($integration, 'item-1'), $this->logId))->retryUntil();
+        $after = now()->getTimestamp();
+
+        $this->assertGreaterThanOrEqual($before + 1800, $retryUntil->getTimestamp());
+        $this->assertLessThanOrEqual($after + 1800, $retryUntil->getTimestamp());
     }
 
     private int $logId = 0;

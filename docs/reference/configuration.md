@@ -44,8 +44,9 @@ php artisan vendor:publish --tag=integrations-config
 | `sync.lock_ttl` | `int` | `1800` | `WithoutOverlapping` lock TTL in seconds (must be ≥ `job_timeout`) |
 | `sync.job_timeout` | `int` | `1800` | `SyncIntegration` job timeout in seconds (30 min). `integrations:sync` reads this on dispatch; direct callers can override via the constructor. |
 | `sync.item_queue` | `?string` | `null` | Queue for the per-item `ProcessSyncItem` jobs. `null` = same as `sync.queue`. |
-| `sync.item_tries` | `int` | `5` | Retries per item before it's marked `failed` and lands in `failed_jobs` |
+| `sync.item_tries` | `int` | `5` | Genuine listener exceptions before an item is marked `failed` and lands in `failed_jobs`. Transient rate-limit deferrals are not counted. |
 | `sync.item_backoff` | `array` | `[10, 30, 120, 300, 900]` | Seconds between item retries |
+| `sync.item_retry_window` | `int` | `21600` | Absolute seconds an item may keep retrying, including rate-limit deferrals (6h) |
 | `sync.max_items_per_batch` | `int` | `10000` | Soft cap; a run with more items still processes as one batch but logs a warning |
 
 ## Retry
@@ -58,7 +59,7 @@ php artisan vendor:publish --tag=integrations-config
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
-| `rate_limiting.max_wait_seconds` | `int` | `10` | Wait for capacity before throwing (0 = immediate) |
+| `rate_limiting.max_wait_seconds` | `int` | `10` | Max seconds to sleep waiting for capacity before throwing (0 = immediate). Applies independently to the suppression gate and the window bucket. |
 
 ## Circuit breaker
 
