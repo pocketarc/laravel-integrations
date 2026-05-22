@@ -127,6 +127,27 @@ class RateLimitingTest extends TestCase
         $this->assertSame(1, $this->bucket(self::WINDOW));
     }
 
+    public function test_sliding_window_retry_after_reflects_decay_not_the_window_boundary(): void
+    {
+        // Halfway (f = 0.5) through a 60s window: current bucket 2, previous
+        // bucket 8, so the sliding estimate is 2 + 8 * (1 - 0.5) = 6, over
+        // the limit of 5. It decays to 4 (one below the limit, where ceil()
+        // clears it) at f = 0.75, which is 15s away, well before the 30s
+        // left until the window boundary.
+        Carbon::setTestNow(Carbon::createFromTimestamp(self::WINDOW + 30));
+        $limiter = $this->limiterWith(RateLimit::per(5, 60)->sliding());
+
+        Cache::put($this->bucketKey(self::WINDOW), 2, 120);
+        Cache::put($this->bucketKey(self::WINDOW - 60), 8, 120);
+
+        try {
+            $limiter->enforce();
+            $this->fail('Expected RateLimitExceededException.');
+        } catch (RateLimitExceededException $e) {
+            $this->assertSame(15, $e->retryAfterSeconds);
+        }
+    }
+
     public function test_a_null_limit_never_throttles(): void
     {
         $limiter = $this->limiterWith(null);

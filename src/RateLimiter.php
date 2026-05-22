@@ -49,14 +49,15 @@ final class RateLimiter
                 return;
             }
 
-            $retryAfter = max(1, $windowStart + $limit->windowSeconds - $nowTs);
+            $retryAfter = $this->secondsUntilCapacity($limit, $windowStart, $nowTs);
 
             if ($retryAfter > $maxWait) {
                 throw new RateLimitExceededException($this->integration, $retryAfter, $limit);
             }
 
-            // Sleeping to the window boundary lands the next iteration in a
-            // fresh window, so the loop makes progress and cannot spin.
+            // Sleep until capacity is expected, then re-check. retryAfter is
+            // always at least 1, so the loop makes progress; a window that
+            // stays saturated pushes it past maxWait and throws.
             sleep($retryAfter);
         }
     }
@@ -174,6 +175,40 @@ final class RateLimiter
         $elapsed = ((int) $now->timestamp - $windowStart) + ((int) $now->format('u') / 1_000_000);
 
         return min(1.0, max(0.0, $elapsed / $windowSeconds));
+    }
+
+    /**
+     * Seconds until the window is expected to have capacity again. A fixed
+     * window only frees at its boundary; a sliding window frees gradually
+     * as the previous window's contribution decays, so it can reopen well
+     * before the boundary.
+     */
+    private function secondsUntilCapacity(RateLimit $limit, int $windowStart, int $nowTs): int
+    {
+        $untilBoundary = max(1, $windowStart + $limit->windowSeconds - $nowTs);
+
+        if ($limit->window === RateLimitWindow::Fixed) {
+            return $untilBoundary;
+        }
+
+        $current = $this->bucketCount($this->bucketKey($windowStart));
+        $previous = $this->bucketCount($this->bucketKey($windowStart - $limit->windowSeconds));
+
+        // The current window alone is already at the limit (it only frees
+        // once it ages past the boundary), or there is no previous window
+        // to decay: fall back to the boundary.
+        if ($current >= $limit->limit - 1 || $previous <= 0) {
+            return $untilBoundary;
+        }
+
+        // currentUsage() compares ceil(estimate) to the limit, so capacity
+        // opens once the estimate decays to limit - 1. Solve
+        // current + previous * (1 - f) = limit - 1 for the elapsed fraction
+        // f, then convert the fraction still to run into seconds.
+        $targetFraction = 1.0 - ($limit->limit - 1 - $current) / $previous;
+        $remaining = ($targetFraction - $this->elapsedFraction($windowStart, $limit->windowSeconds)) * $limit->windowSeconds;
+
+        return max(1, min($untilBoundary, (int) ceil($remaining)));
     }
 
     /**

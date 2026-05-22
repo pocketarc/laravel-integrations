@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Contracts\Queue\Job;
 use Illuminate\Support\Facades\Event;
 use Integrations\Events\SyncItemFailed;
 use Integrations\Exceptions\RateLimitExceededException;
@@ -116,10 +117,15 @@ class ProcessSyncItemTest extends TestCase
 
         $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
 
-        // release() is a no-op outside a real queue context (like fail()), so
-        // handle() just returns. The point: the rate limit was caught and
-        // deferred rather than propagating to fail the item.
-        (new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId))->handle();
+        // The job releases itself back onto the queue with the exception's
+        // retry-after delay (90s) instead of failing the item.
+        $queueJob = $this->createMock(Job::class);
+        $queueJob->method('attempts')->willReturn(1);
+        $queueJob->expects($this->once())->method('release')->with(90);
+
+        $job = new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId);
+        $job->setJob($queueJob);
+        $job->handle();
 
         $item->refresh();
         $this->assertSame(IntegrationSyncItem::STATUS_PROCESSING, $item->status);
