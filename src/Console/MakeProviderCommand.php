@@ -84,7 +84,7 @@ class MakeProviderCommand extends GeneratorCommand
 
         $map = [
             'oauth' => 'use Integrations\\Contracts\\HasOAuth2;',
-            'sync' => "use Integrations\\Contracts\\HasScheduledSync;\nuse Integrations\\Models\\Integration;\nuse Integrations\\Sync\\SyncSession;",
+            'sync' => "use Integrations\\Contracts\\HasScheduledSync;\nuse Integrations\\Models\\Integration;\nuse Integrations\\RateLimit;\nuse Integrations\\Sync\\SyncSession;",
             'webhooks' => "use Illuminate\\Http\\Request;\nuse Integrations\\Contracts\\HandlesWebhooks;\nuse Integrations\\Models\\Integration;",
             'health-check' => "use Integrations\\Contracts\\HasHealthCheck;\nuse Integrations\\Models\\Integration;",
         ];
@@ -167,8 +167,9 @@ class MakeProviderCommand extends GeneratorCommand
         return 60;
     }
 
-    public function defaultRateLimit(): ?int
+    public function defaultRateLimit(): ?RateLimit
     {
+        // e.g. RateLimit::perHour(5000), or RateLimit::perMinute(700)->sliding().
         return null;
     }
 

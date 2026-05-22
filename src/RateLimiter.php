@@ -7,12 +7,20 @@ namespace Integrations;
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
 use Integrations\Contracts\HasScheduledSync;
+use Integrations\Enums\RateLimitWindow;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\Models\Integration;
 use Integrations\Support\Config;
 
 final class RateLimiter
 {
+    /**
+     * Extra seconds added to a window bucket's cache TTL beyond the window
+     * width, so a request that reads the bucket just before the window edge
+     * and increments just after still lands on a live key.
+     */
+    private const BUCKET_TTL_BUFFER = 10;
+
     public function __construct(
         private readonly Integration $integration,
     ) {}
@@ -24,7 +32,7 @@ final class RateLimiter
         // Provider-fed suppression takes priority over the local bucket:
         // we already know we're over budget regardless of what the bucket
         // says. Wait it out (or throw) before checking the bucket.
-        $waited = $this->awaitSuppressionLift($maxWait);
+        $this->awaitSuppressionLift($maxWait);
 
         $limit = $this->resolveLimit();
         if ($limit === null) {
@@ -32,50 +40,53 @@ final class RateLimiter
         }
 
         while (true) {
-            $estimate = $this->estimateCurrentRate();
+            $nowTs = (int) now()->timestamp;
+            $windowStart = intdiv($nowTs, $limit->windowSeconds) * $limit->windowSeconds;
 
-            if ($estimate < $limit) {
-                Cache::increment($this->key(now()));
+            if ($this->currentUsage($limit, $windowStart) < $limit->limit) {
+                $this->recordRequest($limit, $windowStart);
 
                 return;
             }
 
-            if ($waited >= $maxWait) {
-                throw new RateLimitExceededException($this->integration, $estimate, $limit);
+            $retryAfter = $this->secondsUntilCapacity($limit, $windowStart, $nowTs);
+
+            if ($retryAfter > $maxWait) {
+                throw new RateLimitExceededException($this->integration, $retryAfter, $limit);
             }
 
-            sleep(1);
-            $waited++;
+            // Sleep until capacity is expected, then re-check. retryAfter is
+            // always at least 1, so the loop makes progress; a window that
+            // stays saturated pushes it past maxWait and throws.
+            sleep($retryAfter);
         }
     }
 
     /**
-     * Sleep until any provider-fed suppression has expired, or throw if we
-     * exceed the configured max wait. Returns the number of seconds spent
-     * waiting so the caller can carry it into the bucket-based wait loop.
+     * Sleep until any provider-fed suppression has expired, or throw if it
+     * would outlast the configured max wait.
+     *
+     * The suppression gate and the bucket gate in enforce() each get their
+     * own max-wait budget; they guard different conditions, so in the worst
+     * case a worker can sleep up to 2x max wait across both.
      */
-    private function awaitSuppressionLift(int $maxWait): int
+    private function awaitSuppressionLift(int $maxWait): void
     {
-        $waited = 0;
-
         while (($suppressedUntil = $this->suppressedUntil()) !== null) {
             $remaining = max(0, $suppressedUntil - (int) now()->timestamp);
 
             if ($remaining === 0) {
                 Cache::forget($this->suppressKey());
 
-                return $waited;
+                return;
             }
 
-            if ($waited >= $maxWait) {
-                throw new RateLimitExceededException($this->integration, $remaining, 0);
+            if ($remaining > $maxWait) {
+                throw new RateLimitExceededException($this->integration, $remaining);
             }
 
-            sleep(1);
-            $waited++;
+            sleep($remaining);
         }
-
-        return $waited;
     }
 
     /**
@@ -123,34 +134,112 @@ final class RateLimiter
         return Config::cachePrefix().':rate:suppress:'.$this->integration->id;
     }
 
-    private function resolveLimit(): ?int
+    private function resolveLimit(): ?RateLimit
     {
         $provider = $this->integration->provider();
 
         return $provider instanceof HasScheduledSync ? $provider->defaultRateLimit() : null;
     }
 
-    private function estimateCurrentRate(): int
+    /**
+     * Estimated request count in the current window. A fixed window counts
+     * the current bucket alone; a sliding window weights the previous
+     * bucket by the fraction of the current window still ahead (the
+     * standard sliding-window counter).
+     */
+    private function currentUsage(RateLimit $limit, int $windowStart): int
     {
-        $now = now();
-        $currentKey = $this->key($now);
-        $previousKey = $this->key($now->copy()->subMinute());
+        $current = $this->bucketCount($this->bucketKey($windowStart));
 
-        $elapsedFraction = ((int) $now->format('s') + (int) $now->format('u') / 1_000_000) / 60.0;
-
-        Cache::add($currentKey, 0, 120);
-        Cache::add($previousKey, 0, 120);
-
-        $rawCurrent = Cache::get($currentKey, 0);
-        $rawPrevious = Cache::get($previousKey, 0);
-        $currentCount = is_numeric($rawCurrent) ? (int) $rawCurrent : 0;
-        $previousCount = is_numeric($rawPrevious) ? (int) $rawPrevious : 0;
-
-        return (int) ceil($currentCount + $previousCount * (1.0 - $elapsedFraction));
+        return match ($limit->window) {
+            RateLimitWindow::Fixed => $current,
+            RateLimitWindow::Sliding => $this->slidingEstimate($current, $windowStart, $limit->windowSeconds),
+        };
     }
 
-    private function key(CarbonInterface $time): string
+    private function slidingEstimate(int $current, int $windowStart, int $windowSeconds): int
     {
-        return Config::cachePrefix().':rate:'.$this->integration->id.':'.$time->format('Y-m-d-H-i');
+        $previous = $this->bucketCount($this->bucketKey($windowStart - $windowSeconds));
+        $elapsedFraction = $this->elapsedFraction($windowStart, $windowSeconds);
+
+        return (int) ceil($current + $previous * (1.0 - $elapsedFraction));
+    }
+
+    /**
+     * Fraction of the current window that has elapsed, from 0.0 to 1.0,
+     * with sub-second precision so the sliding estimate decays smoothly.
+     */
+    private function elapsedFraction(int $windowStart, int $windowSeconds): float
+    {
+        $now = now();
+        $elapsed = ((int) $now->timestamp - $windowStart) + ((int) $now->format('u') / 1_000_000);
+
+        return min(1.0, max(0.0, $elapsed / $windowSeconds));
+    }
+
+    /**
+     * Seconds until the window is expected to have capacity again. A fixed
+     * window only frees at its boundary; a sliding window frees gradually
+     * as the previous window's contribution decays, so it can reopen well
+     * before the boundary.
+     */
+    private function secondsUntilCapacity(RateLimit $limit, int $windowStart, int $nowTs): int
+    {
+        $untilBoundary = max(1, $windowStart + $limit->windowSeconds - $nowTs);
+
+        if ($limit->window === RateLimitWindow::Fixed) {
+            return $untilBoundary;
+        }
+
+        $current = $this->bucketCount($this->bucketKey($windowStart));
+        $previous = $this->bucketCount($this->bucketKey($windowStart - $limit->windowSeconds));
+
+        // The current window alone is already at the limit (it only frees
+        // once it ages past the boundary), or there is no previous window
+        // to decay: fall back to the boundary.
+        if ($current >= $limit->limit - 1 || $previous <= 0) {
+            return $untilBoundary;
+        }
+
+        // currentUsage() compares ceil(estimate) to the limit, so capacity
+        // opens once the estimate decays to limit - 1. Solve
+        // current + previous * (1 - f) = limit - 1 for the elapsed fraction
+        // f, then convert the fraction still to run into seconds.
+        $targetFraction = 1.0 - ($limit->limit - 1 - $current) / $previous;
+        $remaining = ($targetFraction - $this->elapsedFraction($windowStart, $limit->windowSeconds)) * $limit->windowSeconds;
+
+        return max(1, min($untilBoundary, (int) ceil($remaining)));
+    }
+
+    /**
+     * Count this request against the current window bucket.
+     *
+     * Cache::add seeds the key only when it is absent: the database cache
+     * store's increment() is a no-op on a missing key, and add() pins the
+     * TTL to the window the key belongs to rather than sliding it on every
+     * hit. The read in currentUsage() and the increment here are not a
+     * single atomic operation, so concurrent workers can overshoot the
+     * limit by up to (workers - 1). That is the predictive bucket's
+     * accepted imprecision, with the provider-fed suppression path as the
+     * exact backstop.
+     */
+    private function recordRequest(RateLimit $limit, int $windowStart): void
+    {
+        $key = $this->bucketKey($windowStart);
+
+        Cache::add($key, 0, $limit->windowSeconds + self::BUCKET_TTL_BUFFER);
+        Cache::increment($key);
+    }
+
+    private function bucketCount(string $key): int
+    {
+        $raw = Cache::get($key, 0);
+
+        return is_numeric($raw) ? (int) $raw : 0;
+    }
+
+    private function bucketKey(int $windowStart): string
+    {
+        return Config::cachePrefix().':rate:'.$this->integration->id.':'.$windowStart;
     }
 }

@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Contracts;
 
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 
 interface HasScheduledSync
@@ -26,9 +27,14 @@ interface HasScheduledSync
     public function defaultSyncInterval(): int;
 
     /**
-     * Maximum API requests per minute for this provider, or null for unlimited.
+     * The API rate budget for this provider, or null for unlimited.
+     *
+     * The window is part of the limit. Build one with the named
+     * constructors: `RateLimit::perHour(5000)` for a fixed hourly budget,
+     * or `RateLimit::perMinute(700)->sliding()` for an upstream that
+     * enforces a rolling per-minute limit.
      */
-    public function defaultRateLimit(): ?int;
+    public function defaultRateLimit(): ?RateLimit;
 
     /**
      * Reduce the checkpoint values of a sync run's completed items into the

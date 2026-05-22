@@ -2,6 +2,16 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 4.0.0
+
+Rate limits are now window-aware, and a rate-limited sync item is deferred rather than failed. The GitHub adapter had declared `60` (GitHub's unauthenticated, per-hour figure) in a field the framework read as requests per minute, and when the limiter gave up waiting it threw an exception that failed the `ProcessSyncItem` job and wedged the sync. See the [upgrade guide](/about/upgrade-guide) for the migration.
+
+- Breaking: [`HasScheduledSync::defaultRateLimit()`](/reference/contracts#hasscheduledsync) returns `?Integrations\RateLimit` instead of `?int`. A [`RateLimit`](/core-concepts/rate-limiting) carries the request count, the window in seconds, and a fixed/sliding strategy. Build one with `RateLimit::perHour(5000)`, `RateLimit::perMinute(700)`, `RateLimit::perDay(...)`, or `RateLimit::per($limit, $seconds)`; append `->sliding()` for an upstream that enforces a rolling window. `null` still means unlimited.
+- Breaking: `RateLimitExceededException`'s constructor changed. It now carries `retryAfterSeconds` (when capacity is next expected) and an optional `RateLimit`, replacing the old `requestsThisMinute` / `limit` pair.
+- The [`RateLimiter`](/core-concepts/rate-limiting#fixed-vs-sliding-windows) enforces a fixed window by default, so a provider may spend its whole budget in a burst, the way a quota like GitHub's hourly limit behaves. Declare the limit `->sliding()` for a rolling window instead. The previous implementation always approximated a sliding minute.
+- Inside a sync, hitting the rate limit now [defers the item](/core-concepts/rate-limiting#rate-limits-and-syncs): `ProcessSyncItem` catches `RateLimitExceededException` and releases the job with the limiter's retry-after delay, so the run stays in flight. Previously the exception failed the item and stalled the cursor.
+- [`sync.item_tries`](/reference/configuration#sync) now bounds genuine listener exceptions only; transient rate-limit deferrals no longer count against it. New `sync.item_retry_window` config (default 6h) is the absolute bound on how long an item may keep deferring.
+
 ## 3.0.0
 
 Sync now tracks per-item completion. Cursor advancement waits for the items' listeners to finish, instead of moving on as soon as the events were dispatched. This closes a silent-data-loss gap: previously a queued listener that exhausted its retries left the item in `failed_jobs` while the cursor had already advanced past it, and once the item fell outside the overlap window it was never re-fetched. See the [upgrade guide](/about/upgrade-guide) for the migration.

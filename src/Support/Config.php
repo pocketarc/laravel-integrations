@@ -160,6 +160,16 @@ final class Config
     }
 
     /**
+     * Absolute wall-clock window (seconds) a ProcessSyncItem may keep
+     * retrying, including transient rate-limit deferrals, before the queue
+     * gives up on it.
+     */
+    public static function syncItemRetryWindow(): int
+    {
+        return self::boundedInt(config('integrations.sync.item_retry_window', 21_600), 21_600, 1);
+    }
+
+    /**
      * Soft cap on the number of items in one sync run. A run with more items
      * is still processed as a single batch, but SyncIntegration logs a warning.
      */

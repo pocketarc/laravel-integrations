@@ -34,7 +34,7 @@ interface HasScheduledSync
 {
     public function sync(Integration $integration, SyncSession $session): void;
     public function defaultSyncInterval(): int;
-    public function defaultRateLimit(): ?int;
+    public function defaultRateLimit(): ?RateLimit;
     public function reduceCheckpoints(array $checkpoints): mixed;
 }
 ```
@@ -43,7 +43,7 @@ interface HasScheduledSync
 |--------|---------|-------------|
 | `sync()` | `void` | Enumerate items and hand each to `$session->dispatch()` |
 | `defaultSyncInterval()` | `int` | Default interval in minutes |
-| `defaultRateLimit()` | `?int` | Requests per minute, null = unlimited |
+| `defaultRateLimit()` | `?RateLimit` | API rate budget, e.g. `RateLimit::perHour(5000)` (fixed window) or `RateLimit::perMinute(700)->sliding()`. null = unlimited |
 | `reduceCheckpoints()` | `mixed` | Reduce a run's completed checkpoint values into the next `sync_cursor` |
 
 `sync()` doesn't process items or return a result. It hands each item to `$session->dispatch($event, $checkpointValue, $externalId)`, and the framework wraps each one in a queued `ProcessSyncItem` job, batches them, runs the listeners, and advances the cursor once every job has succeeded. See [Scheduled syncs](/features/scheduled-syncs).

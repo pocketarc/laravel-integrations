@@ -8,6 +8,7 @@ use Integrations\Concerns\ReducesCheckpointsByMax;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Models\Integration;
+use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 use LogicException;
 
@@ -82,7 +83,7 @@ class IncrementalProvider implements HasIncrementalSync, IntegrationProvider
         return 15;
     }
 
-    public function defaultRateLimit(): ?int
+    public function defaultRateLimit(): ?RateLimit
     {
         return null;
     }
