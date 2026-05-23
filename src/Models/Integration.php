@@ -28,6 +28,7 @@ use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
+use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
 use Integrations\RequestContext;
@@ -35,8 +36,10 @@ use Integrations\RequestExecutor;
 use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
+use JsonException;
 use Spatie\LaravelData\Data;
 
+use function Safe\json_decode;
 use function Safe\json_encode;
 
 /**
@@ -137,6 +140,49 @@ class Integration extends Model
     public function requests(): HasMany
     {
         return $this->hasMany(IntegrationRequest::class);
+    }
+
+    /**
+     * Replay the response body of the prior, successful keyed call for the
+     * supplied idempotency key. Returns `null` when nothing recoverable is
+     * on file — no row, the row was logged before the call landed, the row
+     * is from a failed attempt, or the persisted JSON is unparseable.
+     *
+     * Intended for the {@see IdempotencyConflict}
+     * recovery path documented in `docs/core-concepts/idempotency.md`
+     * § "Partial failure": when a prior attempt succeeded upstream but
+     * threw before the local follow-up write completed, the next attempt
+     * trips the conflict and the caller needs the original response to
+     * finish the local bookkeeping. The same array is also attached to
+     * the thrown {@see IdempotencyConflict} via
+     * `$e->priorResponse`, so most callers don't need to invoke this
+     * method directly.
+     *
+     * The returned value is the parsed response array — not a Data object
+     * — because hydrating into a domain DTO is the caller's choice (the
+     * package doesn't know which class the response should land in).
+     *
+     * @return array<array-key, mixed>|null
+     */
+    public function getIdempotencyResponse(string $key): ?array
+    {
+        $prior = $this->requests()
+            ->where('idempotency_key', $key)
+            ->where('response_success', true)
+            ->latest('id')
+            ->first();
+
+        if ($prior === null || $prior->response_data === null) {
+            return null;
+        }
+
+        try {
+            $decoded = json_decode($prior->response_data, true, 512, JSON_THROW_ON_ERROR);
+        } catch (JsonException) {
+            return null;
+        }
+
+        return is_array($decoded) ? $decoded : null;
     }
 
     /** @return HasMany<IntegrationLog, $this> */

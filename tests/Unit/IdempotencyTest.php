@@ -400,6 +400,179 @@ class IdempotencyTest extends TestCase
 
         $this->assertSame('order-7', $captured);
     }
+
+    public function test_get_idempotency_response_returns_null_when_no_row_exists_for_key(): void
+    {
+        $this->assertNull($this->integration->getIdempotencyResponse('never-used'));
+    }
+
+    public function test_get_idempotency_response_returns_decoded_array_for_a_completed_keyed_call(): void
+    {
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey('recover-me:1')
+            ->post(fn (): array => ['ok' => true, 'id' => 42]);
+
+        $prior = $this->integration->getIdempotencyResponse('recover-me:1');
+
+        $this->assertSame(['ok' => true, 'id' => 42], $prior);
+    }
+
+    public function test_get_idempotency_response_ignores_failed_requests(): void
+    {
+        // A failed POST writes an integration_requests row but with
+        // response_success=false. The helper should skip these and behave
+        // as if no recoverable prior exists.
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'half-baked:1',
+            'response_code' => 500,
+            'response_data' => '{"error":"upstream blew up"}',
+            'response_success' => false,
+            'duration_ms' => 12,
+        ]);
+
+        $this->assertNull($this->integration->getIdempotencyResponse('half-baked:1'));
+    }
+
+    public function test_get_idempotency_response_returns_null_when_response_data_is_null(): void
+    {
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'no-body:1',
+            'response_code' => 204,
+            'response_data' => null,
+            'response_success' => true,
+            'duration_ms' => 12,
+        ]);
+
+        $this->assertNull($this->integration->getIdempotencyResponse('no-body:1'));
+    }
+
+    public function test_get_idempotency_response_returns_null_for_unparseable_json(): void
+    {
+        // A row with garbage in response_data (legacy schema, truncated
+        // write, manual edit, whatever). The helper should not throw —
+        // just hand back null so the caller can surface a corrupt-payload
+        // failure on its own terms.
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'corrupt:1',
+            'response_code' => 200,
+            'response_data' => '{not valid json',
+            'response_success' => true,
+            'duration_ms' => 12,
+        ]);
+
+        $this->assertNull($this->integration->getIdempotencyResponse('corrupt:1'));
+    }
+
+    public function test_get_idempotency_response_returns_null_when_response_decodes_to_a_scalar(): void
+    {
+        // Edge case: a closure returned a primitive (e.g. a string) which
+        // normalises into response_data as a JSON string literal. Not an
+        // array, so not recoverable as a structured response.
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'scalar:1',
+            'response_code' => 200,
+            'response_data' => '"just a string"',
+            'response_success' => true,
+            'duration_ms' => 12,
+        ]);
+
+        $this->assertNull($this->integration->getIdempotencyResponse('scalar:1'));
+    }
+
+    public function test_get_idempotency_response_returns_the_latest_when_multiple_rows_exist(): void
+    {
+        // Defensive: there should normally only be one successful row per
+        // key, but if (e.g.) operator intervention leaves earlier rows
+        // around, recovery should use the most recent.
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'dupes:1',
+            'response_code' => 200,
+            'response_data' => '{"version":"older"}',
+            'response_success' => true,
+            'duration_ms' => 12,
+        ]);
+        IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'dupes:1',
+            'response_code' => 200,
+            'response_data' => '{"version":"newer"}',
+            'response_success' => true,
+            'duration_ms' => 12,
+        ]);
+
+        $this->assertSame(['version' => 'newer'], $this->integration->getIdempotencyResponse('dupes:1'));
+    }
+
+    public function test_get_idempotency_response_is_scoped_to_the_integration(): void
+    {
+        $other = Integration::create(['provider' => 'test', 'name' => 'Other']);
+        $other->refresh();
+
+        $other->at('/api/charge')
+            ->withIdempotencyKey('shared:1')
+            ->post(fn (): array => ['ok' => true, 'side' => 'other']);
+
+        // The other integration's row must not leak through this integration's helper.
+        $this->assertNull($this->integration->getIdempotencyResponse('shared:1'));
+        $this->assertSame(['ok' => true, 'side' => 'other'], $other->getIdempotencyResponse('shared:1'));
+    }
+
+    public function test_conflict_carries_prior_response_when_a_successful_keyed_call_already_exists(): void
+    {
+        // First, complete a keyed call. The closure's return becomes the
+        // response_data the helper will replay on the conflict path.
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey('replayable:1')
+            ->post(fn (): array => ['ok' => true, 'order_id' => 4242]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('replayable:1')
+                ->post(fn (): array => ['ok' => true, 'attempt' => 2]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertSame(['ok' => true, 'order_id' => 4242], $e->priorResponse);
+        }
+    }
+
+    public function test_conflict_prior_response_is_null_when_only_the_idempotency_row_exists(): void
+    {
+        // Edge case: someone (a test, an operator, a race) wrote a row
+        // directly into integration_idempotency_keys without ever
+        // completing a request. There's nothing to recover from, so
+        // priorResponse should be null and the caller knows to surface
+        // a "stuck key" failure instead of replaying a phantom response.
+        IntegrationIdempotencyKey::query()->create([
+            'integration_id' => $this->integration->id,
+            'key' => 'stuck:1',
+        ]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('stuck:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+        }
+    }
 }
 
 /**
