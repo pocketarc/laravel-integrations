@@ -72,7 +72,7 @@ All methods go through `Integration::request()` internally, so every API call is
 
 ### Idempotency
 
-Every money-moving POST accepts an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"charge:order-{$order->id}"`) when you need at-most-once execution. The package writes a row in `integration_idempotency_keys` before the SDK call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key, and forwards the key as Stripe's `Idempotency-Key` header so Stripe also dedupes upstream within its 24-hour window.
+Every money-moving POST accepts an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"charge:order-{$order->id}"`) when you need at-most-once execution. The package writes a row in `integration_idempotency_keys` before the SDK call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key (carrying the prior response on `$e->priorResponse` for [recovery](/core-concepts/idempotency#recovering-on-conflict)), and forwards the key as Stripe's `Idempotency-Key` header so Stripe also dedupes upstream within its 24-hour window.
 
 Pass `null` (the default) to skip idempotency entirely. Cross-process retries from queue replays will then re-execute. See [Idempotency](/core-concepts/idempotency) for the full semantics.
 

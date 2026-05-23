@@ -98,7 +98,7 @@ Let exceptions escape. The release path inside the executor rethrows the origina
 
 ## Recovering on conflict
 
-`IdempotencyConflict` carries `$e->priorResponse` — the decoded JSON body of the prior successful call for that key, looked up automatically when the conflict fires. The recovery flow is therefore catch-and-replay rather than catch-and-refetch:
+`IdempotencyConflict` carries `$e->priorResponse`, the decoded JSON body of the prior successful call for that key, looked up automatically when the conflict fires. The recovery flow is therefore catch-and-replay rather than catch-and-refetch:
 
 ```php
 try {
@@ -114,7 +114,7 @@ try {
         // pruned, or the row in integration_idempotency_keys was
         // inserted without a corresponding integration_requests row
         // (test setup, operator intervention, race before the call
-        // landed). Nothing to replay — surface the stuck key.
+        // landed). Nothing to replay; surface the stuck key.
         throw new RuntimeException("No recoverable prior for key '{$e->key}'.", previous: $e);
     }
 
@@ -128,10 +128,10 @@ $githubTicket = $integration->upsertByExternalId(...);
 
 A few things worth knowing:
 
-- **`priorResponse` is the raw decoded JSON, not a Data object.** Hydrating into your DTO is the caller's choice; the exception stays provider-agnostic. If `from()` throws, that's a corrupt-prior failure mode distinct from "no prior on file" — catch it and surface accordingly.
+- **`priorResponse` is the raw decoded JSON, not a Data object.** Hydrating into your DTO is the caller's choice; the exception stays provider-agnostic. If `from()` throws, that's a corrupt-prior failure mode distinct from "no prior on file"; catch it and surface accordingly.
 - **`priorResponse` is `null` when there's nothing recoverable on file.** Four cases produce this: no `integration_requests` row for the key, the row exists but the response was logged as failed, the row's `response_data` is null, or `response_data` is unparseable JSON. The catch block should always check `=== null` before hydrating.
 - **The lookup runs on the conflict path only**, not on every keyed write. The cost is one extra DB query, paid only when a conflict actually fires.
-- **Redaction interacts with this.** If your provider implements `RedactsRequestData` and strips fields from `response_data` before persist, `priorResponse` will be the redacted version — which can break hydration or silently produce wrong-shaped DTOs downstream. Don't redact response fields you'd need to recover from; if a field is sensitive *and* needed for recovery, treat the keyed call as un-recoverable and re-fetch from upstream instead.
+- **Redaction interacts with this.** If your provider implements `RedactsRequestData` and strips fields from `response_data` before persist, `priorResponse` will be the redacted version, which can break hydration or silently produce wrong-shaped DTOs downstream. Don't redact response fields you'd need to recover from; if a field is sensitive *and* needed for recovery, treat the keyed call as un-recoverable and re-fetch from upstream instead.
 - **You can also call `$integration->getIdempotencyResponse($key)` directly**, e.g. to probe ahead of issuing the write or to recover outside the catch flow. The exception attribute is the convenience layer over this method.
 
 ## Provider support: header-on-the-wire backstop

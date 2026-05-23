@@ -145,7 +145,7 @@ class Integration extends Model
     /**
      * Replay the response body of the prior, successful keyed call for the
      * supplied idempotency key. Returns `null` when nothing recoverable is
-     * on file — no row, the row was logged before the call landed, the row
+     * on file: no row, the row was logged before the call landed, the row
      * is from a failed attempt, or the persisted JSON is unparseable.
      *
      * Intended for the {@see IdempotencyConflict}
@@ -158,8 +158,8 @@ class Integration extends Model
      * `$e->priorResponse`, so most callers don't need to invoke this
      * method directly.
      *
-     * The returned value is the parsed response array — not a Data object
-     * — because hydrating into a domain DTO is the caller's choice (the
+     * The returned value is the parsed response array, not a Data object,
+     * because hydrating into a domain DTO is the caller's choice (the
      * package doesn't know which class the response should land in).
      *
      * @return array<array-key, mixed>|null

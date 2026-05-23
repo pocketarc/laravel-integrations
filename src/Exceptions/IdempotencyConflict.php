@@ -27,7 +27,7 @@ use RuntimeException;
  * (the row was inserted directly, the original call hadn't landed
  * yet, the response was logged as failed, or the persisted JSON is
  * unparseable). Hydrating the array into a domain DTO is the
- * caller's choice — the exception stays provider-agnostic.
+ * caller's choice; the exception stays provider-agnostic.
  */
 class IdempotencyConflict extends RuntimeException
 {
