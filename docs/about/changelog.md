@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 4.1.0
+
+- [`IdempotencyConflict`](/core-concepts/idempotency#recovering-on-conflict) now carries `$e->priorResponse`, the decoded JSON body of the prior successful keyed call for the same key. The catch block can replay it directly instead of re-fetching from upstream or querying `integration_requests` by hand. `null` when nothing recoverable is on file (no prior request row, the prior was logged as failed, `response_data` is null, or the persisted JSON is unparseable). The lookup runs only on the conflict path, with no overhead on the success path. The new constructor argument is added after `$previous`, so existing positional callers (`new IdempotencyConflict($id, $key, $e)`) keep working unchanged.
+- New [`Integration::getIdempotencyResponse(string $key): ?array`](/core-concepts/idempotency#recovering-on-conflict) method that backs the exception attribute. Useful when you want to probe for a prior response outside the catch flow, or recover from a key the exception isn't carrying for you. Returns the same shape (`null` when no recoverable prior is on file, the decoded response array otherwise) and scopes to the integration it's called on.
+
 ## 4.0.0
 
 Rate limits are now window-aware, and a rate-limited sync item is deferred rather than failed. The GitHub adapter had declared `60` (GitHub's unauthenticated, per-hour figure) in a field the framework read as requests per minute, and when the limiter gave up waiting it threw an exception that failed the `ProcessSyncItem` job and wedged the sync. See the [upgrade guide](/about/upgrade-guide) for the migration.
