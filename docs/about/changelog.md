@@ -2,6 +2,11 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 4.2.0
+
+- [`IdempotencyConflict`](/core-concepts/idempotency#recovering-on-conflict) now carries `$e->priorState` (an [`IdempotencyPriorState`](/core-concepts/idempotency#recovering-on-conflict) case: `NoRow`, `EmptyBody`, `Unparseable`, or `Recovered`) and `$e->priorRowId` alongside the existing `$e->priorResponse`. Catch blocks can now distinguish "no prior request on file" from "row exists but empty body" from "row exists but corrupt JSON", three failure modes that 4.1 collapsed into "priorResponse is null". Backward compatible: the new constructor arguments are added after `$priorResponse` with safe defaults, so existing positional callers keep working unchanged.
+- New [`Integration::getIdempotencyRecovery(string $key): IdempotencyRecovery`](/core-concepts/idempotency#recovering-on-conflict) method that returns the same `(priorState, priorRowId, priorResponse)` shape attached to the exception. `getIdempotencyResponse()` from 4.1 becomes a thin wrapper that returns just the decoded array for callers that don't care about the state distinction.
+
 ## 4.1.0
 
 - [`IdempotencyConflict`](/core-concepts/idempotency#recovering-on-conflict) now carries `$e->priorResponse`, the decoded JSON body of the prior successful keyed call for the same key. The catch block can replay it directly instead of re-fetching from upstream or querying `integration_requests` by hand. `null` when nothing recoverable is on file (no prior request row, the prior was logged as failed, `response_data` is null, or the persisted JSON is unparseable). The lookup runs only on the conflict path, with no overhead on the success path. The new constructor argument is added after `$previous`, so existing positional callers (`new IdempotencyConflict($id, $key, $e)`) keep working unchanged.

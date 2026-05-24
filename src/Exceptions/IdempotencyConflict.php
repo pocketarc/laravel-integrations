@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Exceptions;
 
+use Integrations\Enums\IdempotencyPriorState;
 use Integrations\Models\Integration;
 use RuntimeException;
 
@@ -19,15 +20,20 @@ use RuntimeException;
  * The conflicting key is also exposed on `$this->key` for callers
  * that prefer typed access over parsing the exception message.
  *
- * `$this->priorResponse` carries the decoded JSON response body of
- * the previous successful keyed call (looked up via
- * {@see Integration::getIdempotencyResponse()})
- * so the catch block can recover the original result without an
- * extra DB query. It is `null` when no recoverable prior is on file
- * (the row was inserted directly, the original call hadn't landed
- * yet, the response was logged as failed, or the persisted JSON is
- * unparseable). Hydrating the array into a domain DTO is the
- * caller's choice; the exception stays provider-agnostic.
+ * `$this->priorState` is one of the {@see IdempotencyPriorState} cases
+ * (`NoRow`, `EmptyBody`, `Unparseable`, or `Recovered`) telling the
+ * catch block what shape the prior attempt left things in, so an
+ * operator-facing message can match the actual condition instead of
+ * collapsing four causes into one. `$this->priorRowId` carries the
+ * `integration_requests.id` of the prior row when one exists (every
+ * state except `NoRow`), useful for cross-referencing logs.
+ *
+ * `$this->priorResponse` carries the decoded JSON response body when
+ * `priorState === Recovered`; null in every other state. Hydrating the
+ * array into a domain DTO is the caller's choice; the exception stays
+ * provider-agnostic. See {@see Integration::getIdempotencyRecovery()}
+ * for the underlying lookup and `docs/core-concepts/idempotency.md`
+ * § "Recovering on conflict" for usage patterns.
  */
 class IdempotencyConflict extends RuntimeException
 {
@@ -39,6 +45,8 @@ class IdempotencyConflict extends RuntimeException
         public readonly string $key,
         ?\Throwable $previous = null,
         public readonly ?array $priorResponse = null,
+        public readonly IdempotencyPriorState $priorState = IdempotencyPriorState::NoRow,
+        public readonly ?int $priorRowId = null,
     ) {
         parent::__construct(
             "Idempotency key already in use for integration {$integrationId} and key '{$key}'.",

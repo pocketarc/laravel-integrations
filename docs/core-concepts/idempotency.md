@@ -44,7 +44,7 @@ Calling `withIdempotencyKey(null)` is a no-op (no key, no row, no header). Empty
 | First call with this key                            | Row INSERTed in `integration_idempotency_keys`. Closure runs. Result returned. |
 | Closure returns                                     | Row stays. Future calls with the same key throw `IdempotencyConflict`.    |
 | Closure throws                                      | Original exception always rethrown. Row release is best-effort: skipped if the closure leaves an open DB transaction, or if the DELETE itself fails (the row then blocks future attempts until removed manually or by `integrations:prune`). |
-| Conflict (row already exists)                       | `IdempotencyConflict` thrown with `$e->priorResponse` set to the prior successful response (or `null` if nothing recoverable is on file). Closure never runs. |
+| Conflict (row already exists)                       | `IdempotencyConflict` thrown with `$e->priorState`, `$e->priorRowId`, and `$e->priorResponse` populated from the prior attempt. Closure never runs. See [Recovering on conflict](#recovering-on-conflict). |
 | Empty key                                           | `InvalidArgumentException` thrown.                                        |
 | Key longer than 191 characters                      | `InvalidArgumentException` thrown.                                        |
 | Called inside `DB::transaction()`                   | `RuntimeException` thrown immediately. See below.                         |
@@ -98,7 +98,13 @@ Let exceptions escape. The release path inside the executor rethrows the origina
 
 ## Recovering on conflict
 
-`IdempotencyConflict` carries `$e->priorResponse`, the decoded JSON body of the prior successful call for that key, looked up automatically when the conflict fires. The recovery flow is therefore catch-and-replay rather than catch-and-refetch:
+`IdempotencyConflict` carries three properties populated automatically when the conflict fires:
+
+- `$e->priorState` — one of `IdempotencyPriorState::NoRow`, `EmptyBody`, `Unparseable`, or `Recovered`. Tells the catch block what shape the prior attempt left things in.
+- `$e->priorRowId` — the `integration_requests.id` of the prior row (null only for `NoRow`). Useful for cross-referencing logs.
+- `$e->priorResponse` — the decoded JSON body when `priorState === Recovered`; null in every other state.
+
+Dispatch on the state so each branch surfaces the right operator message:
 
 ```php
 try {
@@ -109,16 +115,21 @@ try {
             ->post(fn () => $github->issues()->create($owner, $repo, $params)),
     );
 } catch (IdempotencyConflict $e) {
-    if ($e->priorResponse === null) {
-        // Either the prior call was logged as failed, or its row was
-        // pruned, or the row in integration_idempotency_keys was
-        // inserted without a corresponding integration_requests row
-        // (test setup, operator intervention, race before the call
-        // landed). Nothing to replay; surface the stuck key.
-        throw new RuntimeException("No recoverable prior for key '{$e->key}'.", previous: $e);
-    }
-
-    $issueData = GitHubIssueData::from($e->priorResponse);
+    $issueData = match ($e->priorState) {
+        IdempotencyPriorState::Recovered => GitHubIssueData::from($e->priorResponse),
+        IdempotencyPriorState::NoRow => throw new RuntimeException(
+            "No prior integration_requests row for key '{$e->key}' (the idempotency-key row may need manual removal).",
+            previous: $e,
+        ),
+        IdempotencyPriorState::EmptyBody => throw new RuntimeException(
+            "Prior integration_requests row #{$e->priorRowId} for key '{$e->key}' has an empty response body, leaving nothing to hydrate.",
+            previous: $e,
+        ),
+        IdempotencyPriorState::Unparseable => throw new RuntimeException(
+            "Prior integration_requests row #{$e->priorRowId} for key '{$e->key}' is corrupt or schema-incompatible.",
+            previous: $e,
+        ),
+    };
 }
 
 // Continue with the local follow-up write (the one that threw last
@@ -128,11 +139,11 @@ $githubTicket = $integration->upsertByExternalId(...);
 
 A few things worth knowing:
 
-- **`priorResponse` is the raw decoded JSON, not a Data object.** Hydrating into your DTO is the caller's choice; the exception stays provider-agnostic. If `from()` throws, that's a corrupt-prior failure mode distinct from "no prior on file"; catch it and surface accordingly.
-- **`priorResponse` is `null` when there's nothing recoverable on file.** Four cases produce this: no `integration_requests` row for the key, the row exists but the response was logged as failed, the row's `response_data` is null, or `response_data` is unparseable JSON. The catch block should always check `=== null` before hydrating.
-- **The lookup runs on the conflict path only**, not on every keyed write. The cost is one extra DB query, paid only when a conflict actually fires.
-- **Redaction interacts with this.** If your provider implements `RedactsRequestData` and strips fields from `response_data` before persist, `priorResponse` will be the redacted version, which can break hydration or silently produce wrong-shaped DTOs downstream. Don't redact response fields you'd need to recover from; if a field is sensitive *and* needed for recovery, treat the keyed call as un-recoverable and re-fetch from upstream instead.
-- **You can also call `$integration->getIdempotencyResponse($key)` directly**, e.g. to probe ahead of issuing the write or to recover outside the catch flow. The exception attribute is the convenience layer over this method.
+- The four states are distinct failure modes for an operator. `NoRow` means a key was reserved but no API request ever followed (test fixture, operator pre-seed, race where the original caller crashed). `EmptyBody` means the call landed but produced no body (a 204 reply, or a closure that returned null). `Unparseable` means the body is present but isn't a JSON object (corruption, legacy schema, unexpected closure return shape). Each warrants a different escalation; collapsing them into a single "stuck" message sends ops chasing the wrong cause.
+- `priorResponse` is the raw decoded JSON, not a Data object. Hydrating into your DTO is the caller's choice; the exception stays provider-agnostic. If `from()` throws on the `Recovered` branch, that's a fifth failure mode (the persisted JSON is valid but doesn't match your current schema), so catch it and surface accordingly.
+- The lookup runs on the conflict path only, not on every keyed write. The cost is one extra DB query, paid only when a conflict actually fires.
+- Redaction interacts with this. If your provider implements `RedactsRequestData` and strips fields from `response_data` before persist, `priorResponse` will be the redacted version, which can break hydration or silently produce wrong-shaped DTOs downstream. Don't redact response fields you'd need to recover from; if a field is sensitive and needed for recovery, treat the keyed call as un-recoverable and re-fetch from upstream instead.
+- `$integration->getIdempotencyRecovery($key)` is also available directly, returning the same `IdempotencyRecovery` shape attached to the exception. Use it to probe ahead of issuing the write, or to recover outside the catch flow. `getIdempotencyResponse($key)` is the shorthand that returns just the array (or null), for callers that don't care about the state distinction.
 
 ## Provider support: header-on-the-wire backstop
 
