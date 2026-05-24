@@ -1,4 +1,4 @@
-# GitHub Adapter
+# GitHub adapter
 
 Wraps the [knplabs/github-api](https://github.com/KnpLabs/php-github-api) SDK. Currently focused on issues (not PRs, releases, etc.).
 
