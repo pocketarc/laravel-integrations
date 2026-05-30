@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## Unreleased
+
+The circuit breaker is now an availability detector driven by a single failure classifier, and it can be controlled at runtime without a redeploy.
+
+- Breaking: one [`FailureClassifier`](/advanced/circuit-breaker#what-counts-as-a-failure) decides what a failure means, and the same verdict feeds both the breaker and [health tracking](/core-concepts/health-monitoring). Only upstream faults (5xx except 501, connection errors, timeouts) count. HTTP 429 and other 4xx client errors no longer trip the breaker or degrade health: a throttle is the rate limiter's concern, and a malformed request from one caller can't pull an integration offline for everyone sharing it.
+- Breaking: the breaker now defaults to a [rate strategy](/advanced/circuit-breaker#strategies) (failure percentage over a window) rather than a consecutive count. The [config block](/reference/configuration#circuit-breaker) gains `strategy`, `time_window`, `failure_rate_threshold`, and `minimum_requests`. Set `strategy` to `'count'` for the previous consecutive-failure behaviour, which is also the volume-independent choice for low-traffic integrations.
+- Breaking: `Integration::recordFailure()` now takes a `FailureClass` argument.
+- New: the [`ClassifiesFailures`](/reference/contracts#classifiesfailures) provider contract maps an SDK's exceptions to a failure class. Core also duck-types the common SDK status accessors (`getStatusCode()`, `getHttpStatus()`, `getHttpStatusCode()`, a wrapped PSR-7 response), so most SDKs classify correctly without it.
+- New: [runtime overrides](/advanced/circuit-breaker#runtime-overrides) that force a circuit open, closed, or disabled, and override a rate limit, with optional expiry, via model helpers (`forceCircuitOpen()`, `overrideRateLimit()`, …) or the [`integrations:circuit`](/reference/artisan-commands#integrations-circuit) and [`integrations:rate-limit`](/reference/artisan-commands#integrations-rate-limit) commands. Backed by new columns on the integrations table, so they survive a `cache:clear`. Toggle globally with `circuit_breaker.overrides_enabled` / `rate_limiting.overrides_enabled`.
+- New: [`CircuitOpened`](/reference/events#circuit-breaker) and [`CircuitClosed`](/reference/events#circuit-breaker) events fire on every transition (automatic or forced) with a reason, and a publishable `SendCircuitNotification` listener turns them into notifications. `integrations:health` and `integrations:list` now show breaker state.
+
 ## 4.1.0
 
 - [`IdempotencyConflict`](/core-concepts/idempotency#recovering-on-conflict) now carries `$e->priorResponse`, the decoded JSON body of the prior successful keyed call for the same key. The catch block can replay it directly instead of re-fetching from upstream or querying `integration_requests` by hand. `null` when nothing recoverable is on file (no prior request row, the prior was logged as failed, `response_data` is null, or the persisted JSON is unparseable). The lookup runs only on the conflict path, with no overhead on the success path. The new constructor argument is added after `$previous`, so existing positional callers (`new IdempotencyConflict($id, $key, $e)`) keep working unchanged.

@@ -14,6 +14,10 @@ $tickets = $integration
 
 Each retry is persisted as its own `IntegrationRequest` row with `retry_of` pointing to the first attempt. Every attempt counts toward rate limiting and is visible in logs.
 
+::: tip Retries and the circuit breaker are separate axes
+"Should I try again?" and "is the upstream down?" are different questions. A request can be retryable without being an outage — a 429 is retried (honouring `Retry-After`) but does **not** trip the [circuit breaker](/advanced/circuit-breaker#what-counts-as-a-failure) or degrade [health](/core-concepts/health-monitoring), because the upstream is healthy and just pacing you. Only genuine upstream faults (5xx, connection errors, timeouts) count against the breaker.
+:::
+
 ## Backoff strategy
 
 | Status           | Backoff                                                              |
@@ -66,6 +70,7 @@ For SDKs that throw completely custom exceptions (not wrapping Guzzle), you have
 
 - Throw a [`RetryableException`](#retryableexception) from the call site when you know an error is transient. Best for adapters and code you control.
 - Implement [`CustomizesRetry`](/advanced/custom-retry) on the provider to inspect exceptions after the fact. Best for third-party SDK exceptions you can't modify.
+- Implement [`ClassifiesFailures`](/advanced/circuit-breaker#provider-classification) on the provider. Classification doubles as a retry signal: a class of `Upstream` or `Throttle` is retried automatically (after `RetryableException` and `CustomizesRetry` have had their say), so a provider that classifies its SDK's exceptions gets correct retry behaviour and correct breaker behaviour from one method.
 
 ## Standalone retry handler
 

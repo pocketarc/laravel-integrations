@@ -1,10 +1,12 @@
 # Health monitoring
 
-Integration health is tracked automatically based on request outcomes, using a circuit breaker pattern.
+Integration health is tracked automatically based on request outcomes. It shares its definition of "failure" with the [circuit breaker](/advanced/circuit-breaker): both are driven by the same [`FailureClassifier`](/advanced/circuit-breaker#what-counts-as-a-failure), so they never disagree about whether an integration is broken. The two are otherwise distinct — health is a durable, per-integration record (Healthy → Degraded → Failing → Disabled) that drives [sync backoff](/features/scheduled-syncs#health-aware-backoff) and auto-disabling, while the breaker is transient, cache-backed, and gates individual requests.
 
 ## How it works
 
-Each successful request resets `consecutive_failures` to 0 and sets `health_status` to `healthy`. Each failure increments `consecutive_failures` and updates `last_error_at`.
+Each successful request resets `consecutive_failures` to 0 and sets `health_status` to `healthy`. Each **upstream** failure increments `consecutive_failures` and updates `last_error_at`.
+
+Only `FailureClass::Upstream` (5xx except 501, connection errors, timeouts) counts toward health. A 429 throttle, a 4xx client error, or an unrecognised SDK exception leaves `consecutive_failures` untouched — a misbehaving caller spraying 404s can't degrade or auto-disable an integration for everyone sharing it. See [What counts as a failure](/advanced/circuit-breaker#what-counts-as-a-failure) for the full classification.
 
 | Consecutive Failures | Status     | Default Threshold |
 |----------------------|------------|-------------------|
@@ -73,6 +75,8 @@ Run health checks from the CLI:
 ```bash
 php artisan integrations:test
 ```
+
+`integrations:health` and `integrations:list` also surface each integration's live circuit-breaker state (or active override) alongside its health status.
 
 ## Querying by health
 

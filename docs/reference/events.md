@@ -1,53 +1,158 @@
 # Events
 
-All events use Laravel's `Dispatchable` and `SerializesModels` traits.
+All events live in the `Integrations\Events` namespace and use Laravel's `Dispatchable` trait.
 
 ## Integration lifecycle
 
-| Event | Payload | When |
-|-------|---------|------|
-| `IntegrationCreated` | `$integration` | An integration is created |
-| `IntegrationSynced` | `$integration` | `markSynced()` is called |
-| `IntegrationHealthChanged` | `$integration`, `$previousStatus`, `$newStatus` | Health status transitions |
-| `IntegrationDisabled` | `$integration` | Integration auto-disabled after threshold |
+### IntegrationCreated
+
+Dispatched when a new integration is created.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The newly created integration |
+
+### IntegrationHealthChanged
+
+Dispatched when an integration's health status changes.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `previousStatus` | `HealthStatus` | Status before the change |
+| `newStatus` | `HealthStatus` | Status after the change |
+
+### IntegrationDisabled
+
+Dispatched when an integration is automatically disabled after too many failures.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The disabled integration |
 
 ## Requests
 
-| Event | Payload | When |
-|-------|---------|------|
-| `RequestCompleted` | `$integration`, `$request` | An API request succeeds |
-| `RequestFailed` | `$integration`, `$request` | An API request fails |
+### RequestCompleted
+
+Dispatched after a successful API request.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `request` | `IntegrationRequest` | The logged request record |
+
+### RequestFailed
+
+Dispatched after a failed API request.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `request` | `IntegrationRequest` | The logged request record |
+
+## Circuit breaker
+
+### CircuitOpened
+
+Dispatched when an integration's [circuit breaker](/advanced/circuit-breaker) transitions to open — whether tripped automatically or forced open by an operator. Fires once per transition, not per request.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `reason` | `string` | `threshold_reached`, `half_open_probe_failed`, or `forced_open` |
+
+### CircuitClosed
+
+Dispatched when the breaker transitions to closed — whether a half-open probe succeeded or an operator forced it closed.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `reason` | `string` | `half_open_probe_succeeded` or `forced_closed` |
+
+A publishable `SendCircuitNotification` listener can turn these into notifications — see [Notifications](/advanced/notifications#circuit-breaker-notifications).
 
 ## Operations
 
-| Event                | Payload                | When                                            |
-|----------------------|------------------------|-------------------------------------------------|
-| `OperationStarted`   | `$integration`, `$log` | An operation is logged with status `processing` |
-| `OperationCompleted` | `$integration`, `$log` | An operation is logged with status `success`    |
-| `OperationFailed`    | `$integration`, `$log` | An operation is logged with status `failed`     |
+### OperationStarted
+
+Dispatched when an operation is logged with status `processing`.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `log` | `IntegrationLog` | The operation log record |
+
+### OperationCompleted
+
+Dispatched when an operation completes successfully.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `log` | `IntegrationLog` | The operation log record |
+
+### OperationFailed
+
+Dispatched when an operation fails.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `log` | `IntegrationLog` | The operation log record |
 
 ## Sync
 
-| Event | Payload | When |
-|-------|---------|------|
-| `SyncCompleted` | `$integration`, `$result` | A sync run finishes reconciling, with every per-item job in a terminal state. `$result->hasFailures()` distinguishes a clean run from a partial one. |
-| `SyncItemFailed` | `$integration`, `$item`, `$exception` | A per-item `ProcessSyncItem` job exhausts its retries. The `IntegrationSyncItem` row is already marked `failed`. |
+### IntegrationSynced
 
-These are the canonical sync events; adapters no longer ship their own per-completion or per-failure events. The per-item "synced" event (e.g. `ZendeskTicketSynced`) is still the adapter's own; it extends `SyncItemEvent` and its listeners run synchronously inside `ProcessSyncItem`. See [Scheduled syncs](/features/scheduled-syncs).
+Dispatched after sync completes (legacy aggregate event).
 
-## OAuth
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `result` | `SyncResult` | Sync outcome (created/updated/failed counts) |
 
-| Event | Payload | When |
-|-------|---------|------|
-| `OAuthCompleted` | `$integration` | OAuth2 authorization completes |
-| `OAuthRevoked` | `$integration` | OAuth2 authorization is revoked |
+### SyncCompleted
+
+Dispatched once a sync run reconciles.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `result` | `SyncResult` | Aggregated run outcome |
+
+### SyncItemFailed
+
+Dispatched when a sync item exhausts its retries.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `item` | `IntegrationSyncItem` | The failed item |
+| `exception` | `Throwable` | The failure cause |
 
 ## Webhooks
 
-| Event | Payload | When |
-|-------|---------|------|
-| `WebhookReceived` | `$integration`, `$provider` | A webhook arrives |
+### WebhookReceived
 
-## Listening for events
+Dispatched when a webhook is received and verified.
 
-Listen with attribute-based listeners or in your `EventServiceProvider`. See [Health Monitoring](/core-concepts/health-monitoring) for a listener example.
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `event` | `string` | The webhook event type |
+
+## Listening to events
+
+Register listeners in your `EventServiceProvider`:
+
+```php
+use Integrations\Events\IntegrationSynced;
+use App\Listeners\HandleIntegrationSync;
+
+protected $listen = [
+    IntegrationSynced::class => [
+        HandleIntegrationSync::class,
+    ],
+];
+```
