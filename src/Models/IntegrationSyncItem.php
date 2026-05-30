@@ -13,6 +13,7 @@ use Integrations\Support\Config;
 /**
  * One row per item dispatched during a sync run. Tracks whether the item's
  * listeners completed, so the sync cursor only advances past finished items.
+ *
  * See the `ProcessSyncItem` and `FinaliseSyncRun` jobs.
  *
  * @property int $id

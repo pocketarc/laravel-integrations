@@ -127,27 +127,52 @@ return [
         // window bucket. A throw inside a sync defers the item (re-queued, see
         // sync.item_retry_window); for other callers it surfaces as an exception.
         'max_wait_seconds' => 10,
+
+        // Master switch for per-integration rate-limit overrides (set at runtime via
+        // $integration->overrideRateLimit(...) or `integrations:rate-limit`). When
+        // false the override columns still accept writes but are ignored, falling
+        // back to the provider's defaultRateLimit().
+        'overrides_enabled' => true,
     ],
 
     'circuit_breaker' => [
-        // When enabled, integrations that fail repeatedly are short-circuited for a
-        // cooldown window so we don't hammer a service that's clearly down.
-        // Failures counted: 5xx responses, 429 (rate-limited), connection errors,
-        // and any RetryableException.
-        // Failures NOT counted: other 4xx (client error, retrying won't help) and
-        // CircuitOpenException itself. See src/CircuitBreaker.php for the full
-        // classification logic.
+        // When enabled, integrations whose upstream is failing are short-circuited
+        // for a cooldown window so we don't hammer a service that's clearly down.
+        // Only *upstream* faults count toward tripping: 5xx (except 501), connection
+        // errors, and timeouts. A 429 (the upstream is healthy, just pacing us),
+        // other 4xx client errors, and unrecognised exceptions do NOT count. See
+        // src/Support/FailureClassifier.php for the classification.
         'enabled' => true,
 
-        // Number of consecutive failures before the breaker opens. Once open, all
-        // requests for this integration throw CircuitOpenException until the cooldown
-        // window passes.
+        // Tripping strategy:
+        //   'rate'  (default) — open when the failure rate over `time_window` crosses
+        //                       `failure_rate_threshold` percent, once `minimum_requests`
+        //                       have been seen. Best for steady traffic.
+        //   'count'           — open after `threshold` consecutive upstream failures.
+        // NOTE: under 'rate', a low-volume integration whose request count stays below
+        // `minimum_requests` within a window will not trip. Use 'count' if you need
+        // volume-independent tripping (e.g. a quiet scheduled sync).
+        'strategy' => 'rate',
+
+        // --- rate strategy ---
+        'time_window' => 60,            // rolling failure window, seconds
+        'failure_rate_threshold' => 50, // percent (1-100) of failures that opens the breaker
+        'minimum_requests' => 10,       // floor of requests in the window before the rate can trip
+
+        // --- count strategy ---
+        // Number of consecutive upstream failures before the breaker opens.
         'threshold' => 5,
 
         // Seconds to keep the breaker open after it trips. Once this elapses, the
         // next request becomes a half-open probe: if it succeeds, the breaker
         // closes; if it fails, the breaker re-opens for another full cooldown.
         'cooldown_seconds' => 60,
+
+        // Master switch for per-integration circuit overrides (force open/closed/
+        // disabled at runtime via $integration->forceCircuitOpen(...) or
+        // `integrations:circuit`). When false the override columns still accept
+        // writes but are ignored.
+        'overrides_enabled' => true,
     ],
 
     'health' => [

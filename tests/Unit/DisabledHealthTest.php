@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
+use Integrations\Enums\FailureClass;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
@@ -30,7 +31,7 @@ class DisabledHealthTest extends TestCase
         $integration->refresh();
 
         for ($i = 0; $i < 3; $i++) {
-            $integration->recordFailure();
+            $integration->recordFailure(FailureClass::Upstream);
         }
 
         $integration->refresh();
@@ -47,7 +48,7 @@ class DisabledHealthTest extends TestCase
 
         $integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         Event::assertDispatched(IntegrationDisabled::class);
     }
@@ -60,7 +61,7 @@ class DisabledHealthTest extends TestCase
 
         $integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         Event::assertDispatched(IntegrationHealthChanged::class, function (IntegrationHealthChanged $event): bool {
             return $event->newStatus === HealthStatus::Disabled;
@@ -73,7 +74,7 @@ class DisabledHealthTest extends TestCase
 
         $integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         $integration->refresh();
         $this->assertSame(HealthStatus::Disabled, $integration->health_status);
@@ -95,7 +96,7 @@ class DisabledHealthTest extends TestCase
             'sync_interval_minutes' => 5,
         ]);
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         $this->assertSame(0, Integration::query()->dueForSync()->count());
     }
@@ -108,7 +109,7 @@ class DisabledHealthTest extends TestCase
         $integration->refresh();
 
         for ($i = 0; $i < 100; $i++) {
-            $integration->recordFailure();
+            $integration->recordFailure(FailureClass::Upstream);
         }
 
         $integration->refresh();

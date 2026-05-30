@@ -17,13 +17,14 @@ use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
+use Integrations\Concerns\ManagesResilienceOverrides;
+use Integrations\Concerns\TracksHealth;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
+use Integrations\Enums\CircuitOverride;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
-use Integrations\Events\IntegrationDisabled;
-use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
@@ -52,6 +53,10 @@ use function Safe\json_encode;
  * @property HealthStatus $health_status
  * @property int $consecutive_failures
  * @property Carbon|null $last_error_at
+ * @property CircuitOverride|null $circuit_override
+ * @property Carbon|null $circuit_override_until
+ * @property array{limit: int, windowSeconds: int, window: string}|null $rate_limit_override
+ * @property Carbon|null $rate_limit_override_until
  * @property Carbon|null $last_synced_at
  * @property int|null $sync_interval_minutes
  * @property Carbon|null $next_sync_at
@@ -85,6 +90,9 @@ use function Safe\json_encode;
  */
 class Integration extends Model
 {
+    use ManagesResilienceOverrides;
+    use TracksHealth;
+
     /** @var array<string> */
     protected $guarded = [];
 
@@ -129,6 +137,10 @@ class Integration extends Model
             'health_status' => HealthStatus::class,
             'consecutive_failures' => 'integer',
             'last_error_at' => 'datetime',
+            'circuit_override' => CircuitOverride::class,
+            'circuit_override_until' => 'datetime',
+            'rate_limit_override' => 'array',
+            'rate_limit_override_until' => 'datetime',
             'last_synced_at' => 'datetime',
             'sync_interval_minutes' => 'integer',
             'next_sync_at' => 'datetime',
@@ -370,82 +382,6 @@ class Integration extends Model
     private function executor(): RequestExecutor
     {
         return $this->executor ??= new RequestExecutor($this);
-    }
-
-    public function recordSuccess(): void
-    {
-        $previousStatus = $this->health_status;
-
-        if ($previousStatus === HealthStatus::Disabled) {
-            return;
-        }
-
-        $this->update([
-            'consecutive_failures' => 0,
-            'health_status' => HealthStatus::Healthy,
-        ]);
-
-        if ($previousStatus !== HealthStatus::Healthy) {
-            IntegrationHealthChanged::dispatch($this, $previousStatus, HealthStatus::Healthy);
-        }
-    }
-
-    public function recordFailure(): void
-    {
-        $previousStatus = null;
-        $newStatus = null;
-
-        DB::transaction(function () use (&$previousStatus, &$newStatus): void {
-            $locked = Integration::lockForUpdate()->find($this->id);
-
-            if ($locked === null) {
-                return;
-            }
-
-            $previousStatus = $locked->health_status;
-            $failures = $locked->consecutive_failures + 1;
-
-            $disabledAfter = Config::disabledAfter();
-
-            $newStatus = match (true) {
-                $disabledAfter !== null && $failures >= $disabledAfter => HealthStatus::Disabled,
-                $failures >= Config::failingAfter() => HealthStatus::Failing,
-                $failures >= Config::degradedAfter() => HealthStatus::Degraded,
-                default => $previousStatus,
-            };
-
-            $updates = [
-                'consecutive_failures' => $failures,
-                'last_error_at' => now(),
-                'health_status' => $newStatus,
-            ];
-
-            if ($newStatus === HealthStatus::Disabled) {
-                $updates['is_active'] = false;
-            }
-
-            $locked->update($updates);
-
-            $this->fill($locked->only([
-                'consecutive_failures',
-                'last_error_at',
-                'health_status',
-                'is_active',
-            ]));
-            $this->syncOriginal();
-        });
-
-        if ($previousStatus === null || $newStatus === null) {
-            return;
-        }
-
-        if ($newStatus === HealthStatus::Disabled && $previousStatus !== HealthStatus::Disabled) {
-            IntegrationDisabled::dispatch($this);
-        }
-
-        if ($newStatus !== $previousStatus) {
-            IntegrationHealthChanged::dispatch($this, $previousStatus, $newStatus);
-        }
     }
 
     public function getAccessToken(): ?string

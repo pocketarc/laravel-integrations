@@ -6,6 +6,7 @@ namespace Integrations\Console;
 
 use Illuminate\Console\Command;
 use Illuminate\Support\Facades\DB;
+use Integrations\CircuitBreaker;
 use Integrations\Enums\HealthStatus;
 use Integrations\Models\Integration;
 
@@ -47,6 +48,7 @@ class HealthCommand extends Command
         };
 
         $this->line("  Health: <fg={$healthColor}>{$integration->health_status->value}</>");
+        $this->line('  Circuit: '.$this->circuitLabel($integration));
         $this->line("  Consecutive failures: {$integration->consecutive_failures}");
         $this->line('  Last error: '.($integration->last_error_at?->diffForHumans() ?? 'None'));
         $this->line('  Last synced: '.($integration->last_synced_at?->diffForHumans() ?? 'Never'));
@@ -83,5 +85,19 @@ class HealthCommand extends Command
                 $this->line("    [{$countStr}x] {$truncated}");
             }
         }
+    }
+
+    /**
+     * The breaker's effective state for display: an active override if set,
+     * otherwise the live state-machine state from cache.
+     */
+    private function circuitLabel(Integration $integration): string
+    {
+        $override = $integration->effectiveCircuitOverride();
+        if ($override !== null) {
+            return $override->value;
+        }
+
+        return (new CircuitBreaker($integration))->inspect()['state'];
     }
 }

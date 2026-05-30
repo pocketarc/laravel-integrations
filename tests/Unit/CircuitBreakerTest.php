@@ -5,18 +5,16 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Carbon\Carbon;
-use Carbon\CarbonImmutable;
 use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Cache;
 use Integrations\CircuitBreaker;
+use Integrations\Enums\FailureClass;
 use Integrations\Exceptions\CircuitOpenException;
-use Integrations\Exceptions\RetryableException;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\RetryHandler;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
-use Symfony\Component\HttpKernel\Exception\HttpException;
 
 class CircuitBreakerTest extends TestCase
 {
@@ -30,6 +28,10 @@ class CircuitBreakerTest extends TestCase
         $this->integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
         $this->integration->refresh();
 
+        // These tests assert consecutive-count semantics; the rate strategy
+        // (the package default) has its own suite.
+        config(['integrations.circuit_breaker.strategy' => 'count']);
+
         // Don't sleep; throw rate limit exceeded immediately.
         config(['integrations.rate_limiting.max_wait_seconds' => 0]);
     }
@@ -41,13 +43,13 @@ class CircuitBreakerTest extends TestCase
         for ($i = 0; $i < 3; $i++) {
             try {
                 // Disable retries so each outer call counts as exactly one
-                // failure against the breaker.
+                // failure. A connection error classifies as an upstream fault.
                 $this->integration->at('/api/x')
                     ->withAttempts(1)
-                    ->get(function () use ($i): array {
-                        throw new RetryableException('boom '.$i);
+                    ->get(function (): array {
+                        throw new ConnectionException('boom');
                     });
-            } catch (RetryableException) {
+            } catch (ConnectionException) {
                 // expected
             }
         }
@@ -62,8 +64,8 @@ class CircuitBreakerTest extends TestCase
         config(['integrations.circuit_breaker.threshold' => 2]);
 
         $breaker = new CircuitBreaker($this->integration);
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         try {
             $breaker->enforce();
@@ -73,50 +75,45 @@ class CircuitBreakerTest extends TestCase
         }
     }
 
-    public function test_breaker_does_not_open_on_4xx_other_than_429(): void
+    public function test_breaker_does_not_open_on_client_errors(): void
     {
         config(['integrations.circuit_breaker.threshold' => 3]);
 
         $breaker = new CircuitBreaker($this->integration);
 
         for ($i = 0; $i < 10; $i++) {
-            // Use a Symfony HttpException so ResponseHelper::extractStatusCode
-            // can pick up the 400 status. A plain RuntimeException with a
-            // statusCode property is invisible to that helper.
-            $breaker->recordFailure(new HttpException(400, 'bad request'));
+            $breaker->recordFailure(FailureClass::Client);
         }
 
-        // No throw: breaker stayed closed because 4xx doesn't count.
+        // No throw: a client error (4xx other than 429) doesn't count.
         $breaker->enforce();
         $this->assertTrue(true);
     }
 
-    public function test_breaker_counts_429_responses(): void
+    public function test_breaker_does_not_count_throttles(): void
     {
         config(['integrations.circuit_breaker.threshold' => 3]);
 
         $breaker = new CircuitBreaker($this->integration);
 
-        // Use a Symfony HttpException so ResponseHelper::extractStatusCode
-        // returns 429. This exercises the 429-as-4xx-exception branch in
-        // CircuitBreaker::shouldCount() rather than the RetryableException
-        // shortcut, which would always count regardless of status code.
-        for ($i = 0; $i < 3; $i++) {
-            $breaker->recordFailure(new HttpException(429, 'rate limited'));
+        // A 429 throttle is the rate limiter's concern; it must NOT open the
+        // availability breaker (the upstream is healthy, just pacing us).
+        for ($i = 0; $i < 5; $i++) {
+            $breaker->recordFailure(FailureClass::Throttle);
         }
 
-        $this->expectException(CircuitOpenException::class);
         $breaker->enforce();
+        $this->assertTrue(true);
     }
 
-    public function test_breaker_counts_connection_errors(): void
+    public function test_breaker_counts_upstream_failures(): void
     {
         config(['integrations.circuit_breaker.threshold' => 2]);
 
         $breaker = new CircuitBreaker($this->integration);
 
         for ($i = 0; $i < 2; $i++) {
-            $breaker->recordFailure(new ConnectionException('network down'));
+            $breaker->recordFailure(FailureClass::Upstream);
         }
 
         $this->expectException(CircuitOpenException::class);
@@ -129,13 +126,13 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
         $breaker->recordSuccess();
 
         // Two more failures should not be enough to open (counter was reset).
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         $breaker->enforce(); // should not throw
         $this->assertTrue(true);
@@ -148,9 +145,8 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        // Open the breaker.
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         try {
             $breaker->enforce();
@@ -159,9 +155,7 @@ class CircuitBreakerTest extends TestCase
             // expected
         }
 
-        // Travel past the cooldown and try again. Should transition to
-        // half-open and let the request through. tearDown() resets the
-        // frozen clock unconditionally.
+        // Travel past the cooldown; the next request becomes the probe.
         Carbon::setTestNow(Carbon::now()->addSeconds(31));
 
         $breaker->enforce(); // should not throw, half-open probe
@@ -175,8 +169,8 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
         $breaker->enforce(); // half-open
@@ -184,7 +178,7 @@ class CircuitBreakerTest extends TestCase
         $breaker->recordSuccess(); // close it
 
         // Future failures should rebuild from zero.
-        $breaker->recordFailure(new RetryableException('one'));
+        $breaker->recordFailure(FailureClass::Upstream);
         $breaker->enforce(); // still closed
         $this->assertTrue(true);
     }
@@ -196,14 +190,14 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
 
         $breaker->enforce(); // half-open
 
-        $breaker->recordFailure(new RetryableException('still down'));
+        $breaker->recordFailure(FailureClass::Upstream);
 
         // Should be open again.
         $this->expectException(CircuitOpenException::class);
@@ -217,32 +211,26 @@ class CircuitBreakerTest extends TestCase
 
         $breaker = new CircuitBreaker($this->integration);
 
-        // Even with way more failures than the threshold, enforce never
-        // throws because the breaker is disabled.
         for ($i = 0; $i < 10; $i++) {
-            $breaker->recordFailure(new RetryableException('boom'));
+            $breaker->recordFailure(FailureClass::Upstream);
         }
 
         $breaker->enforce();
         $this->assertTrue(true);
     }
 
-    public function test_circuit_open_exception_does_not_count_as_a_failure(): void
+    public function test_non_counting_failure_does_not_open(): void
     {
         config(['integrations.circuit_breaker.threshold' => 2]);
 
         $breaker = new CircuitBreaker($this->integration);
 
-        // Build up the breaker just below the threshold.
-        $breaker->recordFailure(new RetryableException('boom'));
+        // Build the breaker just below the threshold.
+        $breaker->recordFailure(FailureClass::Upstream);
 
-        // A CircuitOpenException itself shouldn't count. That would open
-        // the breaker forever after the first trip.
-        $breaker->recordFailure(new CircuitOpenException(
-            $this->integration,
-            CarbonImmutable::now(),
-            60,
-        ));
+        // An unknown failure carries no positive evidence and must not count;
+        // otherwise a single trip could wedge the breaker open.
+        $breaker->recordFailure(FailureClass::Unknown);
 
         $breaker->enforce(); // should not throw, still closed
         $this->assertTrue(true);
@@ -255,8 +243,8 @@ class CircuitBreakerTest extends TestCase
 
         // Open the breaker via a first instance.
         $breakerA = new CircuitBreaker($this->integration);
-        $breakerA->recordFailure(new RetryableException('boom'));
-        $breakerA->recordFailure(new RetryableException('boom'));
+        $breakerA->recordFailure(FailureClass::Upstream);
+        $breakerA->recordFailure(FailureClass::Upstream);
 
         // Two separate instances simulate two workers seeing the same
         // open state at the same instant.
@@ -284,8 +272,8 @@ class CircuitBreakerTest extends TestCase
         config(['integrations.circuit_breaker.cooldown_seconds' => 10]);
 
         $breaker = new CircuitBreaker($this->integration);
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
 
@@ -294,8 +282,8 @@ class CircuitBreakerTest extends TestCase
 
         // Build the breaker back up and verify the probe slot can be
         // reclaimed on the next cycle.
-        $breaker->recordFailure(new RetryableException('boom'));
-        $breaker->recordFailure(new RetryableException('boom'));
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordFailure(FailureClass::Upstream);
 
         Carbon::setTestNow(Carbon::now()->addSeconds(15));
         $breaker->enforce(); // should claim a fresh slot, not throw

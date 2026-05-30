@@ -23,6 +23,14 @@ return new class extends Migration
             $table->string('health_status')->default('healthy');
             $table->unsignedInteger('consecutive_failures')->default(0);
             $table->timestamp('last_error_at')->nullable();
+            // Runtime circuit-breaker override (operator control, no redeploy).
+            // Null = auto. Backs Integrations\Enums\CircuitOverride.
+            $table->string('circuit_override')->nullable();
+            $table->timestamp('circuit_override_until')->nullable();
+            // Runtime rate-limit override; takes precedence over the provider's
+            // defaultRateLimit(). JSON: {limit, windowSeconds, window}.
+            $table->json('rate_limit_override')->nullable();
+            $table->timestamp('rate_limit_override_until')->nullable();
             $table->timestamp('last_synced_at')->nullable();
             $table->unsignedInteger('sync_interval_minutes')->nullable();
             $table->timestamp('next_sync_at')->nullable();
