@@ -53,6 +53,8 @@ class HealthCommand extends Command
         $this->line('  Last error: '.($integration->last_error_at?->diffForHumans() ?? 'None'));
         $this->line('  Last synced: '.($integration->last_synced_at?->diffForHumans() ?? 'Never'));
 
+        $this->renderAuthenticatedUser($integration);
+
         $recentRequests = $integration->requests()->recent(24);
         $total = $recentRequests->count();
         $successful = (clone $recentRequests)->successful()->count();
@@ -84,6 +86,37 @@ class HealthCommand extends Command
                 $countStr = is_scalar($count) ? (string) $count : '?';
                 $this->line("    [{$countStr}x] {$truncated}");
             }
+        }
+    }
+
+    /**
+     * Show the account the integration authenticates as, for providers that
+     * can resolve it. Cached briefly so a report over many integrations
+     * doesn't fan out a live call each. A failure here (open circuit, upstream
+     * error) degrades to "unknown" rather than aborting the whole report.
+     */
+    private function renderAuthenticatedUser(Integration $integration): void
+    {
+        try {
+            $supported = $integration->supportsAuthenticatedUser();
+        } catch (\Throwable) {
+            // Provider not registered or unresolvable: can't tell, so skip
+            // the line rather than letting it abort the whole report.
+            return;
+        }
+
+        if (! $supported) {
+            return;
+        }
+
+        try {
+            $user = $integration->authenticatedUser(cacheFor: now()->addHour());
+            $label = $user->username ?? $user->name;
+            $identity = $label !== null ? "{$label} (id: {$user->id})" : "id: {$user->id}";
+            $this->line("  Authenticated as: {$identity}");
+        } catch (\Throwable $e) {
+            $reason = mb_substr($e->getMessage(), 0, 80);
+            $this->line("  Authenticated as: <fg=yellow>unknown</> ({$reason})");
         }
     }
 
