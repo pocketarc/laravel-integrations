@@ -11,6 +11,7 @@ use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
 use Integrations\Tests\Fixtures\PlainProvider;
+use Integrations\Tests\Fixtures\RateLimitedProvider;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -83,6 +84,32 @@ class RateLimitOverrideTest extends TestCase
 
         $this->assertNotNull($limit);
         $this->assertSame(5, $limit->limit);
+    }
+
+    public function test_request_only_provider_supplies_its_default_limit(): void
+    {
+        // RateLimitedProvider declares a budget via DeclaresRateLimit without
+        // implementing HasScheduledSync, so its in-code default is read with
+        // no override present.
+        $integration = $this->integration('rate-limited', RateLimitedProvider::class);
+
+        $limit = $integration->effectiveRateLimit();
+
+        $this->assertNotNull($limit);
+        $this->assertSame(50, $limit->limit);
+        $this->assertSame(60, $limit->windowSeconds);
+        $this->assertSame(RateLimitWindow::Sliding, $limit->window);
+    }
+
+    public function test_override_takes_precedence_over_request_only_provider_default(): void
+    {
+        $integration = $this->integration('rate-limited', RateLimitedProvider::class);
+        $integration->overrideRateLimit(RateLimit::per(2, 60));
+
+        $limit = $integration->effectiveRateLimit();
+
+        $this->assertNotNull($limit);
+        $this->assertSame(2, $limit->limit);
     }
 
     public function test_overrides_disabled_in_config_uses_provider(): void

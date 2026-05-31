@@ -10,7 +10,7 @@ use InvalidArgumentException;
 /**
  * A provider's API rate budget: a request count over a window of seconds,
  * plus the window strategy the upstream enforces. Returned by
- * `HasScheduledSync::defaultRateLimit()` and consumed by `RateLimiter`.
+ * `DeclaresRateLimit::defaultRateLimit()` and consumed by `RateLimiter`.
  *
  * The unit matters: an hourly budget and a per-minute budget are not
  * interchangeable, so the window is part of the value rather than an

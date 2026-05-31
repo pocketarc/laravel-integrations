@@ -6,7 +6,7 @@ namespace Integrations\Concerns;
 
 use Carbon\CarbonInterface;
 use Integrations\CircuitBreaker;
-use Integrations\Contracts\HasScheduledSync;
+use Integrations\Contracts\DeclaresRateLimit;
 use Integrations\Enums\CircuitOverride;
 use Integrations\Enums\RateLimitWindow;
 use Integrations\Events\CircuitClosed;
@@ -157,7 +157,7 @@ trait ManagesResilienceOverrides
 
         $provider = $this->provider();
 
-        return $provider instanceof HasScheduledSync ? $provider->defaultRateLimit() : null;
+        return $provider instanceof DeclaresRateLimit ? $provider->defaultRateLimit() : null;
     }
 
     private function forgetExpiredCircuitOverride(): void

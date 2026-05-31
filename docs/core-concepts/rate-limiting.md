@@ -1,6 +1,6 @@
 # Rate limiting
 
-Each integration has a cache-based request counter. Providers that implement `HasScheduledSync` declare their rate limit via `defaultRateLimit()`, returning a `RateLimit` value object, or `null` for no limit.
+Each integration has a cache-based request counter. A provider declares its limit through [`DeclaresRateLimit::defaultRateLimit()`](/reference/contracts#declaresratelimit), returning a `RateLimit` value object, or `null` for no limit. The budget is a transport property of the upstream, separate from scheduled sync, so a request-only provider can declare one on its own. `HasScheduledSync` extends `DeclaresRateLimit`, so a sync provider satisfies it without a second interface.
 
 ## Declaring a limit
 

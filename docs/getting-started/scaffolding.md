@@ -21,6 +21,7 @@ php artisan make:integration-provider GitHub --sync --webhooks --oauth --health-
 | Flag             | Interface added      |
 |------------------|----------------------|
 | `--sync`         | `HasScheduledSync`   |
+| `--rate-limit`   | `DeclaresRateLimit`  |
 | `--webhooks`     | `HandlesWebhooks`    |
 | `--oauth`        | `HasOAuth2`          |
 | `--health-check` | `HasHealthCheck`     |
