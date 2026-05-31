@@ -12,14 +12,33 @@ The breaker and health tracking each decided independently what counted as a "fa
 
 5.0 routes every failure through one [`FailureClassifier`](/advanced/circuit-breaker#what-counts-as-a-failure) whose verdict feeds both subsystems. Only genuine upstream faults (5xx except 501, connection errors, timeouts) count; throttles and client errors don't.
 
-### 1. Run the new migration
+### 1. Add the new columns
 
 5.0 adds four columns to the integrations table for [runtime overrides](/advanced/circuit-breaker#runtime-overrides) (`circuit_override`, `circuit_override_until`, `rate_limit_override`, `rate_limit_override_until`).
 
-```bash
-php artisan vendor:publish --tag=integrations-migrations
-php artisan migrate
+A fresh install gets them from the published baseline migration. An existing deployment has already run that migration, so add a downstream migration that appends the columns (the canonical migration is the only one bumped, matching how earlier schema changes shipped):
+
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Integrations\Support\Config;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table(Config::tablePrefix().'s', function (Blueprint $table): void {
+            $table->string('circuit_override')->nullable();
+            $table->timestamp('circuit_override_until')->nullable();
+            $table->json('rate_limit_override')->nullable();
+            $table->timestamp('rate_limit_override_until')->nullable();
+        });
+    }
+};
 ```
+
+Then run `php artisan migrate`.
 
 ### 2. If you call `Integration::recordFailure()` directly
 

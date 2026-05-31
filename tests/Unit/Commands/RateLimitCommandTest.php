@@ -97,4 +97,17 @@ class RateLimitCommandTest extends TestCase
             'action' => 'status',
         ])->assertSuccessful()->expectsOutputToContain('override');
     }
+
+    public function test_status_warns_and_drops_override_source_when_overrides_disabled(): void
+    {
+        config(['integrations.rate_limiting.overrides_enabled' => false]);
+        $this->integration->overrideRateLimit(RateLimit::per(2, 60));
+
+        // The override row exists but the toggle makes it inert, so the status
+        // must warn rather than report the override as the active source.
+        $this->artisan('integrations:rate-limit', [
+            'integration' => (string) $this->integration->id,
+            'action' => 'status',
+        ])->assertSuccessful()->expectsOutputToContain('disabled in config');
+    }
 }

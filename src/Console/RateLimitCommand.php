@@ -10,6 +10,7 @@ use Illuminate\Support\Carbon;
 use Integrations\Enums\RateLimitWindow;
 use Integrations\Models\Integration;
 use Integrations\RateLimit;
+use Integrations\Support\Config;
 use Throwable;
 
 class RateLimitCommand extends Command
@@ -84,17 +85,24 @@ class RateLimitCommand extends Command
 
     private function showStatus(Integration $integration): int
     {
+        // effectiveRateLimit() clears an expired override on the instance, so
+        // the is_array() check below only sees a live one. The global toggle is
+        // the remaining gate: a stored override is inert when overrides are off.
         $effective = $integration->effectiveRateLimit();
-        $hasOverride = is_array($integration->rate_limit_override);
+        $hasActiveOverride = Config::rateLimitOverridesEnabled() && is_array($integration->rate_limit_override);
 
         $this->table(['Field', 'Value'], [
             ['Integration', "{$integration->name} (#{$integration->id})"],
-            ['Source', $hasOverride ? 'override' : ($effective !== null ? 'provider' : 'none')],
+            ['Source', $hasActiveOverride ? 'override' : ($effective !== null ? 'provider' : 'none')],
             ['Limit', $effective !== null ? (string) $effective->limit : 'unlimited'],
             ['Window (s)', $effective !== null ? (string) $effective->windowSeconds : '—'],
             ['Type', $effective !== null ? $effective->window->value : '—'],
             ['Override until', $integration->rate_limit_override_until?->toDateTimeString() ?? '—'],
         ]);
+
+        if (! Config::rateLimitOverridesEnabled()) {
+            $this->warn('Rate limit overrides are disabled in config; any override above is ignored.');
+        }
 
         return self::SUCCESS;
     }

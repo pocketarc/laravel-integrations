@@ -59,11 +59,9 @@ final class ResponseHelper
             return $fromAccessor;
         }
 
-        if (method_exists($e, 'getResponse')) {
-            $response = $e->getResponse();
-            if ($response instanceof ResponseInterface) {
-                return $response->getStatusCode();
-            }
+        $response = self::safeInvokeNoArg($e, 'getResponse');
+        if ($response instanceof ResponseInterface) {
+            return $response->getStatusCode();
         }
 
         return self::httpRange($e->getCode());
@@ -75,25 +73,38 @@ final class ResponseHelper
      */
     private static function statusFromAccessors(\Throwable $e): ?int
     {
-        if (method_exists($e, 'getStatusCode')) {
-            $status = self::httpRange($e->getStatusCode());
-            if ($status !== null) {
-                return $status;
-            }
+        $status = self::httpRange(self::safeInvokeNoArg($e, 'getStatusCode'));
+        if ($status !== null) {
+            return $status;
         }
 
-        if (method_exists($e, 'getHttpStatus')) {
-            $status = self::httpRange($e->getHttpStatus());
-            if ($status !== null) {
-                return $status;
-            }
+        $status = self::httpRange(self::safeInvokeNoArg($e, 'getHttpStatus'));
+        if ($status !== null) {
+            return $status;
         }
 
-        if (method_exists($e, 'getHttpStatusCode')) {
-            return self::httpRange($e->getHttpStatusCode());
+        return self::httpRange(self::safeInvokeNoArg($e, 'getHttpStatusCode'));
+    }
+
+    /**
+     * Invoke a no-argument accessor on an SDK exception, returning null if the
+     * method isn't callable from here (non-public visibility, a magic-method
+     * mirage) or throws. `method_exists()` alone would let a non-public method
+     * through, and the resulting Error would mask the original exception we're
+     * trying to classify.
+     */
+    private static function safeInvokeNoArg(\Throwable $e, string $method): mixed
+    {
+        $callable = [$e, $method];
+        if (! is_callable($callable)) {
+            return null;
         }
 
-        return null;
+        try {
+            return $callable();
+        } catch (\Throwable) {
+            return null;
+        }
     }
 
     /**
