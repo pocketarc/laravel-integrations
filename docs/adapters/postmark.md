@@ -126,6 +126,18 @@ All methods route through the fluent `at(...)->as(...)->get()/post()` builder (`
 
 When `messagestream` is omitted from a list call, the resource falls back to the integration's metadata default (`outbound` unless overridden), not to the SDK's hardcoded default. This matters for tenants on a non-default stream like `broadcasts`.
 
+## Authenticated identity
+
+`PostmarkProvider` implements [`IdentifiesAuthenticatedUser`](/reference/contracts#identifiesauthenticateduser). A server token is scoped to one server, so the server is the principal: [`$integration->authenticatedUser()`](/features/authenticated-identity) calls `GET /server` and maps it onto the provider-agnostic `AuthenticatedUser`.
+
+```php
+$me = $integration->authenticatedUser(cacheFor: now()->addDay());
+$me->id;    // Postmark server id
+$me->name;  // server name
+```
+
+Because the principal is a server rather than a person, `username` and `email` are null.
+
 ## Health check
 
 `healthCheck()` calls `GET https://api.postmarkapp.com/server` with the integration's `server_token` and returns `false` on any non-2xx response, missing credentials, or transport error.

@@ -53,6 +53,18 @@ $client = new GitHubClient($integration);
 
 All methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. The provider implements `CustomizesRetry` so the core handles retry for GitHub SDK exceptions (rate limits, server errors, connection failures) with method-aware defaults (GET = 3 attempts, non-GET = 1).
 
+## Authenticated identity
+
+`GitHubProvider` implements [`IdentifiesAuthenticatedUser`](/reference/contracts#identifiesauthenticateduser). [`$integration->authenticatedUser()`](/features/authenticated-identity) calls `GET /user` and maps the response onto the provider-agnostic `AuthenticatedUser`:
+
+```php
+$me = $integration->authenticatedUser(cacheFor: now()->addDay());
+$me->id;        // GitHub user id, e.g. "583231"
+$me->username;  // login, e.g. "octocat"
+```
+
+Use it to skip the activity your own integration authored instead of reacting to it.
+
 ## Sync
 
 The adapter syncs issues via `$client->issues()->since()`. For each issue it calls `$session->dispatch()` with a `GitHubIssueSynced` event. The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every issue's job has succeeded. Listeners for `GitHubIssueSynced` must not implement `ShouldQueue` (see [Scheduled syncs](/features/scheduled-syncs) for the per-item model).
