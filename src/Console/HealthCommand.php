@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Integrations\CircuitBreaker;
 use Integrations\Enums\HealthStatus;
 use Integrations\Models\Integration;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 class HealthCommand extends Command
 {
@@ -111,11 +112,16 @@ class HealthCommand extends Command
 
         try {
             $user = $integration->authenticatedUser(cacheFor: now()->addHour());
+            // Escape provider-supplied values: a username/name/id containing
+            // `<...>` would otherwise be parsed as console formatting tags.
+            $id = OutputFormatter::escape($user->id);
             $label = $user->username ?? $user->name;
-            $identity = $label !== null ? "{$label} (id: {$user->id})" : "id: {$user->id}";
+            $identity = $label !== null
+                ? OutputFormatter::escape($label)." (id: {$id})"
+                : "id: {$id}";
             $this->line("  Authenticated as: {$identity}");
         } catch (\Throwable $e) {
-            $reason = mb_substr($e->getMessage(), 0, 80);
+            $reason = OutputFormatter::escape(mb_substr($e->getMessage(), 0, 80));
             $this->line("  Authenticated as: <fg=yellow>unknown</> ({$reason})");
         }
     }

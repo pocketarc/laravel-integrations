@@ -116,7 +116,7 @@ class GitHubProvider implements IntegrationProvider, IdentifiesAuthenticatedUser
 
 `integrations:health` shows the resolved identity for providers that support it:
 
-```
+```text
 === GitHub (github) ===
   Health: healthy
   ...
