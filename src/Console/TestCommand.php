@@ -6,6 +6,7 @@ namespace Integrations\Console;
 
 use Illuminate\Console\Command;
 use Integrations\Contracts\HasHealthCheck;
+use Integrations\Enums\FailureClass;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 
@@ -44,13 +45,13 @@ class TestCommand extends Command
                     $passed++;
                 } else {
                     $this->error("  [FAIL] {$integration->name} ({$integration->provider})");
-                    $integration->recordFailure();
+                    $integration->recordFailure(FailureClass::Upstream);
                     $failed++;
                 }
             } catch (\Throwable $e) {
                 $tested++;
                 $this->error("  [FAIL] {$integration->name} ({$integration->provider}): {$e->getMessage()}");
-                $integration->recordFailure();
+                $integration->recordFailure(FailureClass::Upstream);
                 $failed++;
             }
         }

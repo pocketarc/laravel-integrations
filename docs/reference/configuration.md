@@ -60,16 +60,22 @@ php artisan vendor:publish --tag=integrations-config
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `rate_limiting.max_wait_seconds` | `int` | `10` | Max seconds to sleep waiting for capacity before throwing (0 = immediate). Applies independently to the suppression gate and the window bucket. |
+| `rate_limiting.overrides_enabled` | `bool` | `true` | Honour per-integration rate-limit overrides. `false` ignores the override columns and falls back to the provider's `defaultRateLimit()`. |
 
 ## Circuit breaker
 
-See [Circuit breaker](/advanced/circuit-breaker) for the full state machine.
+See [Circuit breaker](/advanced/circuit-breaker) for the full state machine, strategies, and runtime overrides.
 
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | `circuit_breaker.enabled` | `bool` | `true` | Master switch. `false` disables breaker entirely. |
-| `circuit_breaker.threshold` | `int` | `5` | Consecutive failures before the breaker opens. |
+| `circuit_breaker.strategy` | `string` | `'rate'` | `'rate'` (failure % over a window) or `'count'` (consecutive failures). |
+| `circuit_breaker.time_window` | `int` | `60` | Rate strategy: rolling failure window in seconds. |
+| `circuit_breaker.failure_rate_threshold` | `int` | `50` | Rate strategy: failure percentage (1-100) that opens the breaker. |
+| `circuit_breaker.minimum_requests` | `int` | `10` | Rate strategy: requests in the window before it can trip. |
+| `circuit_breaker.threshold` | `int` | `5` | Count strategy: consecutive upstream failures before the breaker opens. |
 | `circuit_breaker.cooldown_seconds` | `int` | `60` | Seconds to stay open before allowing a half-open probe. |
+| `circuit_breaker.overrides_enabled` | `bool` | `true` | Honour per-integration circuit overrides. `false` ignores the override columns. |
 
 ## Health
 

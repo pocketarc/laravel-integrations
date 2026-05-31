@@ -34,9 +34,86 @@ final class ResponseHelper
             if ($current instanceof HttpExceptionInterface) {
                 return $current->getStatusCode();
             }
+
+            $duckTyped = self::duckTypeStatusCode($current);
+            if ($duckTyped !== null) {
+                return $duckTyped;
+            }
         }
 
         return null;
+    }
+
+    /**
+     * Best-effort status extraction for SDK exceptions that don't implement
+     * the HTTP-client interfaces above. Tries the common accessor names
+     * (Stripe's `getHttpStatus()`, Postmark's `getHttpStatusCode()`, a wrapped
+     * PSR-7 response), falling back to `getCode()` last because most throwables
+     * use it for a non-HTTP error code or 0. Only values in the HTTP range are
+     * trusted, so a vendor error code that isn't a status is ignored.
+     */
+    private static function duckTypeStatusCode(\Throwable $e): ?int
+    {
+        $fromAccessor = self::statusFromAccessors($e);
+        if ($fromAccessor !== null) {
+            return $fromAccessor;
+        }
+
+        $response = self::safeInvokeNoArg($e, 'getResponse');
+        if ($response instanceof ResponseInterface) {
+            return $response->getStatusCode();
+        }
+
+        return self::httpRange($e->getCode());
+    }
+
+    /**
+     * Try the common direct status accessors, in order of specificity, and
+     * return the first that yields a value in the HTTP range.
+     */
+    private static function statusFromAccessors(\Throwable $e): ?int
+    {
+        $status = self::httpRange(self::safeInvokeNoArg($e, 'getStatusCode'));
+        if ($status !== null) {
+            return $status;
+        }
+
+        $status = self::httpRange(self::safeInvokeNoArg($e, 'getHttpStatus'));
+        if ($status !== null) {
+            return $status;
+        }
+
+        return self::httpRange(self::safeInvokeNoArg($e, 'getHttpStatusCode'));
+    }
+
+    /**
+     * Invoke a no-argument accessor on an SDK exception, returning null if the
+     * method isn't callable from here (non-public visibility, a magic-method
+     * mirage) or throws. `method_exists()` alone would let a non-public method
+     * through, and the resulting Error would mask the original exception we're
+     * trying to classify.
+     */
+    private static function safeInvokeNoArg(\Throwable $e, string $method): mixed
+    {
+        $callable = [$e, $method];
+        if (! is_callable($callable)) {
+            return null;
+        }
+
+        try {
+            return $callable();
+        } catch (\Throwable) {
+            return null;
+        }
+    }
+
+    /**
+     * Accept an HTTP status only if it's an int in the valid range, so a vendor
+     * error code (or a 0) that happens to come back from an accessor is ignored.
+     */
+    private static function httpRange(mixed $value): ?int
+    {
+        return is_int($value) && $value >= 100 && $value <= 599 ? $value : null;
     }
 
     /**

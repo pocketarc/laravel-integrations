@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
+use Integrations\Enums\FailureClass;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationHealthChanged;
 use Integrations\Models\Integration;
@@ -37,7 +38,7 @@ class HealthTrackingTest extends TestCase
         ]);
 
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         $integration->refresh();
         $this->assertSame(1, $integration->consecutive_failures);
@@ -57,7 +58,7 @@ class HealthTrackingTest extends TestCase
         ]);
 
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         $integration->refresh();
         $this->assertSame(HealthStatus::Degraded, $integration->health_status);
@@ -80,7 +81,7 @@ class HealthTrackingTest extends TestCase
         ]);
 
         $integration->refresh();
-        $integration->recordFailure();
+        $integration->recordFailure(FailureClass::Upstream);
 
         $integration->refresh();
         $this->assertSame(HealthStatus::Failing, $integration->health_status);

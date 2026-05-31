@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Event;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
@@ -141,13 +142,15 @@ class RequestWrapperTest extends TestCase
     public function test_health_updated_on_failure(): void
     {
         try {
+            // An upstream fault (connection error) degrades health; a single
+            // attempt keeps the count at exactly one.
             $this->integration->request(
                 endpoint: '/api/fail',
                 method: 'GET',
-                responseClass: TestOkResponse::class,
-                callback: fn () => throw new RuntimeException('fail'),
+                callback: fn () => throw new ConnectionException('fail'),
+                maxAttempts: 1,
             );
-        } catch (RuntimeException) {
+        } catch (ConnectionException) {
             // expected
         }
 

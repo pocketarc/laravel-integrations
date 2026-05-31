@@ -8,16 +8,17 @@ use Carbon\CarbonInterface;
 use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
-use Integrations\Contracts\CustomizesRetry;
+use Integrations\Concerns\ResolvesRetries;
 use Integrations\Contracts\RedactsRequestData;
+use Integrations\Enums\FailureClass;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
-use Integrations\Exceptions\RetryableException;
 use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Support\BinaryGuard;
 use Integrations\Support\CallbackInspector;
+use Integrations\Support\FailureClassifier;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
@@ -27,6 +28,8 @@ use Throwable;
 
 final class RequestExecutor
 {
+    use ResolvesRetries;
+
     private ?int $lastCreatedRequestId = null;
 
     private readonly RequestCache $cache;
@@ -180,6 +183,7 @@ final class RequestExecutor
         $responseData = null;
         $error = null;
         $result = null;
+        $failureClass = null;
 
         try {
             $raw = $this->invokeCallback($callback, $callbackAcceptsContext);
@@ -192,10 +196,11 @@ final class RequestExecutor
             $result = $this->convertResponse($parsed, $responseClass, $endpoint, $cacheFor);
             $responseSuccess = true;
         } catch (Throwable $e) {
-            $this->circuitBreaker->recordFailure($e);
+            $failureClass = FailureClassifier::classify($e, $this->integration->provider());
+            $this->circuitBreaker->recordFailure($failureClass);
 
             [$responseCode, $error, $result] = $this->handleRequestError(
-                $e, $startTime, $endpoint, $method, $responseClass, $encodedRequestData,
+                $e, $failureClass, $startTime, $endpoint, $method, $responseClass, $encodedRequestData,
                 $retryOfId, $relatedTo, $responseData, $cacheFor, $serveStale,
             );
         }
@@ -215,7 +220,10 @@ final class RequestExecutor
             $this->integration->recordSuccess();
         } else {
             RequestFailed::dispatch($this->integration, $request);
-            $this->integration->recordFailure();
+            // $failureClass is always set on the failure path: the catch above
+            // assigns it before handleRequestError(), which only returns (vs.
+            // rethrows) once it has.
+            $this->integration->recordFailure($failureClass);
         }
 
         return $result;
@@ -270,6 +278,7 @@ final class RequestExecutor
      */
     private function handleRequestError(
         Throwable $e,
+        FailureClass $failureClass,
         float $startTime,
         string $endpoint,
         string $method,
@@ -295,7 +304,7 @@ final class RequestExecutor
             : null;
 
         if ($result === null) {
-            $this->integration->recordFailure();
+            $this->integration->recordFailure($failureClass);
             $durationMs = (int) ((microtime(true) - $startTime) * 1_000);
 
             $request = $this->persistRequest(
@@ -432,54 +441,6 @@ final class RequestExecutor
         }
 
         return $requestData;
-    }
-
-    private function shouldRetry(Throwable $e, int $attempt, int $maxAttempts): bool
-    {
-        $retryableException = self::findRetryableException($e);
-
-        if ($retryableException === null && ! $this->isRetryableViaProvider($e)) {
-            return false;
-        }
-
-        $cap = $retryableException?->maxAttempts;
-
-        return $attempt < ($cap !== null ? min($maxAttempts, $cap) : $maxAttempts);
-    }
-
-    private function isRetryableViaProvider(Throwable $e): bool
-    {
-        $provider = $this->integration->provider();
-        $providerRetryable = $provider instanceof CustomizesRetry ? $provider->isRetryable($e) : null;
-
-        return $providerRetryable ?? RetryHandler::isRetryable($e);
-    }
-
-    private function resolveRetryDelay(Throwable $e, int $attempt): int
-    {
-        // RetryableException::retryAfterSeconds takes priority over CustomizesRetry.
-        // RetryHandler::calculateDelayMs already honors it, so route there directly.
-        $retryableException = self::findRetryableException($e);
-        if ($retryableException !== null && $retryableException->retryAfterSeconds !== null) {
-            return RetryHandler::calculateDelayMs($e, $attempt);
-        }
-
-        $provider = $this->integration->provider();
-        $statusCode = ResponseHelper::extractStatusCode($e);
-        $providerDelay = $provider instanceof CustomizesRetry ? $provider->retryDelayMs($e, $attempt, $statusCode) : null;
-
-        return $providerDelay ?? RetryHandler::calculateDelayMs($e, $attempt);
-    }
-
-    private static function findRetryableException(Throwable $e): ?RetryableException
-    {
-        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
-            if ($current instanceof RetryableException) {
-                return $current;
-            }
-        }
-
-        return null;
     }
 
     private static function keyToString(mixed $key): string

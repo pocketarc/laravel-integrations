@@ -8,12 +8,14 @@ use Illuminate\Contracts\Container\Container;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Console\AdvanceCursorCommand;
+use Integrations\Console\CircuitCommand;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\InstallCommand;
 use Integrations\Console\ListCommand;
 use Integrations\Console\ListFailedItemsCommand;
 use Integrations\Console\MakeProviderCommand;
 use Integrations\Console\PruneCommand;
+use Integrations\Console\RateLimitCommand;
 use Integrations\Console\RecoverWebhooksCommand;
 use Integrations\Console\ReplayWebhookCommand;
 use Integrations\Console\SkipSyncItemCommand;
@@ -65,6 +67,7 @@ class IntegrationsServiceProvider extends ServiceProvider
 
             $this->publishes([
                 __DIR__.'/../stubs/Listeners/SendHealthNotification.php' => app_path('Listeners/SendHealthNotification.php'),
+                __DIR__.'/../stubs/Listeners/SendCircuitNotification.php' => app_path('Listeners/SendCircuitNotification.php'),
                 __DIR__.'/../stubs/Notifications/IntegrationHealthStatusNotification.php' => app_path('Notifications/IntegrationHealthStatusNotification.php'),
             ], 'integrations-notifications');
 
@@ -82,6 +85,8 @@ class IntegrationsServiceProvider extends ServiceProvider
                 SkipSyncItemCommand::class,
                 AdvanceCursorCommand::class,
                 ListFailedItemsCommand::class,
+                CircuitCommand::class,
+                RateLimitCommand::class,
             ]);
         }
 

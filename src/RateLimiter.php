@@ -6,7 +6,6 @@ namespace Integrations;
 
 use Carbon\CarbonInterface;
 use Illuminate\Support\Facades\Cache;
-use Integrations\Contracts\HasScheduledSync;
 use Integrations\Enums\RateLimitWindow;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\Models\Integration;
@@ -136,9 +135,9 @@ final class RateLimiter
 
     private function resolveLimit(): ?RateLimit
     {
-        $provider = $this->integration->provider();
-
-        return $provider instanceof HasScheduledSync ? $provider->defaultRateLimit() : null;
+        // Precedence (override beats provider), expiry, and the global toggle
+        // all live in the model so the breaker, limiter, and CLI agree.
+        return $this->integration->effectiveRateLimit();
     }
 
     /**

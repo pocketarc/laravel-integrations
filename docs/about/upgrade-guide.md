@@ -2,6 +2,102 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 4.x to 5.0
+
+5.0 makes the circuit breaker an availability detector driven by a single failure classifier, switches its default strategy, and adds runtime overrides. Most apps need no code changes; the work is in custom providers and any direct callers of `Integration::recordFailure()`.
+
+### Why
+
+The breaker and health tracking each decided independently what counted as a "failure", and both counted too much. An HTTP 429 (the upstream throttling you) and a 4xx (a malformed request from one caller) would trip the breaker and degrade health, even though the dependency was healthy and answering. One bad caller could pull an integration offline for everyone sharing it. SDK exceptions the breaker couldn't read were counted as outages by accident.
+
+5.0 routes every failure through one [`FailureClassifier`](/advanced/circuit-breaker#what-counts-as-a-failure) whose verdict feeds both subsystems. Only genuine upstream faults (5xx except 501, connection errors, timeouts) count; throttles and client errors don't.
+
+### 1. Add the new columns
+
+5.0 adds four columns to the integrations table for [runtime overrides](/advanced/circuit-breaker#runtime-overrides) (`circuit_override`, `circuit_override_until`, `rate_limit_override`, `rate_limit_override_until`).
+
+A fresh install gets them from the published baseline migration. An existing deployment has already run that migration, so add a downstream migration that appends the columns (the canonical migration is the only one bumped, matching how earlier schema changes shipped):
+
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Integrations\Support\Config;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table(Config::tablePrefix().'s', function (Blueprint $table): void {
+            $table->string('circuit_override')->nullable();
+            $table->timestamp('circuit_override_until')->nullable();
+            $table->json('rate_limit_override')->nullable();
+            $table->timestamp('rate_limit_override_until')->nullable();
+        });
+    }
+};
+```
+
+Then run `php artisan migrate`.
+
+### 2. If you call `Integration::recordFailure()` directly
+
+It now takes a `FailureClass` argument. The framework calls it for you inside the request pipeline, so this only matters for direct callers (custom health-check flows, tests).
+
+**Before (4.x):**
+
+```php
+$integration->recordFailure();
+```
+
+**After (5.0):**
+
+```php
+use Integrations\Enums\FailureClass;
+
+$integration->recordFailure(FailureClass::Upstream);
+```
+
+Pass the class that matches the failure: `Upstream` for a genuine outage, `Throttle` for a rate limit, `Client` for a 4xx, `Unknown` when there's no signal. Only `Upstream` degrades health.
+
+### 3. Choose your breaker strategy
+
+The default strategy changed from consecutive-count to **rate** (failure percentage over a window). If you relied on "opens after N consecutive failures", set it back explicitly:
+
+```php
+// config/integrations.php
+'circuit_breaker' => [
+    'strategy' => 'count', // 4.x behaviour
+    'threshold' => 5,
+],
+```
+
+The rate strategy can only trip once `minimum_requests` (default 10) have landed in the window, so a low-volume integration may never reach the floor. Use `'count'` for volume-independent tripping. See [Strategies](/advanced/circuit-breaker#strategies).
+
+### 4. Custom providers: classify SDK failures (optional)
+
+Core reads Laravel/Guzzle/Symfony exceptions and duck-types the common SDK status accessors, so most providers need nothing. If your SDK signals failures in a way core can't see (a throttle that arrives as a generic 403, a connection error with no HTTP status), implement [`ClassifiesFailures`](/reference/contracts#classifiesfailures):
+
+```php
+use Integrations\Contracts\ClassifiesFailures;
+use Integrations\Enums\FailureClass;
+
+public function classifyFailure(\Throwable $e): ?FailureClass
+{
+    if ($e instanceof AcmeRateLimitException) {
+        return FailureClass::Throttle;
+    }
+
+    return null; // defer to the default classifier
+}
+```
+
+The verdict drives retries too (`Upstream`/`Throttle` are retried), so one method covers breaker, health, and retry behaviour.
+
+### Behaviour change to note
+
+A 429 or 4xx no longer degrades health or trips the breaker. If you depended on repeated 4xx eventually auto-disabling an integration (via `health.disabled_after`), that no longer happens: only upstream faults count toward the disable threshold. This is the intended fix, but worth knowing if your monitoring assumed the old behaviour.
+
 ## 3.x to 4.0
 
 4.0 makes rate limits window-aware and stops a throttled sync from failing. Two breaking changes, both small.

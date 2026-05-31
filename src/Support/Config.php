@@ -183,6 +183,17 @@ final class Config
         return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);
     }
 
+    /**
+     * Master switch for per-integration rate-limit overrides. When false the
+     * override columns still accept writes but are not consulted.
+     */
+    public static function rateLimitOverridesEnabled(): bool
+    {
+        $value = config('integrations.rate_limiting.overrides_enabled', true);
+
+        return is_bool($value) ? $value : true;
+    }
+
     public static function retryAfterMaxMs(): int
     {
         return self::boundedInt(config('integrations.retry.retry_after_max_seconds', 600), 600, 1) * 1000;
@@ -203,6 +214,44 @@ final class Config
     public static function circuitBreakerCooldownSeconds(): int
     {
         return self::boundedInt(config('integrations.circuit_breaker.cooldown_seconds', 60), 60, 1);
+    }
+
+    /**
+     * Which tripping strategy the breaker uses: 'rate' (failure percentage
+     * over a rolling window, the default) or 'count' (consecutive upstream
+     * failures). Anything unrecognised falls back to 'rate'.
+     */
+    public static function circuitBreakerStrategy(): string
+    {
+        $value = config('integrations.circuit_breaker.strategy', 'rate');
+
+        return $value === 'count' ? 'count' : 'rate';
+    }
+
+    public static function circuitBreakerTimeWindow(): int
+    {
+        return self::boundedInt(config('integrations.circuit_breaker.time_window', 60), 60, 1);
+    }
+
+    public static function circuitBreakerFailureRateThreshold(): int
+    {
+        return min(100, self::boundedInt(config('integrations.circuit_breaker.failure_rate_threshold', 50), 50, 1));
+    }
+
+    public static function circuitBreakerMinimumRequests(): int
+    {
+        return self::boundedInt(config('integrations.circuit_breaker.minimum_requests', 10), 10, 1);
+    }
+
+    /**
+     * Master switch for per-integration circuit overrides. When false the
+     * override columns still accept writes but are not consulted.
+     */
+    public static function circuitOverridesEnabled(): bool
+    {
+        $value = config('integrations.circuit_breaker.overrides_enabled', true);
+
+        return is_bool($value) ? $value : true;
     }
 
     public static function degradedAfter(): int

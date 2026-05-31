@@ -6,12 +6,14 @@ namespace Integrations;
 
 use Carbon\CarbonImmutable;
 use Illuminate\Support\Facades\Cache;
+use Integrations\Enums\CircuitOverride;
+use Integrations\Enums\FailureClass;
+use Integrations\Events\CircuitClosed;
+use Integrations\Events\CircuitOpened;
 use Integrations\Exceptions\CircuitOpenException;
-use Integrations\Exceptions\RetryableException;
 use Integrations\Models\Integration;
+use Integrations\Support\CircuitBreakerRateStrategy;
 use Integrations\Support\Config;
-use Integrations\Support\ResponseHelper;
-use Throwable;
 
 /**
  * Per-integration circuit breaker. Sits next to the RateLimiter in the
@@ -19,26 +21,33 @@ use Throwable;
  * executor calls recordSuccess() / recordFailure() afterwards.
  *
  * State machine:
- *   closed    -> fully open for traffic. Failures increment a counter; when
- *               the counter hits the threshold, transition to "open".
+ *   closed    -> fully open for traffic. Failures are accounted by the active
+ *               strategy; when it trips, transition to "open".
  *   open      -> all requests short-circuit with CircuitOpenException until
  *               the cooldown elapses, then transition to "half_open".
  *   half_open -> one probe request is allowed through. Success -> "closed".
  *               Failure -> "open" again, fresh cooldown.
  *
- * The state is stored in a single cache key per integration. We use
- * read-modify-write rather than locks; a tiny race window where two
- * concurrent failures both flip closed -> open is harmless (they both
- * write the same end state). The open -> half_open transition uses a
- * separate "probe slot" cache key claimed via Cache::add(), which is
- * atomic on Laravel's redis/memcached/database drivers, so only one
- * request becomes the probe even when many workers see the cooldown
- * expire at once.
+ * Tripping strategy is configurable (see Config::circuitBreakerStrategy()):
+ *   - "rate"  (default): open when the failure rate over a rolling window
+ *             crosses the threshold once a minimum number of requests is seen.
+ *             Accounting lives in the rate strategy's window buckets.
+ *   - "count": open after N consecutive upstream failures. Accounting is the
+ *             "failures" counter in the state array.
  *
- * Failures that count toward the threshold: 5xx responses, ConnectionExceptions,
- * RetryableException. Failures that do NOT count: 4xx (retrying won't help,
- * the caller has the wrong input), and a CircuitOpenException itself (we
- * already know the breaker is open).
+ * Only FailureClass::Upstream counts toward tripping; classification happens
+ * once in the FailureClassifier and is passed in.
+ *
+ * Operators can override the breaker at runtime (without a redeploy) via the
+ * integration's circuit_override column; that takes precedence over the state
+ * machine — see enforce()/recordFailure()/recordSuccess().
+ *
+ * State is stored in a single cache key per integration via read-modify-write.
+ * A tiny race where two concurrent failures both flip closed -> open is
+ * harmless (they write the same end state). The open -> half_open transition
+ * uses a separate "probe slot" cache key claimed via Cache::add(), atomic on
+ * Laravel's redis/memcached/database drivers, so only one request becomes the
+ * probe even when many workers see the cooldown expire at once.
  */
 final class CircuitBreaker
 {
@@ -48,12 +57,30 @@ final class CircuitBreaker
 
     private const STATE_HALF_OPEN = 'half_open';
 
+    private ?CircuitBreakerRateStrategy $rateStrategy = null;
+
     public function __construct(
         private readonly Integration $integration,
     ) {}
 
     public function enforce(): void
     {
+        $override = $this->override();
+
+        if ($override === CircuitOverride::Disabled || $override === CircuitOverride::ForcedClosed) {
+            return;
+        }
+
+        if ($override === CircuitOverride::ForcedOpen) {
+            // Held open by an operator. Never enters half-open or claims a
+            // probe slot, so it stays open until the override is cleared.
+            throw new CircuitOpenException(
+                $this->integration,
+                CarbonImmutable::now(),
+                Config::circuitBreakerCooldownSeconds(),
+            );
+        }
+
         if (! Config::circuitBreakerEnabled()) {
             return;
         }
@@ -107,83 +134,164 @@ final class CircuitBreaker
 
     public function recordSuccess(): void
     {
+        $override = $this->override();
+        if ($override === CircuitOverride::Disabled || $override === CircuitOverride::ForcedOpen) {
+            // A forced-open breaker must not be closed by a probe success.
+            return;
+        }
+
         if (! Config::circuitBreakerEnabled()) {
             return;
         }
 
         $state = $this->loadState();
+
         if ($state['state'] === self::STATE_CLOSED && $state['failures'] === 0) {
-            // Hot path: nothing to update.
+            // Hot path: still closed and clean. Only the rate denominator moves.
+            $this->recordOutcome(false);
+
             return;
         }
+
+        $wasOpen = $state['state'] === self::STATE_OPEN || $state['state'] === self::STATE_HALF_OPEN;
 
         $this->writeState(self::STATE_CLOSED, 0, null);
 
-        // Release the probe slot so future open -> half_open transitions
-        // can claim it. No-op when no probe slot was held.
+        if ($this->usesRateStrategy()) {
+            // Closing is a fresh start: clear the window so stale failures
+            // don't immediately re-trip.
+            $this->rateStrategy()->reset($this->integration->id);
+        }
+
+        // Release the probe slot so future open -> half_open transitions can
+        // claim it. No-op when no probe slot was held.
         Cache::forget($this->probeKey());
+
+        if ($wasOpen) {
+            CircuitClosed::dispatch($this->integration, 'half_open_probe_succeeded');
+        }
     }
 
-    public function recordFailure(Throwable $e): void
+    public function recordFailure(FailureClass $class): void
     {
+        if ($this->override() !== null) {
+            // Forced/disabled: never accumulate, nothing to mutate.
+            return;
+        }
+
         if (! Config::circuitBreakerEnabled()) {
             return;
         }
 
-        if (! $this->shouldCount($e)) {
-            return;
-        }
-
-        $state = $this->loadState();
-        $threshold = Config::circuitBreakerThreshold();
-
-        if ($state['state'] === self::STATE_HALF_OPEN) {
-            // Probe failed: back to fully open with a fresh cooldown clock,
-            // and release the probe slot so a future cooldown-elapsed
-            // request can claim it.
-            $this->writeState(self::STATE_OPEN, $threshold, (int) now()->timestamp);
-            Cache::forget($this->probeKey());
+        if (! $class->countsAsFailure()) {
+            // Not an upstream fault. It was still a request, so for the rate
+            // strategy it belongs in the denominator (otherwise a burst of
+            // client errors would inflate the upstream-failure rate).
+            $this->recordOutcome(false);
 
             return;
         }
 
-        $failures = $state['failures'] + 1;
-
-        if ($failures >= $threshold) {
-            $this->writeState(self::STATE_OPEN, $failures, (int) now()->timestamp);
-
-            return;
-        }
-
-        $this->writeState(self::STATE_CLOSED, $failures, null);
+        $this->recordOutcome(true);
+        $this->applyFailureToState();
     }
 
     /**
-     * Failures that count toward the threshold. 4xx responses (client
-     * errors) don't count: retrying won't change the outcome, and one bad
-     * request shouldn't pull the integration offline for everyone else.
-     * 429 (rate limit) is the exception; it counts as a real failure.
+     * Read-only snapshot of the live state machine, for CLI/observability.
+     *
+     * @return array{state: string, failures: int, opened_at: ?int}
      */
-    private function shouldCount(Throwable $e): bool
+    public function inspect(): array
     {
-        if ($e instanceof CircuitOpenException) {
-            return false;
+        return $this->loadState();
+    }
+
+    /**
+     * Drop all breaker state so the integration returns to a clean CLOSED.
+     * Used when an operator clears a force-override.
+     */
+    public function reset(): void
+    {
+        Cache::forget($this->key());
+        Cache::forget($this->probeKey());
+        $this->rateStrategy()->reset($this->integration->id);
+    }
+
+    /**
+     * Advance the cache state machine after a counted (upstream) failure that
+     * the override/enabled/classification gates have already cleared.
+     */
+    private function applyFailureToState(): void
+    {
+        $state = $this->loadState();
+
+        if ($state['state'] === self::STATE_HALF_OPEN) {
+            // Probe failed with real upstream evidence: reopen with a fresh
+            // cooldown and release the probe slot.
+            $this->writeState(self::STATE_OPEN, $state['failures'], (int) now()->timestamp);
+            Cache::forget($this->probeKey());
+            CircuitOpened::dispatch($this->integration, 'half_open_probe_failed');
+
+            return;
         }
 
-        $statusCode = ResponseHelper::extractStatusCode($e);
+        if ($this->shouldTrip($state)) {
+            $wasClosed = $state['state'] === self::STATE_CLOSED;
+            $this->writeState(self::STATE_OPEN, $state['failures'] + 1, (int) now()->timestamp);
 
-        if ($statusCode !== null && $statusCode >= 400 && $statusCode < 500 && $statusCode !== 429) {
-            return false;
-        }
-
-        // Network errors, retryable exceptions, 429, 5xx all count.
-        for ($current = $e; $current !== null; $current = $current->getPrevious()) {
-            if ($current instanceof RetryableException) {
-                return true;
+            if ($wasClosed) {
+                CircuitOpened::dispatch($this->integration, 'threshold_reached');
             }
+
+            return;
         }
 
-        return $statusCode === null || $statusCode === 429 || $statusCode >= 500;
+        // Not tripping. The count strategy accumulates a consecutive-failure
+        // counter; the rate strategy keeps its evidence in the window buckets
+        // and leaves the state key untouched.
+        if (! $this->usesRateStrategy()) {
+            $this->writeState(self::STATE_CLOSED, $state['failures'] + 1, null);
+        }
+    }
+
+    /**
+     * Feed one request outcome to the rate strategy's window buckets (no-op
+     * under the count strategy, which keeps its tally in the state key).
+     */
+    private function recordOutcome(bool $failed): void
+    {
+        if ($this->usesRateStrategy()) {
+            $this->rateStrategy()->recordOutcome($this->integration->id, $failed);
+        }
+    }
+
+    /**
+     * @param  array{state: string, failures: int, opened_at: ?int}  $state
+     */
+    private function shouldTrip(array $state): bool
+    {
+        if (! $this->usesRateStrategy()) {
+            return ($state['failures'] + 1) >= Config::circuitBreakerThreshold();
+        }
+
+        // The current failure was already recorded into the window buckets by
+        // recordFailure(), so isTripped() sees it.
+        return $this->rateStrategy()->isTripped($this->integration->id);
+    }
+
+    private function usesRateStrategy(): bool
+    {
+        return Config::circuitBreakerStrategy() !== 'count';
+    }
+
+    private function rateStrategy(): CircuitBreakerRateStrategy
+    {
+        return $this->rateStrategy ??= new CircuitBreakerRateStrategy;
+    }
+
+    private function override(): ?CircuitOverride
+    {
+        return $this->integration->effectiveCircuitOverride();
     }
 
     /**
