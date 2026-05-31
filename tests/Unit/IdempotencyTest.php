@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\Log;
 use Illuminate\Support\Facades\Schema;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
+use Integrations\Enums\IdempotencyPriorState;
 use Integrations\Exceptions\IdempotencyConflict;
 use Integrations\Exceptions\RetryableException;
 use Integrations\IntegrationManager;
@@ -549,6 +550,8 @@ class IdempotencyTest extends TestCase
             $this->fail('Expected IdempotencyConflict.');
         } catch (IdempotencyConflict $e) {
             $this->assertSame(['ok' => true, 'order_id' => 4242], $e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::Recovered, $e->priorState);
+            $this->assertNotNull($e->priorRowId, 'priorRowId should point at the persisted integration_requests row.');
         }
     }
 
@@ -571,7 +574,156 @@ class IdempotencyTest extends TestCase
             $this->fail('Expected IdempotencyConflict.');
         } catch (IdempotencyConflict $e) {
             $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::NoRow, $e->priorState);
+            $this->assertNull($e->priorRowId);
         }
+    }
+
+    public function test_conflict_carries_empty_body_state_when_prior_row_has_null_response_data(): void
+    {
+        // Distinct branch from NoRow: the keyed call landed and a row was
+        // persisted, but the response_data is null (e.g. a 204 reply, or
+        // an explicit null return). An operator triaging this should see
+        // "empty body" not "no row" so they investigate the right thing.
+        IntegrationIdempotencyKey::query()->create([
+            'integration_id' => $this->integration->id,
+            'key' => 'empty:1',
+        ]);
+        $row = IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'empty:1',
+            'response_code' => 204,
+            'response_data' => null,
+            'response_success' => true,
+            'duration_ms' => 10,
+        ]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('empty:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::EmptyBody, $e->priorState);
+            $this->assertSame($row->id, $e->priorRowId);
+        }
+    }
+
+    public function test_conflict_carries_empty_body_state_when_prior_row_has_empty_string_response_data(): void
+    {
+        // Sibling case to the null branch above: response_data is the
+        // empty string rather than NULL. Same recovery shape, same state.
+        IntegrationIdempotencyKey::query()->create([
+            'integration_id' => $this->integration->id,
+            'key' => 'empty-str:1',
+        ]);
+        $row = IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'empty-str:1',
+            'response_code' => 200,
+            'response_data' => '',
+            'response_success' => true,
+            'duration_ms' => 10,
+        ]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('empty-str:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::EmptyBody, $e->priorState);
+            $this->assertSame($row->id, $e->priorRowId);
+        }
+    }
+
+    public function test_conflict_carries_unparseable_state_when_prior_row_response_data_is_invalid_json(): void
+    {
+        IntegrationIdempotencyKey::query()->create([
+            'integration_id' => $this->integration->id,
+            'key' => 'corrupt:1',
+        ]);
+        $row = IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'corrupt:1',
+            'response_code' => 200,
+            'response_data' => '{not valid json',
+            'response_success' => true,
+            'duration_ms' => 10,
+        ]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('corrupt:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::Unparseable, $e->priorState);
+            $this->assertSame($row->id, $e->priorRowId);
+        }
+    }
+
+    public function test_conflict_carries_unparseable_state_when_prior_row_response_data_decodes_to_scalar(): void
+    {
+        // Valid JSON but decodes to a string rather than an array — same
+        // Unparseable branch from the recovery standpoint, since the
+        // caller can't hydrate it as a response object.
+        IntegrationIdempotencyKey::query()->create([
+            'integration_id' => $this->integration->id,
+            'key' => 'scalar:1',
+        ]);
+        $row = IntegrationRequest::query()->create([
+            'integration_id' => $this->integration->id,
+            'endpoint' => '/api/charge',
+            'method' => 'POST',
+            'idempotency_key' => 'scalar:1',
+            'response_code' => 200,
+            'response_data' => '"just a string"',
+            'response_success' => true,
+            'duration_ms' => 10,
+        ]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('scalar:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::Unparseable, $e->priorState);
+            $this->assertSame($row->id, $e->priorRowId);
+        }
+    }
+
+    public function test_get_idempotency_recovery_returns_no_row_state_when_nothing_on_file(): void
+    {
+        $recovery = $this->integration->getIdempotencyRecovery('never-used');
+
+        $this->assertSame(IdempotencyPriorState::NoRow, $recovery->priorState);
+        $this->assertNull($recovery->priorRowId);
+        $this->assertNull($recovery->priorResponse);
+    }
+
+    public function test_get_idempotency_recovery_returns_recovered_state_with_row_id_and_response(): void
+    {
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey('happy:1')
+            ->post(fn (): array => ['ok' => true, 'id' => 99]);
+
+        $recovery = $this->integration->getIdempotencyRecovery('happy:1');
+
+        $this->assertSame(IdempotencyPriorState::Recovered, $recovery->priorState);
+        $this->assertNotNull($recovery->priorRowId);
+        $this->assertSame(['ok' => true, 'id' => 99], $recovery->priorResponse);
     }
 }
 

@@ -24,12 +24,14 @@ use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
 use Integrations\Enums\CircuitOverride;
 use Integrations\Enums\HealthStatus;
+use Integrations\Enums\IdempotencyPriorState;
 use Integrations\Events\IntegrationCreated;
 use Integrations\Events\IntegrationSynced;
 use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
 use Integrations\Exceptions\IdempotencyConflict;
+use Integrations\IdempotencyRecovery;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
 use Integrations\RequestContext;
@@ -155,28 +157,21 @@ class Integration extends Model
     }
 
     /**
-     * Replay the response body of the prior, successful keyed call for the
-     * supplied idempotency key. Returns `null` when nothing recoverable is
-     * on file: no row, the row was logged before the call landed, the row
-     * is from a failed attempt, or the persisted JSON is unparseable.
+     * Full prior-attempt lookup for the supplied idempotency key. Returns an
+     * {@see IdempotencyRecovery} carrying the state of the prior request
+     * (no row, empty body, unparseable, or recovered), its row id when one
+     * exists, and the decoded response array on the recovered branch.
      *
-     * Intended for the {@see IdempotencyConflict}
-     * recovery path documented in `docs/core-concepts/idempotency.md`
-     * § "Partial failure": when a prior attempt succeeded upstream but
-     * threw before the local follow-up write completed, the next attempt
-     * trips the conflict and the caller needs the original response to
-     * finish the local bookkeeping. The same array is also attached to
-     * the thrown {@see IdempotencyConflict} via
-     * `$e->priorResponse`, so most callers don't need to invoke this
-     * method directly.
-     *
-     * The returned value is the parsed response array, not a Data object,
-     * because hydrating into a domain DTO is the caller's choice (the
-     * package doesn't know which class the response should land in).
-     *
-     * @return array<array-key, mixed>|null
+     * Intended for the {@see IdempotencyConflict} recovery path documented
+     * in `docs/core-concepts/idempotency.md` § "Recovering on conflict":
+     * the package eagerly calls this from
+     * {@see IdempotencyKeyManager::reserve()} when the conflict fires and
+     * attaches the result to the exception, so most callers read
+     * `$e->priorState` / `$e->priorRowId` / `$e->priorResponse` directly
+     * rather than calling this method themselves. Use this method when
+     * recovering outside the catch flow, or to probe ahead of a write.
      */
-    public function getIdempotencyResponse(string $key): ?array
+    public function getIdempotencyRecovery(string $key): IdempotencyRecovery
     {
         $prior = $this->requests()
             ->where('idempotency_key', $key)
@@ -184,17 +179,44 @@ class Integration extends Model
             ->latest('id')
             ->first();
 
-        if ($prior === null || $prior->response_data === null) {
-            return null;
+        if ($prior === null) {
+            return new IdempotencyRecovery(IdempotencyPriorState::NoRow);
+        }
+
+        if ($prior->response_data === null || $prior->response_data === '') {
+            return new IdempotencyRecovery(IdempotencyPriorState::EmptyBody, $prior->id);
         }
 
         try {
             $decoded = json_decode($prior->response_data, true, 512, JSON_THROW_ON_ERROR);
         } catch (JsonException) {
-            return null;
+            return new IdempotencyRecovery(IdempotencyPriorState::Unparseable, $prior->id);
         }
 
-        return is_array($decoded) ? $decoded : null;
+        if (! is_array($decoded)) {
+            return new IdempotencyRecovery(IdempotencyPriorState::Unparseable, $prior->id);
+        }
+
+        return new IdempotencyRecovery(IdempotencyPriorState::Recovered, $prior->id, $decoded);
+    }
+
+    /**
+     * Replay the response body of the prior, successful keyed call for the
+     * supplied idempotency key. Returns `null` when nothing recoverable is
+     * on file: no row, the row was logged before the call landed, the row
+     * is from a failed attempt, the body was empty, or the persisted JSON
+     * is unparseable.
+     *
+     * Convenience wrapper around {@see getIdempotencyRecovery()} for callers
+     * that only need the recovered array and don't want to dispatch on the
+     * state enum. The same array is also attached to the thrown
+     * {@see IdempotencyConflict} via `$e->priorResponse`.
+     *
+     * @return array<array-key, mixed>|null
+     */
+    public function getIdempotencyResponse(string $key): ?array
+    {
+        return $this->getIdempotencyRecovery($key)->priorResponse;
     }
 
     /** @return HasMany<IntegrationLog, $this> */

@@ -79,15 +79,20 @@ final class IdempotencyKeyManager
                 'key' => $key,
             ]);
         } catch (UniqueConstraintViolationException $e) {
-            // Eagerly hand the prior response to the catch block so it
-            // doesn't have to issue a second query just to recover. The
-            // lookup only runs on the failure path, so the extra query
-            // cost is paid by conflicts, not by every keyed write.
+            // Eagerly populate the prior-attempt state on the exception so
+            // the catch block doesn't have to issue a second query just to
+            // recover. The lookup only runs on the failure path, so the
+            // extra query cost is paid by conflicts, not by every keyed
+            // write.
+            $recovery = $this->integration->getIdempotencyRecovery($key);
+
             throw new IdempotencyConflict(
                 $this->integration->id,
                 $key,
                 previous: $e,
-                priorResponse: $this->integration->getIdempotencyResponse($key),
+                priorResponse: $recovery->priorResponse,
+                priorState: $recovery->priorState,
+                priorRowId: $recovery->priorRowId,
             );
         }
     }
