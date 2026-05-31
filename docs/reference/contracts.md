@@ -147,6 +147,23 @@ interface HasHealthCheck
 |--------|---------|-------------|
 | `healthCheck()` | `bool` | Test the connection without a full sync |
 
+## IdentifiesAuthenticatedUser
+
+Resolves the account the integration's credentials authenticate as.
+
+```php
+interface IdentifiesAuthenticatedUser
+{
+    public function authenticatedUser(Integration $integration): AuthenticatedUser;
+}
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `authenticatedUser()` | `AuthenticatedUser` | The principal behind the credentials, mapped from the upstream "who am I" call |
+
+Read it through `Integration::authenticatedUser(?CarbonInterface $cacheFor = null, bool $refresh = false)`, which caches the resolved identity and throws `UnsupportedByProvider` when the provider doesn't implement this contract. Pre-check with `Integration::supportsAuthenticatedUser()` to branch without catching. See [Authenticated identity](/features/authenticated-identity).
+
 ## RedactsRequestData
 
 Declares sensitive fields to redact before persistence.

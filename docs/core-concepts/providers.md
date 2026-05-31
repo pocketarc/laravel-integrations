@@ -72,6 +72,7 @@ Providers can opt into additional capabilities by implementing these interfaces:
 | `HandlesWebhooks`     | Inbound webhook handling with signature verification.           |
 | `HasOAuth2`           | OAuth2 authorization flow with token refresh.                   |
 | `HasHealthCheck`      | Lightweight connection testing.                                 |
+| `IdentifiesAuthenticatedUser` | Resolve the account the credentials authenticate as.    |
 | `RedactsRequestData`  | Redact sensitive fields from stored request/response data.      |
 | `HasIncrementalSync`  | Delta sync with cursor support (extends `HasScheduledSync`).    |
 | `CustomizesRetry`     | Provider-specific retry decisions and delay logic.              |
@@ -83,6 +84,7 @@ Each interface is documented in detail on its feature page:
 - `HandlesWebhooks` -- [Webhooks](/features/webhooks)
 - `HasOAuth2` -- [OAuth2](/features/oauth2)
 - `HasHealthCheck` -- [Health Monitoring](/core-concepts/health-monitoring)
+- `IdentifiesAuthenticatedUser` -- [Authenticated Identity](/features/authenticated-identity)
 - `RedactsRequestData` -- [Data Redaction](/features/redaction)
 - `CustomizesRetry` -- [Custom Retry Logic](/advanced/custom-retry)
 

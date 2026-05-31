@@ -9,6 +9,7 @@ use Illuminate\Support\Facades\DB;
 use Integrations\CircuitBreaker;
 use Integrations\Enums\HealthStatus;
 use Integrations\Models\Integration;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 class HealthCommand extends Command
 {
@@ -38,7 +39,11 @@ class HealthCommand extends Command
     private function renderIntegration(Integration $integration): void
     {
         $this->newLine();
-        $this->info("=== {$integration->name} ({$integration->provider}) ===");
+        // Escape interpolated values that could contain `<...>` and be parsed
+        // as console formatting: the operator-set name and the provider key.
+        $name = OutputFormatter::escape($integration->name);
+        $provider = OutputFormatter::escape($integration->provider);
+        $this->info("=== {$name} ({$provider}) ===");
 
         $healthColor = match ($integration->health_status) {
             HealthStatus::Healthy => 'green',
@@ -52,6 +57,8 @@ class HealthCommand extends Command
         $this->line("  Consecutive failures: {$integration->consecutive_failures}");
         $this->line('  Last error: '.($integration->last_error_at?->diffForHumans() ?? 'None'));
         $this->line('  Last synced: '.($integration->last_synced_at?->diffForHumans() ?? 'Never'));
+
+        $this->renderAuthenticatedUser($integration);
 
         $recentRequests = $integration->requests()->recent(24);
         $total = $recentRequests->count();
@@ -80,10 +87,48 @@ class HealthCommand extends Command
         if ($topErrors->isNotEmpty()) {
             $this->line('  Top errors:');
             foreach ($topErrors as $message => $count) {
-                $truncated = mb_substr((string) $message, 0, 80);
+                // The logged error message is upstream/SDK text; escape it so
+                // a `<...>` in it isn't parsed as console formatting.
+                $truncated = OutputFormatter::escape(mb_substr((string) $message, 0, 80));
                 $countStr = is_scalar($count) ? (string) $count : '?';
                 $this->line("    [{$countStr}x] {$truncated}");
             }
+        }
+    }
+
+    /**
+     * Show the account the integration authenticates as, for providers that
+     * can resolve it. Cached briefly so a report over many integrations
+     * doesn't fan out a live call each. A failure here (open circuit, upstream
+     * error) degrades to "unknown" rather than aborting the whole report.
+     */
+    private function renderAuthenticatedUser(Integration $integration): void
+    {
+        try {
+            $supported = $integration->supportsAuthenticatedUser();
+        } catch (\Throwable) {
+            // Provider not registered or unresolvable: can't tell, so skip
+            // the line rather than letting it abort the whole report.
+            return;
+        }
+
+        if (! $supported) {
+            return;
+        }
+
+        try {
+            $user = $integration->authenticatedUser(cacheFor: now()->addHour());
+            // Escape provider-supplied values: a username/name/id containing
+            // `<...>` would otherwise be parsed as console formatting tags.
+            $id = OutputFormatter::escape($user->id);
+            $label = $user->username ?? $user->name;
+            $identity = $label !== null
+                ? OutputFormatter::escape($label)." (id: {$id})"
+                : "id: {$id}";
+            $this->line("  Authenticated as: {$identity}");
+        } catch (\Throwable $e) {
+            $reason = OutputFormatter::escape(mb_substr($e->getMessage(), 0, 80));
+            $this->line("  Authenticated as: <fg=yellow>unknown</> ({$reason})");
         }
     }
 

@@ -20,8 +20,10 @@ use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Concerns\ManagesResilienceOverrides;
 use Integrations\Concerns\TracksHealth;
 use Integrations\Contracts\HasOAuth2;
+use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Contracts\SupportsIdempotency;
+use Integrations\Data\AuthenticatedUser;
 use Integrations\Enums\CircuitOverride;
 use Integrations\Enums\HealthStatus;
 use Integrations\Enums\IdempotencyPriorState;
@@ -31,6 +33,7 @@ use Integrations\Events\OperationCompleted;
 use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
 use Integrations\Exceptions\IdempotencyConflict;
+use Integrations\Exceptions\UnsupportedByProvider;
 use Integrations\IdempotencyRecovery;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
@@ -466,6 +469,55 @@ class Integration extends Model
         } finally {
             $lock->release();
         }
+    }
+
+    /**
+     * Whether this integration's provider can resolve its authenticated
+     * identity. Pre-check before {@see AuthenticatedUser()} to branch without
+     * catching {@see UnsupportedByProvider}.
+     */
+    public function supportsAuthenticatedUser(): bool
+    {
+        return $this->provider() instanceof IdentifiesAuthenticatedUser;
+    }
+
+    /**
+     * The account this integration's credentials authenticate as.
+     *
+     * Delegates to the provider's
+     * {@see IdentifiesAuthenticatedUser::authenticatedUser()}, which makes the
+     * upstream "who am I" call through the request executor, so the circuit
+     * breaker, rate limiter, and request logging all apply. Throws
+     * {@see UnsupportedByProvider} when the provider doesn't implement the
+     * contract; pre-check with {@see supportsAuthenticatedUser()}.
+     *
+     * Pass $cacheFor to cache the resolved identity (keyed per integration),
+     * so a caller on a hot path, or running while the upstream is down, reads
+     * the cached principal instead of making a live call. The identity rarely
+     * changes, so a long TTL is usually right. Pass $refresh to force a fresh
+     * fetch and overwrite the cached value. With $cacheFor null the call is
+     * always live, and a failure (a provider error, or an open circuit)
+     * propagates; treat that as "identity unknown" and degrade.
+     */
+    public function authenticatedUser(?CarbonInterface $cacheFor = null, bool $refresh = false): AuthenticatedUser
+    {
+        $provider = $this->provider();
+
+        if (! $provider instanceof IdentifiesAuthenticatedUser) {
+            throw new UnsupportedByProvider($this, 'authenticated-user identification');
+        }
+
+        if ($cacheFor === null) {
+            return $provider->authenticatedUser($this);
+        }
+
+        $key = Config::cachePrefix().":auth-user:{$this->id}";
+
+        if ($refresh) {
+            Cache::forget($key);
+        }
+
+        return Cache::remember($key, $cacheFor, fn (): AuthenticatedUser => $provider->authenticatedUser($this));
     }
 
     /**

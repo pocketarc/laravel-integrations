@@ -5,7 +5,9 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit\Commands;
 
 use Integrations\Enums\HealthStatus;
+use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Tests\Fixtures\IdentifyingProvider;
 use Integrations\Tests\TestCase;
 
 class HealthCommandTest extends TestCase
@@ -31,6 +33,36 @@ class HealthCommandTest extends TestCase
             ->expectsOutputToContain('Degraded One')
             ->expectsOutputToContain('healthy')
             ->expectsOutputToContain('degraded');
+    }
+
+    public function test_shows_authenticated_identity_when_supported(): void
+    {
+        app(IntegrationManager::class)->register('identifying', IdentifyingProvider::class);
+
+        Integration::create([
+            'provider' => 'identifying',
+            'name' => 'Identified One',
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Authenticated as: octocat (id: u-1)');
+    }
+
+    public function test_escapes_console_formatting_in_provider_supplied_output(): void
+    {
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Acme <fg=red>Corp</>',
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        // The markup must survive verbatim rather than being parsed as a style
+        // tag and stripped (which would leave "Acme Corp").
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Acme <fg=red>Corp</>');
     }
 
     public function test_empty_state(): void

@@ -105,6 +105,7 @@ export default defineConfig({
           { text: "OAuth2", link: "/features/oauth2" },
           { text: "Webhooks", link: "/features/webhooks" },
           { text: "Scheduled syncs", link: "/features/scheduled-syncs" },
+          { text: "Authenticated identity", link: "/features/authenticated-identity" },
           { text: "ID mapping", link: "/features/id-mapping" },
           { text: "Data redaction", link: "/features/redaction" },
           { text: "Multi-tenancy", link: "/features/multi-tenancy" },

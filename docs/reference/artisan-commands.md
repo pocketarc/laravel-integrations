@@ -117,7 +117,7 @@ Example output:
 
 ## integrations:health
 
-Detailed health report with error rates, response times, and top errors.
+Detailed health report with error rates, response times, and top errors. For providers that implement [`IdentifiesAuthenticatedUser`](/features/authenticated-identity), it also shows the account each integration authenticates as.
 
 ```bash
 php artisan integrations:health
