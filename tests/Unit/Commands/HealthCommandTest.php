@@ -50,6 +50,21 @@ class HealthCommandTest extends TestCase
             ->expectsOutputToContain('Authenticated as: octocat (id: u-1)');
     }
 
+    public function test_escapes_console_formatting_in_provider_supplied_output(): void
+    {
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Acme <fg=red>Corp</>',
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        // The markup must survive verbatim rather than being parsed as a style
+        // tag and stripped (which would leave "Acme Corp").
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('Acme <fg=red>Corp</>');
+    }
+
     public function test_empty_state(): void
     {
         $this->artisan('integrations:health')

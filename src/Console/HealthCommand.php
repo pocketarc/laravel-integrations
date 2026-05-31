@@ -39,7 +39,11 @@ class HealthCommand extends Command
     private function renderIntegration(Integration $integration): void
     {
         $this->newLine();
-        $this->info("=== {$integration->name} ({$integration->provider}) ===");
+        // Escape interpolated values that could contain `<...>` and be parsed
+        // as console formatting: the operator-set name and the provider key.
+        $name = OutputFormatter::escape($integration->name);
+        $provider = OutputFormatter::escape($integration->provider);
+        $this->info("=== {$name} ({$provider}) ===");
 
         $healthColor = match ($integration->health_status) {
             HealthStatus::Healthy => 'green',
@@ -83,7 +87,9 @@ class HealthCommand extends Command
         if ($topErrors->isNotEmpty()) {
             $this->line('  Top errors:');
             foreach ($topErrors as $message => $count) {
-                $truncated = mb_substr((string) $message, 0, 80);
+                // The logged error message is upstream/SDK text; escape it so
+                // a `<...>` in it isn't parsed as console formatting.
+                $truncated = OutputFormatter::escape(mb_substr((string) $message, 0, 80));
                 $countStr = is_scalar($count) ? (string) $count : '?';
                 $this->line("    [{$countStr}x] {$truncated}");
             }
