@@ -6,17 +6,17 @@ Providers that implement `HasScheduledSync` get automated sync scheduling with h
 
 ```php
 use Integrations\Contracts\HasScheduledSync;
-use Integrations\RateLimit;
 use Integrations\Sync\SyncSession;
 
-interface HasScheduledSync
+interface HasScheduledSync extends DeclaresRateLimit
 {
     public function sync(Integration $integration, SyncSession $session): void;
     public function defaultSyncInterval(): int;     // minutes
-    public function defaultRateLimit(): ?RateLimit; // null = unlimited
     public function reduceCheckpoints(array $checkpoints): mixed;
 }
 ```
+
+`HasScheduledSync` extends [`DeclaresRateLimit`](/reference/contracts#declaresratelimit), so a sync provider also implements `defaultRateLimit(): ?RateLimit` (null = unlimited) to declare its [rate budget](/core-concepts/rate-limiting).
 
 A provider's `sync()` doesn't process items itself and doesn't return a result. It enumerates the items to sync and hands each one to `$session->dispatch()`. The framework turns those into `integration_sync_items` rows and a `Bus::batch` of `ProcessSyncItem` jobs, runs the listeners, and reconciles the run when the batch finishes.
 

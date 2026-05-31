@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 5.1.0
+
+- New: the [`DeclaresRateLimit`](/reference/contracts#declaresratelimit) provider contract carries `defaultRateLimit()` on its own, so a request-only provider can ship an in-code rate budget without implementing [`HasScheduledSync`](/reference/contracts#hasscheduledsync). The method moved up from `HasScheduledSync`, which now extends `DeclaresRateLimit`, so existing sync providers satisfy the new contract unchanged. `Integration::effectiveRateLimit()` reads any `DeclaresRateLimit` provider, and a [runtime override](/advanced/circuit-breaker#runtime-overrides) still takes precedence over the declared default. `make:integration-provider` gains a `--rate-limit` flag to scaffold a request-only provider's limit.
+
 ## 5.0.0
 
 The circuit breaker is now an availability detector driven by a single failure classifier, and it can be controlled at runtime without a redeploy. See the [upgrade guide](/about/upgrade-guide) for the migration.

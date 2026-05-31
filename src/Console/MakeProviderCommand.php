@@ -12,6 +12,7 @@ class MakeProviderCommand extends GeneratorCommand
     protected $signature = 'make:integration-provider {name : The provider class name}
         {--oauth : Include OAuth2 support}
         {--sync : Include scheduled sync support}
+        {--rate-limit : Declare a default API rate limit}
         {--webhooks : Include webhook handling}
         {--health-check : Include health check support}
         {--all : Include all optional interfaces}';
@@ -56,7 +57,7 @@ class MakeProviderCommand extends GeneratorCommand
      */
     private function resolveCapabilities(): array
     {
-        $options = ['oauth', 'sync', 'webhooks', 'health-check'];
+        $options = ['oauth', 'sync', 'rate-limit', 'webhooks', 'health-check'];
 
         if ((bool) $this->option('all')) {
             return $options;
@@ -85,11 +86,19 @@ class MakeProviderCommand extends GeneratorCommand
         $map = [
             'oauth' => 'use Integrations\\Contracts\\HasOAuth2;',
             'sync' => "use Integrations\\Contracts\\HasScheduledSync;\nuse Integrations\\Models\\Integration;\nuse Integrations\\RateLimit;\nuse Integrations\\Sync\\SyncSession;",
+            'rate-limit' => "use Integrations\\Contracts\\DeclaresRateLimit;\nuse Integrations\\RateLimit;",
             'webhooks' => "use Illuminate\\Http\\Request;\nuse Integrations\\Contracts\\HandlesWebhooks;\nuse Integrations\\Models\\Integration;",
             'health-check' => "use Integrations\\Contracts\\HasHealthCheck;\nuse Integrations\\Models\\Integration;",
         ];
 
         foreach ($capabilities as $capability) {
+            // HasScheduledSync already extends DeclaresRateLimit, so a sync
+            // provider neither lists nor imports the interface directly; it
+            // only needs RateLimit, which the sync block already imports.
+            if ($capability === 'rate-limit' && in_array('sync', $capabilities, true)) {
+                continue;
+            }
+
             if (array_key_exists($capability, $map)) {
                 $uses[] = $map[$capability];
             }
@@ -119,11 +128,18 @@ class MakeProviderCommand extends GeneratorCommand
         $map = [
             'oauth' => 'HasOAuth2',
             'sync' => 'HasScheduledSync',
+            'rate-limit' => 'DeclaresRateLimit',
             'webhooks' => 'HandlesWebhooks',
             'health-check' => 'HasHealthCheck',
         ];
 
         foreach ($capabilities as $capability) {
+            // HasScheduledSync extends DeclaresRateLimit, so listing both is
+            // redundant; the sync interface alone covers the rate limit.
+            if ($capability === 'rate-limit' && in_array('sync', $capabilities, true)) {
+                continue;
+            }
+
             if (array_key_exists($capability, $map)) {
                 $interfaces[] = $map[$capability];
             }
@@ -166,6 +182,15 @@ class MakeProviderCommand extends GeneratorCommand
     {
         return 60;
     }
+
+PHP;
+        }
+
+        // HasScheduledSync extends DeclaresRateLimit, so a sync provider must
+        // also define defaultRateLimit(); a request-only provider declares it
+        // via --rate-limit alone. Either way it appears exactly once.
+        if (in_array('sync', $capabilities, true) || in_array('rate-limit', $capabilities, true)) {
+            $methods .= <<<'PHP'
 
     public function defaultRateLimit(): ?RateLimit
     {

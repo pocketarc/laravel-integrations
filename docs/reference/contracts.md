@@ -25,16 +25,32 @@ interface IntegrationProvider
 | `credentialDataClass()` | `?string` | Spatie Data class-string or null for plain array |
 | `metadataDataClass()` | `?string` | Spatie Data class-string or null for plain array |
 
+## DeclaresRateLimit
+
+Declares an in-code API rate budget. Implement it on any provider, with or without scheduled sync.
+
+```php
+interface DeclaresRateLimit
+{
+    public function defaultRateLimit(): ?RateLimit;
+}
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `defaultRateLimit()` | `?RateLimit` | API rate budget, e.g. `RateLimit::perHour(5000)` (fixed window) or `RateLimit::perMinute(700)->sliding()`. null = unlimited |
+
+The rate budget is a transport property of the upstream, independent of scheduled sync. A request-only provider implements `DeclaresRateLimit` alone to ship a default limit; `HasScheduledSync` extends it, so every sync provider satisfies it too. The framework reads the value through `Integration::effectiveRateLimit()`, where a [runtime override](/advanced/circuit-breaker#runtime-overrides) takes precedence. See [Rate limiting](/core-concepts/rate-limiting).
+
 ## HasScheduledSync
 
 Adds automated sync scheduling.
 
 ```php
-interface HasScheduledSync
+interface HasScheduledSync extends DeclaresRateLimit
 {
     public function sync(Integration $integration, SyncSession $session): void;
     public function defaultSyncInterval(): int;
-    public function defaultRateLimit(): ?RateLimit;
     public function reduceCheckpoints(array $checkpoints): mixed;
 }
 ```
@@ -43,8 +59,9 @@ interface HasScheduledSync
 |--------|---------|-------------|
 | `sync()` | `void` | Enumerate items and hand each to `$session->dispatch()` |
 | `defaultSyncInterval()` | `int` | Default interval in minutes |
-| `defaultRateLimit()` | `?RateLimit` | API rate budget, e.g. `RateLimit::perHour(5000)` (fixed window) or `RateLimit::perMinute(700)->sliding()`. null = unlimited |
 | `reduceCheckpoints()` | `mixed` | Reduce a run's completed checkpoint values into the next `sync_cursor` |
+
+It also inherits `defaultRateLimit()` from [`DeclaresRateLimit`](#declaresratelimit), so a sync provider declares its rate budget the same way.
 
 `sync()` doesn't process items or return a result. It hands each item to `$session->dispatch($event, $checkpointValue, $externalId)`, and the framework wraps each one in a queued `ProcessSyncItem` job, batches them, runs the listeners, and advances the cursor once every job has succeeded. See [Scheduled syncs](/features/scheduled-syncs).
 

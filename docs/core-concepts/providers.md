@@ -67,7 +67,8 @@ Providers can opt into additional capabilities by implementing these interfaces:
 | Interface             | Purpose                                                         |
 |-----------------------|-----------------------------------------------------------------|
 | `IntegrationProvider` | **Required.** Name, credential/metadata rules and Data classes. |
-| `HasScheduledSync`    | Scheduled sync support with rate limits.                        |
+| `DeclaresRateLimit`   | Declare an in-code API rate budget, with or without sync.       |
+| `HasScheduledSync`    | Scheduled sync support (extends `DeclaresRateLimit`).           |
 | `HandlesWebhooks`     | Inbound webhook handling with signature verification.           |
 | `HasOAuth2`           | OAuth2 authorization flow with token refresh.                   |
 | `HasHealthCheck`      | Lightweight connection testing.                                 |
@@ -77,6 +78,7 @@ Providers can opt into additional capabilities by implementing these interfaces:
 
 Each interface is documented in detail on its feature page:
 
+- `DeclaresRateLimit` -- [Rate Limiting](/core-concepts/rate-limiting)
 - `HasScheduledSync` / `HasIncrementalSync` -- [Scheduled Syncs](/features/scheduled-syncs)
 - `HandlesWebhooks` -- [Webhooks](/features/webhooks)
 - `HasOAuth2` -- [OAuth2](/features/oauth2)
