@@ -5,6 +5,7 @@ Providers that implement `HasScheduledSync` get automated sync scheduling with h
 ## The HasScheduledSync interface
 
 ```php
+use Integrations\Contracts\DeclaresRateLimit;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Sync\SyncSession;
 
