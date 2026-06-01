@@ -60,6 +60,16 @@ $client = new ZendeskClient($integration);
 
 All resource methods go through `Integration::request()` / `requestAs()` internally, so every API call is logged, health-tracked, and rate-limited. Retry is handled by the core with method-aware defaults (GET = 3 attempts, non-GET = 1). The Zendesk SDK wraps Guzzle exceptions, which the core detects via exception chain walking and respects `Retry-After` headers automatically.
 
+## Authenticated identity
+
+`ZendeskProvider` implements [`IdentifiesAuthenticatedUser`](/reference/contracts#identifiesauthenticateduser). [`$integration->authenticatedUser()`](/features/authenticated-identity) calls `GET /users/me.json` and maps the agent onto the provider-agnostic `AuthenticatedUser`:
+
+```php
+$me = $integration->authenticatedUser(cacheFor: now()->addDay());
+$me->id;        // Zendesk user id
+$me->email;     // also surfaced as the username
+```
+
 ## Sync
 
 The adapter syncs tickets via the Zendesk Incremental Tickets API (`$client->tickets()->since()`). For each ticket it calls `$session->dispatch()` with a `ZendeskTicketSynced` event carrying the ticket data and the requester's user data (sideloaded). The framework wraps each one in a queued job, runs your listeners, and advances `sync_cursor` once every ticket's job has succeeded. Listeners for `ZendeskTicketSynced` must not implement `ShouldQueue` (see [Scheduled syncs](/features/scheduled-syncs) for the per-item model).

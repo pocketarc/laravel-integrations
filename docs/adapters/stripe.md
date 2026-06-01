@@ -68,7 +68,20 @@ $client = new StripeClient($integration);
 | `$client->webhookEndpoints()`   | `->create($url, $enabledEvents, ...)` / `->update($id, ...)`   | Returns `\Stripe\WebhookEndpoint`.                                                                       |
 |                                 | `->retrieve($id)` / `->delete($id, $idempotencyKey?)` / `->list($limit?)` | Delete returns the WebhookEndpoint with `$deleted = true`.                                    |
 
-All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked.
+All methods go through `Integration::request()` internally, so every API call is logged, rate-limited, and health-tracked. The provider declares a 100-requests/second rate limit (Stripe's documented live-mode ceiling), enforced as a fixed window.
+
+### Authenticated identity
+
+`StripeProvider` implements [`IdentifiesAuthenticatedUser`](/reference/contracts#identifiesauthenticateduser). [`$integration->authenticatedUser()`](/features/authenticated-identity) calls `GET /v1/account` and maps the account onto the provider-agnostic `AuthenticatedUser`:
+
+```php
+$me = $integration->authenticatedUser(cacheFor: now()->addDay());
+$me->id;     // Stripe account id, e.g. "acct_123"
+$me->name;   // business profile name
+$me->email;  // account email
+```
+
+A Stripe account has no handle, so `username` is null.
 
 ### Idempotency
 
