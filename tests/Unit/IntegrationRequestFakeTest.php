@@ -209,6 +209,99 @@ class IntegrationRequestFakeTest extends TestCase
         $this->assertDatabaseCount('integration_requests', 1);
     }
 
+    public function test_passthrough_provider_runs_the_real_executor(): void
+    {
+        IntegrationRequest::fake()->passthrough('test');
+
+        $called = false;
+        $result = $this->integration->request(
+            endpoint: '/api/real',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: function () use (&$called): array {
+                $called = true;
+
+                return ['ok' => true];
+            },
+        );
+
+        $this->assertTrue($called, 'Passthrough should run the real callback rather than serving from the fake.');
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
+        $this->assertDatabaseCount('integration_requests', 1);
+    }
+
+    public function test_passthrough_only_applies_to_named_providers(): void
+    {
+        // 'test' is not in the passthrough list, so its requests are still faked.
+        IntegrationRequest::fake(['/api/faked' => ['ok' => true]])->passthrough('other-provider');
+
+        $result = $this->integration->request(
+            endpoint: '/api/faked',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: fn () => throw new \RuntimeException('Should not be called'),
+        );
+
+        $this->assertInstanceOf(TestOkResponse::class, $result);
+        $this->assertTrue($result->ok);
+        $this->assertDatabaseCount('integration_requests', 0);
+    }
+
+    public function test_passthrough_is_not_recorded_by_default(): void
+    {
+        IntegrationRequest::fake()->passthrough('test');
+
+        $this->integration->request(
+            endpoint: '/api/real',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: fn () => ['ok' => true],
+        );
+
+        // It ran against the real executor (DB row written), so the fake's
+        // in-memory assertions don't see it.
+        $this->assertDatabaseCount('integration_requests', 1);
+        IntegrationRequest::assertNotRequested('/api/real');
+        IntegrationRequest::assertNothingRequested();
+    }
+
+    public function test_passthrough_is_visible_to_assertions_when_recording_enabled(): void
+    {
+        IntegrationRequest::fake()->passthrough('test')->recordPassthrough();
+
+        $this->integration->request(
+            endpoint: '/api/real',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: fn () => ['ok' => true],
+        );
+
+        // Still runs for real (one DB row), and now also shows in the assertions.
+        $this->assertDatabaseCount('integration_requests', 1);
+        IntegrationRequest::assertRequested('/api/real', times: 1, method: 'GET');
+        IntegrationRequest::assertRequestCount(1);
+    }
+
+    public function test_record_passthrough_does_not_record_faked_providers_twice(): void
+    {
+        // recordPassthrough() only affects passthrough providers; a faked
+        // provider is recorded once, through the normal fake path.
+        IntegrationRequest::fake(['/api/faked' => ['ok' => true]])
+            ->passthrough('other-provider')
+            ->recordPassthrough();
+
+        $this->integration->request(
+            endpoint: '/api/faked',
+            method: 'GET',
+            responseClass: TestOkResponse::class,
+            callback: fn () => throw new \RuntimeException('Should not be called'),
+        );
+
+        IntegrationRequest::assertRequestCount(1);
+        IntegrationRequest::assertRequested('/api/faked', times: 1);
+    }
+
     public function test_fake_matches_wildcard_endpoint(): void
     {
         IntegrationRequest::fake([

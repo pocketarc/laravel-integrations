@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 5.2.0
+
+- New: [provider-scoped passthrough](/testing/testing#provider-passthrough) on the testing fake. `IntegrationRequest::fake([...])->passthrough('openrouter')` lets the named provider's requests fall through to the real request executor instead of being served from the fake -- for when that provider is faked at a layer underneath `Integration::request()` (e.g. an AI call routed through the breaker and retries but stubbed at the SDK). Other providers stay faked. Opt-in and idempotent. Passthrough requests run for real and aren't recorded by default, so they don't appear in `assertRequested()`; add `recordPassthrough()` to log them for the assertions anyway. Unmatched requests for non-passthrough providers still return `null`.
+
 ## 5.1.0
 
 - New: the [`DeclaresRateLimit`](/reference/contracts#declaresratelimit) provider contract carries `defaultRateLimit()` on its own, so a request-only provider can ship an in-code rate budget without implementing [`HasScheduledSync`](/reference/contracts#hasscheduledsync). The method moved up from `HasScheduledSync`, which now extends `DeclaresRateLimit`, so existing sync providers satisfy the new contract unchanged. `Integration::effectiveRateLimit()` reads any `DeclaresRateLimit` provider, and a [runtime override](/advanced/circuit-breaker#runtime-overrides) still takes precedence over the declared default. `make:integration-provider` gains a `--rate-limit` flag to scaffold a request-only provider's limit.

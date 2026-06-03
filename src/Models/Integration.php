@@ -393,9 +393,11 @@ class Integration extends Model
         }
 
         $fake = IntegrationRequestFake::active();
-        if ($fake !== null) {
+        if ($fake !== null && ! $fake->shouldPassthrough($this->provider)) {
             return $fake->record($this, $endpoint, $method, $encodedRequestData, $responseClass);
         }
+
+        $fake?->notePassthrough($this, $endpoint, $method, $encodedRequestData);
 
         return $this->executor()->execute(
             $endpoint, $method, $responseClass, $callback, $relatedTo,
