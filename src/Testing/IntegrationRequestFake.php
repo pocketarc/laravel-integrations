@@ -24,6 +24,11 @@ class IntegrationRequestFake
     /** @var array<int, array<string, mixed>> */
     private array $scopedResponses = [];
 
+    /** @var list<string> */
+    private array $passthroughProviders = [];
+
+    private bool $recordPassthrough = false;
+
     /**
      * @param  array<string, mixed>  $fakeResponses
      */
@@ -72,14 +77,66 @@ class IntegrationRequestFake
         return $this;
     }
 
+    /**
+     * Let requests for the given provider(s) fall through to the real request
+     * executor instead of being served from this fake.
+     *
+     * Use this when a provider is exercised through a different faking layer —
+     * e.g. ai-workflow routes OpenRouter calls through Integration::request(),
+     * but the AI response is faked at the Prism layer. The OpenRouter request
+     * must reach the real executor (and thus Prism's fake) rather than this
+     * fake's response map, where it would otherwise go unmatched.
+     */
+    public function passthrough(string ...$providers): self
+    {
+        $this->passthroughProviders = array_values(array_unique([...$this->passthroughProviders, ...$providers]));
+
+        return $this;
+    }
+
+    /**
+     * Whether requests for the given provider should bypass this fake and run
+     * against the real executor. See {@see passthrough()}.
+     */
+    public function shouldPassthrough(string $provider): bool
+    {
+        return in_array($provider, $this->passthroughProviders, true);
+    }
+
+    /**
+     * Also log passthrough requests so they show up in {@see assertRequested()}
+     * and the other assertion helpers, even though they ran against the real
+     * executor rather than being served from this fake.
+     *
+     * Off by default: a passthrough request went to the real executor, not this
+     * fake, so the fake's assertions don't see it unless you opt in here. The
+     * real executor still writes its own integration_requests row either way;
+     * this flag only controls the in-memory log the assertions read.
+     */
+    public function recordPassthrough(bool $record = true): self
+    {
+        $this->recordPassthrough = $record;
+
+        return $this;
+    }
+
+    /**
+     * Log a passthrough request when {@see recordPassthrough()} is enabled.
+     * Called on the passthrough branch of {@see Integration::request()} before
+     * the request reaches the real executor; a no-op otherwise.
+     */
+    public function notePassthrough(Integration $integration, string $endpoint, string $method, ?string $requestData): void
+    {
+        if (! $this->recordPassthrough || ! $this->shouldPassthrough($integration->provider)) {
+            return;
+        }
+
+        $this->track($integration, $endpoint, $method, $requestData);
+    }
+
     public function record(Integration $integration, string $endpoint, string $method, ?string $requestData, ?string $responseClass = null): mixed
     {
-        $this->recorded[] = [
-            'integration_id' => $integration->id,
-            'endpoint' => $endpoint,
-            'method' => $method,
-            'request_data' => $requestData,
-        ];
+        $this->track($integration, $endpoint, $method, $requestData);
 
         $response = $this->findResponse($endpoint, $method, $integration->id);
 
@@ -100,6 +157,19 @@ class IntegrationRequestFake
         }
 
         return $raw;
+    }
+
+    /**
+     * Append a request to the in-memory log read by the assertion helpers.
+     */
+    private function track(Integration $integration, string $endpoint, string $method, ?string $requestData): void
+    {
+        $this->recorded[] = [
+            'integration_id' => $integration->id,
+            'endpoint' => $endpoint,
+            'method' => $method,
+            'request_data' => $requestData,
+        ];
     }
 
     /**

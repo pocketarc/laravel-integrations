@@ -68,6 +68,41 @@ IntegrationRequest::fake(['fallback/endpoint' => ['ok' => true]])
 
 You can pass either an `Integration` model or an integer ID to `forIntegration()`.
 
+### Provider passthrough
+
+The fake intercepts every `request()` and `requestAs()` call, returning `null` for any endpoint it has no response for. That gets in the way when a provider is faked through a *different* layer -- a call routed through `Integration::request()` (so the breaker, retries, and rate limiter apply) whose response is stubbed one level down, at the SDK or HTTP client. With no registered response the fake returns `null`, and that lower layer never runs.
+
+Mark such a provider as passthrough and its requests run against the real executor instead of being served from the fake:
+
+```php
+IntegrationRequest::fake([
+    'tickets/*.json' => ['id' => 1, 'subject' => 'Test'],
+])->passthrough('openrouter');
+```
+
+`zendesk` calls are faked as usual; `openrouter` calls fall through to the real executor -- breaker, retries, rate limit, transport audit, and your request callback all run, so whatever you've stubbed underneath (a Prism fake, an `Http::fake()`, ...) supplies the response.
+
+Passthrough is opt-in and scoped by [provider](/core-concepts/providers) string. Pass several at once, or call it more than once from different fake-setup helpers -- the list de-duplicates:
+
+```php
+IntegrationRequest::fake()->passthrough('openrouter', 'pinecone');
+```
+
+A passthrough request isn't recorded by default, so it won't appear in `assertRequested()` -- it ran against the real executor, not the fake. Call `recordPassthrough()` when a test still wants to assert the call was made:
+
+```php
+IntegrationRequest::fake()
+    ->passthrough('openrouter')
+    ->recordPassthrough();
+
+// ... exercise the code, then ...
+IntegrationRequest::assertRequested('chat/completions');
+```
+
+The real executor writes its own `integration_requests` row for a passthrough request either way; `recordPassthrough()` only adds the request to the in-memory log the assertions read.
+
+Unmatched requests for non-passthrough providers still return `null`. Passthrough is deliberately not a blanket "unmatched goes real", which would let a forgotten fake silently hit a live API.
+
 ## Making assertions
 
 ```php
