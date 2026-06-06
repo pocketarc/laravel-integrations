@@ -46,6 +46,7 @@ $client = new GitHubClient($integration);
 | | `->since($since, $callback)` | Iterate issues updated since a timestamp. Skips PRs. |
 | | `->close($number, $stateReason, $idempotencyKey?)` | Close an issue. Optional state reason (completed, not_planned, duplicate). |
 | | `->reopen($number, $idempotencyKey?)` | Reopen a closed issue. |
+| | `->update($number, $title?, $body?, $idempotencyKey?)` | Edit an issue's title and/or body. At least one is required. Returns `?GitHubIssueData`. |
 | | `->timeline($number, $callback)` | Iterate timeline events (labels, assignments, etc.). |
 | `$client->comments()` | `->list($number, $callback)` | Iterate all comments on an issue. |
 | | `->add($number, $body, $idempotencyKey?)` | Add a comment to an issue. Returns `?GitHubCommentData`. |
@@ -85,7 +86,7 @@ GitHub's `X-GitHub-Request-Id` is captured on `integration_requests.provider_req
 
 ## Idempotency
 
-All `GitHubIssues` write methods (`create()`, `close()`, `reopen()`) and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`, `"close-issue:{$issueNumber}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key. The exception carries the prior response on `$e->priorResponse` so you can [recover the original result](/core-concepts/idempotency#recovering-on-conflict) without re-fetching. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
+All `GitHubIssues` write methods (`create()`, `close()`, `reopen()`, `update()`) and `GitHubComments::add()` accept an optional `$idempotencyKey`. Pass a stable, application-meaningful value (e.g. `"open-issue:order-{$order->id}"`, `"close-issue:{$issueNumber}"`) when you need at-most-once execution: the package writes a row in `integration_idempotency_keys` before the call fires, throws `Integrations\Exceptions\IdempotencyConflict` on a second call with the same key. The exception carries the prior response on `$e->priorResponse` so you can [recover the original result](/core-concepts/idempotency#recovering-on-conflict) without re-fetching. GitHub itself doesn't natively dedupe by header (`GitHubProvider` doesn't implement `SupportsIdempotency`), so the local row is the only protection here. Pass `null` (the default) to skip idempotency entirely. See [Idempotency](/core-concepts/idempotency) for the full picture.
 
 ## Data classes
 
