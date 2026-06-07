@@ -62,7 +62,7 @@ class IncidentTrackingTest extends TestCase
         $this->assertSame(IntegrationIncident::STATUS_CLOSED, $incident->status);
         $this->assertNotNull($incident->closed_at);
         $this->assertSame(HealthStatus::Failing, $incident->peak_severity);
-        $this->assertFalse($this->integration->hasOpenIncident());
+        $this->assertFalse($this->reloaded()->has_open_incident);
     }
 
     public function test_circuit_trip_opens_an_incident_at_failing(): void
@@ -94,7 +94,7 @@ class IncidentTrackingTest extends TestCase
         IntegrationHealthChanged::dispatch($this->integration, HealthStatus::Healthy, HealthStatus::Degraded);
         CircuitClosed::dispatch($this->integration, 'forced_closed');
 
-        $this->assertTrue($this->integration->hasOpenIncident());
+        $this->assertTrue($this->reloaded()->has_open_incident);
     }
 
     public function test_auto_disable_records_one_incident_at_disabled(): void
@@ -115,7 +115,7 @@ class IncidentTrackingTest extends TestCase
 
         CircuitClosed::dispatch($this->integration, 'half_open_probe_succeeded');
 
-        $this->assertTrue($this->integration->hasOpenIncident());
+        $this->assertTrue($this->reloaded()->has_open_incident);
     }
 
     public function test_circuit_close_closes_incident_once_health_is_healthy(): void
@@ -125,20 +125,20 @@ class IncidentTrackingTest extends TestCase
 
         CircuitClosed::dispatch($this->integration, 'half_open_probe_succeeded');
 
-        $this->assertFalse($this->integration->hasOpenIncident());
+        $this->assertFalse($this->reloaded()->has_open_incident);
         $this->assertSame(IntegrationIncident::STATUS_CLOSED, IntegrationIncident::query()->firstOrFail()->status);
     }
 
     public function test_current_incident_and_scopes(): void
     {
-        $this->assertNull($this->integration->currentIncident());
-        $this->assertFalse($this->integration->hasOpenIncident());
+        $this->assertNull($this->reloaded()->current_incident);
+        $this->assertFalse($this->reloaded()->has_open_incident);
 
         IntegrationHealthChanged::dispatch($this->integration, HealthStatus::Healthy, HealthStatus::Degraded);
 
-        $current = $this->integration->currentIncident();
+        $current = $this->reloaded()->current_incident;
         $this->assertNotNull($current);
-        $this->assertTrue($this->integration->hasOpenIncident());
+        $this->assertTrue($this->reloaded()->has_open_incident);
 
         $this->assertSame(1, IntegrationIncident::query()->open()->count());
         $this->assertSame(0, IntegrationIncident::query()->closed()->count());
@@ -153,5 +153,14 @@ class IncidentTrackingTest extends TestCase
         IntegrationHealthChanged::dispatch($this->integration, HealthStatus::Healthy, HealthStatus::Degraded);
 
         $this->assertDatabaseCount('integration_incidents', 0);
+    }
+
+    /**
+     * A clean instance so the `incidents` relation reflects current DB state
+     * (the subscriber writes via its own instances; ours would be stale).
+     */
+    private function reloaded(): Integration
+    {
+        return Integration::findOrFail($this->integration->id);
     }
 }

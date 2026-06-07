@@ -61,8 +61,8 @@ Health transitions and circuit trips are events; nothing persisted them, and cir
 There's **one open incident per integration**: health degradation and circuit trips fold into the same row, which tracks the worst severity reached (`peak_severity`). It closes when health returns to `Healthy` (a circuit-close only closes it once health agrees). Operator overrides (`forced_open` / `forced_closed`) are deliberate actions, not detected failures, so they neither open nor close an incident.
 
 ```php
-$integration->hasOpenIncident();       // bool
-$integration->currentIncident();       // ?IntegrationIncident
+$integration->has_open_incident;       // bool (accessor; reads the loaded incidents relation)
+$integration->current_incident;        // ?IntegrationIncident
 $integration->incidents()->since(now()->subWeek())->get();
 ```
 

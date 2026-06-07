@@ -28,7 +28,7 @@ The central model. Represents a configured connection to an external service.
 | `currentSyncAttempt()` | Static. Read the active `SyncAttemptContext` from inside a sync-item listener. `null` outside a sync item. See [terminal-vs-transient failures](/core-concepts/logging#terminal-vs-transient-failures). |
 | `logOperation()` | Create an operation log entry |
 | `failureSummary($since)` | Failure report (per-operation counts, rate, last error, per-status / per-`FailureClass` breakdowns) over a window. See [Failure summary](/core-concepts/health-monitoring#failure-summary). |
-| `incidents()` / `currentIncident()` / `hasOpenIncident()` | The integration's [incident history](/core-concepts/health-monitoring#incident-history), its open incident (if any), and whether one is open. |
+| `incidents()` | The integration's [incident history](/core-concepts/health-monitoring#incident-history) relation. The `current_incident` (`?IntegrationIncident`) and `has_open_incident` (`bool`) accessors read the loaded collection. |
 | `mapExternalId()` | Map an external ID to an internal model |
 | `resolveMapping()` | Resolve external ID to internal model (returns typed `TModel`) |
 | `resolveMappings()` | Batch-resolve multiple external IDs in two queries |

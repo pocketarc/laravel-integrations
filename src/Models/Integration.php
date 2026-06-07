@@ -6,6 +6,7 @@ namespace Integrations\Models;
 
 use Carbon\CarbonInterface;
 use Closure;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -95,6 +96,8 @@ use function Safe\json_encode;
  * @property-read int|null $sync_items_count
  * @property-read Collection<int, IntegrationWebhook> $webhooks
  * @property-read int|null $webhooks_count
+ * @property-read IntegrationIncident|null $current_incident
+ * @property-read bool $has_open_incident
  *
  * @mixin \Eloquent
  */
@@ -265,15 +268,28 @@ class Integration extends Model
         return $this->hasMany(IntegrationIncident::class);
     }
 
-    /** The currently-open incident for this integration, if any. */
-    public function currentIncident(): ?IntegrationIncident
+    /**
+     * The currently-open incident for this integration, if any. Reads the
+     * loaded `incidents` relation (there's only ever one open), so eager-load
+     * `incidents` to avoid a query.
+     *
+     * @return Attribute<IntegrationIncident|null, never>
+     */
+    protected function currentIncident(): Attribute
     {
-        return $this->incidents()->open()->latest('opened_at')->first();
+        return Attribute::get(
+            fn (): ?IntegrationIncident => $this->incidents->firstWhere('status', IntegrationIncident::STATUS_OPEN),
+        );
     }
 
-    public function hasOpenIncident(): bool
+    /**
+     * @return Attribute<bool, never>
+     */
+    protected function hasOpenIncident(): Attribute
     {
-        return $this->incidents()->open()->exists();
+        return Attribute::get(
+            fn (): bool => $this->incidents->contains('status', IntegrationIncident::STATUS_OPEN),
+        );
     }
 
     /**
