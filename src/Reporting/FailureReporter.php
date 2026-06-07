@@ -116,9 +116,9 @@ final class FailureReporter
     private function failureClassBreakdown(CarbonInterface $since): array
     {
         // Iterate rows rather than pluck('count', 'failure_class'): a null
-        // failure_class would become a null array key, which PHP 8.4+ deprecates
-        // ("Using null as an array offset"). Reading the column off each row
-        // sidesteps that and keeps the null-folding below explicit.
+        // failure_class (a row written before the column existed) would become a
+        // null array key, which PHP 8.4+ deprecates ("Using null as an array
+        // offset"). Such rows fold into the 'unknown' bucket below.
         $rows = $this->integration->requests()
             ->since($since)
             ->failed()
