@@ -6,6 +6,8 @@ namespace Integrations\Console;
 
 use Illuminate\Console\Command;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationLog;
+use Symfony\Component\Console\Formatter\OutputFormatter;
 
 class StatsCommand extends Command
 {
@@ -26,9 +28,9 @@ class StatsCommand extends Command
         $rows = [];
 
         foreach ($integrations as $integration) {
-            // The 24h failure-shape (totals, error rate, latency, per-operation
-            // sync outcomes) comes from one summary so the CLI and consumers
-            // agree on the numbers; the wider counts stay as cheap queries.
+            // The 24h failure-shape (error rate, latency) comes from one summary
+            // so the CLI and consumers agree on those numbers; the wider request
+            // counts and the 7d sync breakdown stay as their own cheap queries.
             $summary = $integration->failureSummary(now()->subHours(24));
 
             $requests24h = $summary->totalRequests;
@@ -48,13 +50,16 @@ class StatsCommand extends Command
                 ? round(($cacheHits / ($requests24h + $cacheHits)) * 100, 1).'%'
                 : 'N/A';
 
-            $sync = $summary->operations['sync'] ?? null;
-            $syncStr = $sync !== null
-                ? "{$sync->successful}/{$sync->partial}/{$sync->failed}"
-                : '0/0/0';
+            $syncLogs = $integration->logs()->forOperation('sync')->recent(168);
+            $syncSuccess = (clone $syncLogs)->where('status', IntegrationLog::STATUS_SUCCESS)->count();
+            $syncPartial = (clone $syncLogs)->where('status', IntegrationLog::STATUS_PARTIAL)->count();
+            $syncFailed = (clone $syncLogs)->where('status', IntegrationLog::STATUS_FAILED)->count();
+            $syncStr = "{$syncSuccess}/{$syncPartial}/{$syncFailed}";
 
             $rows[] = [
-                $integration->name,
+                // Escape the operator-set name so a `<...>` in it isn't parsed
+                // as console table formatting.
+                OutputFormatter::escape($integration->name),
                 (string) $requests24h,
                 (string) $requests7d,
                 (string) $requests30d,

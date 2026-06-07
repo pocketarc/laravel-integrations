@@ -108,7 +108,6 @@ Represents an operation-level log entry (sync, import, webhook processing).
 |-------|-------------|
 | `successful()` | Where status is success |
 | `failed()` | Where status is failed |
-| `withStatus($status)` | Where status equals an arbitrary value |
 | `forOperation($op)` | Filter by operation type |
 | `topLevel()` | Where parent_id is null |
 | `recent($hours)` | Created within the last N hours |
@@ -116,7 +115,7 @@ Represents an operation-level log entry (sync, import, webhook processing).
 
 ### Status constants
 
-`STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_PROCESSING`, `STATUS_DEFERRED`. The documented `status` vocabulary; the column stays a free string. Only `success` / `failed` / `processing` dispatch events.
+`STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_PROCESSING`, `STATUS_PARTIAL`, `STATUS_DEFERRED`. The documented `status` vocabulary; the column stays a free string. Only `success` / `failed` / `processing` dispatch events; `partial` (a sync run with some failed items) and `deferred` are recorded silently.
 
 ## IntegrationMapping
 

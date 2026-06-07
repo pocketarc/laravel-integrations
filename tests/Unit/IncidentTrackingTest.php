@@ -129,6 +129,19 @@ class IncidentTrackingTest extends TestCase
         $this->assertSame(IntegrationIncident::STATUS_CLOSED, IntegrationIncident::query()->firstOrFail()->status);
     }
 
+    public function test_circuit_only_incident_opens_and_closes_via_the_circuit(): void
+    {
+        // A breaker can trip while health is still Healthy (the rate strategy and
+        // the consecutive-failure health counter can disagree). Health never
+        // transitions, so no IntegrationHealthChanged(→Healthy) ever fires — the
+        // circuit-close is the only thing that can close this incident.
+        CircuitOpened::dispatch($this->integration, 'threshold_reached');
+        $this->assertTrue($this->reloaded()->has_open_incident);
+
+        CircuitClosed::dispatch($this->integration, 'half_open_probe_succeeded');
+        $this->assertFalse($this->reloaded()->has_open_incident);
+    }
+
     public function test_current_incident_and_scopes(): void
     {
         $this->assertNull($this->reloaded()->current_incident);

@@ -7,6 +7,7 @@ namespace Integrations\Reporting;
 use Carbon\CarbonInterface;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationLog;
 use Integrations\Support\JsonPathExtractor;
 
 /**
@@ -14,6 +15,9 @@ use Integrations\Support\JsonPathExtractor;
  * aggregation shape the `integrations:health` / `integrations:stats` commands
  * render lives here, so consumers (status pages, alert routers) get the same
  * numbers without re-deriving them.
+ *
+ * `summary()` issues a handful of aggregate queries, so it's too heavy for the
+ * request path — cache it or render it on demand rather than per request.
  */
 final class FailureReporter
 {
@@ -243,11 +247,11 @@ final class FailureReporter
             $n = (int) $count;
             $acc[$operation]['total'] += $n;
 
-            if ($status === 'success') {
+            if ($status === IntegrationLog::STATUS_SUCCESS) {
                 $acc[$operation]['successful'] += $n;
-            } elseif ($status === 'partial') {
+            } elseif ($status === IntegrationLog::STATUS_PARTIAL) {
                 $acc[$operation]['partial'] += $n;
-            } elseif ($status === 'failed') {
+            } elseif ($status === IntegrationLog::STATUS_FAILED) {
                 $acc[$operation]['failed'] += $n;
             }
         }

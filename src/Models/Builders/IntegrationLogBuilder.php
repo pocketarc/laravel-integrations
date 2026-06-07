@@ -29,13 +29,6 @@ class IntegrationLogBuilder extends Builder
         return $this;
     }
 
-    public function withStatus(string $status): static
-    {
-        $this->where('status', $status);
-
-        return $this;
-    }
-
     public function forOperation(string $operation): static
     {
         $this->where('operation', $operation);

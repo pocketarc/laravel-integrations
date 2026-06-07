@@ -66,6 +66,9 @@ class RecordIntegrationIncidents
             return;
         }
 
+        // Auto-disable fires this and IntegrationHealthChanged(→Disabled), so
+        // both reach openOrEscalate for the same transition. The row lock makes
+        // the second a no-op escalation, collapsing them to one incident.
         $this->openOrEscalate(
             $event->integration->id,
             IntegrationIncident::SOURCE_HEALTH,

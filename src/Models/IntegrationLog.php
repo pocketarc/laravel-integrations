@@ -53,17 +53,19 @@ class IntegrationLog extends Model
 {
     /**
      * The documented `status` vocabulary. The column stays a free string —
-     * any value is accepted — but only these three dispatch an event:
-     * `success` → OperationCompleted, `failed` → OperationFailed,
-     * `processing` → OperationStarted. `deferred` is the conventional value for
-     * an expected wait (recorded without an event); any other custom status is
-     * likewise stored silently.
+     * any value is accepted — but only three dispatch an event: `success` →
+     * OperationCompleted, `failed` → OperationFailed, `processing` →
+     * OperationStarted. `partial` marks a sync run where some items failed, and
+     * `deferred` an expected wait; both are recorded without an event, as is
+     * any other custom status.
      */
     public const STATUS_SUCCESS = 'success';
 
     public const STATUS_FAILED = 'failed';
 
     public const STATUS_PROCESSING = 'processing';
+
+    public const STATUS_PARTIAL = 'partial';
 
     public const STATUS_DEFERRED = 'deferred';
 

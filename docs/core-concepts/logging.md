@@ -61,7 +61,7 @@ $log->result_data['issue_number']; // 42
 | `failed` | `OperationFailed` |
 | `processing` | `OperationStarted` |
 
-`deferred` is the conventional value for an expected wait (recorded without an event); any other custom status is likewise stored silently. The documented values are available as `IntegrationLog::STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_PROCESSING`, and `STATUS_DEFERRED`.
+`partial` marks a sync run where some items failed, and `deferred` an expected wait; both are recorded without an event, as is any other custom status. The documented values are available as `IntegrationLog::STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_PROCESSING`, `STATUS_PARTIAL`, and `STATUS_DEFERRED`.
 
 ### Hierarchical logging
 

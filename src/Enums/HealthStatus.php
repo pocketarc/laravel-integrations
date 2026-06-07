@@ -25,6 +25,7 @@ enum HealthStatus: string
         };
     }
 
+    /** Whether this status is at least as severe as $other (worse-or-equal). */
     public function isAtLeast(self $other): bool
     {
         return $this->severity() >= $other->severity();

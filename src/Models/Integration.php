@@ -283,6 +283,9 @@ class Integration extends Model
     }
 
     /**
+     * Whether an incident is currently open. Reads the loaded `incidents`
+     * relation, like {@see currentIncident()}.
+     *
      * @return Attribute<bool, never>
      */
     protected function hasOpenIncident(): Attribute
