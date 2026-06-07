@@ -20,9 +20,18 @@ use function Safe\preg_match;
 final class JsonPathExtractor
 {
     /**
+     * The column and key must be compile-time literals, so the returned
+     * expression is a literal-string too. The query builder's raw methods
+     * (selectRaw/groupByRaw) type their argument as literal-string to keep
+     * caller-supplied input out of interpolated SQL; a non-literal here fails
+     * that constraint, so the type is carried through rather than widened.
+     *
+     * @param  literal-string  $column
+     * @param  literal-string  $key
      * @param  string|null  $driver  Connection driver name; defaults to the
      *                               active connection's. Injectable so callers
      *                               (and tests) can target a specific driver.
+     * @return literal-string
      */
     public static function stringPath(string $column, string $key, ?string $driver = null): string
     {

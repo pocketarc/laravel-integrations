@@ -112,13 +112,20 @@ class RecordIntegrationIncidents
     private function openOrEscalate(int $integrationId, string $source, string $reason, HealthStatus $severity): void
     {
         DB::transaction(function () use ($integrationId, $source, $reason, $severity): void {
+            // Lock the integration row to serialize concurrent openers. Locking
+            // the open-incident query instead wouldn't help when none exists
+            // yet: a SELECT matching no rows takes no lock, so two workers could
+            // both create one. The integration row always exists, so it's the
+            // per-integration mutex that keeps the single-open invariant.
+            $integration = Integration::query()->lockForUpdate()->find($integrationId);
+            if ($integration === null) {
+                return;
+            }
+
             $open = IntegrationIncident::query()
                 ->forIntegration($integrationId)
                 ->open()
-                ->lockForUpdate()
                 ->first();
-
-            $lastErrorAt = Integration::query()->find($integrationId)?->last_error_at;
 
             if ($open === null) {
                 IntegrationIncident::query()->create([
@@ -128,7 +135,7 @@ class RecordIntegrationIncidents
                     'reason' => $reason,
                     'peak_severity' => $severity,
                     'opened_at' => now(),
-                    'last_error_at' => $lastErrorAt,
+                    'last_error_at' => $integration->last_error_at,
                 ]);
 
                 return;
@@ -136,7 +143,7 @@ class RecordIntegrationIncidents
 
             // Already open: collapse into it. Raise the peak if this is worse,
             // and refresh the recency marker.
-            $updates = ['last_error_at' => $lastErrorAt ?? $open->last_error_at];
+            $updates = ['last_error_at' => $integration->last_error_at ?? $open->last_error_at];
 
             if ($severity->severity() > $open->peak_severity->severity()) {
                 $updates['peak_severity'] = $severity;
@@ -149,10 +156,15 @@ class RecordIntegrationIncidents
     private function closeOpen(int $integrationId): void
     {
         DB::transaction(function () use ($integrationId): void {
+            // Same integration-row lock as openOrEscalate, so a close can't race
+            // a concurrent open/escalate for the same integration.
+            if (Integration::query()->lockForUpdate()->find($integrationId) === null) {
+                return;
+            }
+
             $open = IntegrationIncident::query()
                 ->forIntegration($integrationId)
                 ->open()
-                ->lockForUpdate()
                 ->first();
 
             if ($open === null) {
