@@ -82,6 +82,16 @@ class FailureReporterTest extends TestCase
             ]);
         }
 
+        // An explicit empty-string message must be excluded too (the `<> ''`
+        // half of the filter), not just a missing one (the `IS NOT NULL` half).
+        $this->integration->requests()->create([
+            'endpoint' => '/blank-string',
+            'method' => 'GET',
+            'response_success' => false,
+            'response_code' => 500,
+            'error' => ['message' => ''],
+        ]);
+
         $summary = $this->integration->failureSummary(now()->subDay());
 
         $this->assertCount(3, $summary->topErrors);
