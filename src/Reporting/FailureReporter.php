@@ -115,13 +115,17 @@ final class FailureReporter
      */
     private function failureClassBreakdown(CarbonInterface $since): array
     {
-        $counts = $this->integration->requests()
+        // Iterate rows rather than pluck('count', 'failure_class'): a null
+        // failure_class (a row written before the column existed) would become a
+        // null array key, which PHP 8.4+ deprecates ("Using null as an array
+        // offset"). Such rows fold into the 'unknown' bucket below.
+        $rows = $this->integration->requests()
             ->since($since)
             ->failed()
             ->selectRaw('failure_class, COUNT(*) as count')
             ->groupBy('failure_class')
             ->toBase()
-            ->pluck('count', 'failure_class');
+            ->get();
 
         $result = [
             FailureClass::Upstream->value => 0,
@@ -130,7 +134,8 @@ final class FailureReporter
             FailureClass::Unknown->value => 0,
         ];
 
-        foreach ($counts as $class => $count) {
+        foreach ($rows as $row) {
+            $count = $row->count;
             if (! is_numeric($count)) {
                 continue;
             }
@@ -138,6 +143,7 @@ final class FailureReporter
             // A null or unrecognised failure_class (e.g. rows written before the
             // column existed) is, by definition, an unknown failure — fold it in
             // rather than dropping it, so the breakdown sums to failedRequests.
+            $class = $row->failure_class;
             $key = is_string($class) && array_key_exists($class, $result)
                 ? $class
                 : FailureClass::Unknown->value;
@@ -156,21 +162,28 @@ final class FailureReporter
      */
     private function statusBreakdown(CarbonInterface $since): array
     {
-        $counts = $this->integration->requests()
+        // Iterate rows rather than pluck('count', 'response_code'): a failed
+        // request with no HTTP status (a connection error or timeout) has a null
+        // response_code, which would become a null array key that PHP 8.4+
+        // deprecates ("Using null as an array offset"). Such rows fall into the
+        // 'other' bucket below.
+        $rows = $this->integration->requests()
             ->since($since)
             ->failed()
             ->selectRaw('response_code, COUNT(*) as count')
             ->groupBy('response_code')
             ->toBase()
-            ->pluck('count', 'response_code');
+            ->get();
 
         $result = ['5xx' => 0, '4xx' => 0, '429' => 0, 'other' => 0];
 
-        foreach ($counts as $code => $count) {
+        foreach ($rows as $row) {
+            $count = $row->count;
             if (! is_numeric($count)) {
                 continue;
             }
 
+            $code = $row->response_code;
             $status = is_numeric($code) ? (int) $code : 0;
             $bucket = match (true) {
                 $status === 429 => '429',

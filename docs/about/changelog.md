@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 5.3.1
+
+- Fix: [`failureSummary()`](/core-concepts/health-monitoring#failure-summary) no longer trips PHP 8.4+'s "Using null as an array offset is deprecated" warning. `FailureReporter`'s per-class and per-status breakdowns grouped on a nullable column and fed the result to `pluck('count', <column>)`, so a failed request with a null `failure_class` (a row written before that column existed) or a null `response_code` (a connection error or timeout, which carries no HTTP status) built a null array key. They now iterate the grouped rows, folding a null `failure_class` into `unknown` and a null `response_code` into `other` as before. The call was silent on PHP 8.2/8.3; on 8.4/8.5 it fired on routine summary calls, and a consumer that promotes deprecations to exceptions saw the call abort rather than warn. The test suite now sets `failOnDeprecation` in `phpunit.xml`, so the PHP 8.4/8.5 CI matrix catches this class of regression.
+
 ## 5.3.0
 
 A failure-observability layer on top of the existing resilience machinery: a way to alert on terminal failures only, a failure-summary API, a per-incident anomaly signal, and a durable incident history. The schema changes (`integration_requests.failure_class`, `integration_logs.attempt` / `max_attempts`, `integrations.anomaly_alerted_at`, and the new `integration_incidents` table) land in the canonical migration, so fresh installs get them on first migrate. Existing deployments need a downstream migration to add those columns and the table.

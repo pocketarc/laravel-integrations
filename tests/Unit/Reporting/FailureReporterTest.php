@@ -77,6 +77,22 @@ class FailureReporterTest extends TestCase
         $this->assertSame(['5xx' => 2, '4xx' => 1, '429' => 1, 'other' => 0], $summary->byStatus);
     }
 
+    public function test_status_breakdown_buckets_codeless_failures_as_other(): void
+    {
+        $other = Integration::create(['provider' => 'test', 'name' => 'Codeless']);
+
+        // A connection error or timeout fails with no HTTP status (a null
+        // response_code). It must still be counted, in the 'other' bucket, not
+        // dropped — and grouping by a null column must not build a null array key.
+        $other->requests()->create(['endpoint' => '/a', 'method' => 'GET', 'response_success' => false]);
+        $other->requests()->create(['endpoint' => '/b', 'method' => 'GET', 'response_success' => false]);
+
+        $summary = $other->failureSummary(now()->subDay());
+
+        $this->assertSame(['5xx' => 0, '4xx' => 0, '429' => 0, 'other' => 2], $summary->byStatus);
+        $this->assertSame(2, $summary->failedRequests);
+    }
+
     public function test_reports_top_errors_highest_first(): void
     {
         $summary = $this->integration->failureSummary(now()->subDay());
