@@ -284,8 +284,10 @@ final class Config
     }
 
     /**
-     * How long (seconds) an anomaly stays debounced: one ElevatedFailureRate
-     * per integration per incident, until the rate recovers or this elapses.
+     * TTL (seconds) of the per-integration "incident open" marker the anomaly
+     * evaluator keeps. It's refreshed while the rate stays elevated, so an
+     * incident yields one ElevatedFailureRate and one FailureRateRecovered. Set
+     * it above the evaluation interval so the marker can't lapse mid-incident.
      */
     public static function anomalyDebounceSeconds(): int
     {

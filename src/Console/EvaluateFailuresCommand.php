@@ -54,10 +54,15 @@ class EvaluateFailuresCommand extends Command
 
     private function fireIfNew(Integration $integration, FailureRateSnapshot $snapshot): void
     {
-        // Cache::add is atomic, so exactly one evaluator fires per incident even
-        // if two run concurrently; the flag holds the anomaly down until it
-        // recovers or the debounce window elapses.
+        // Cache::add is atomic, so exactly one evaluator opens the incident even
+        // if two run concurrently. While the rate stays elevated we refresh the
+        // marker's TTL each run so it never lapses mid-incident — otherwise a
+        // recovery landing after the TTL expired would go unannounced, leaving
+        // the consumer's alert open forever. (Set the debounce comfortably above
+        // the evaluation interval so the refresh always lands in time.)
         if (! Cache::add($this->key($integration), 1, Config::anomalyDebounceSeconds())) {
+            Cache::put($this->key($integration), 1, Config::anomalyDebounceSeconds());
+
             return;
         }
 

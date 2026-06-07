@@ -87,7 +87,7 @@ Failure-anomaly evaluation and the incident audit. See [the anomaly signal](/adv
 | `observability.anomaly_window_minutes` | `int` | `15` | Rolling window the failure rate is measured over. |
 | `observability.anomaly_failure_rate_threshold` | `int` | `25` | Failure percentage (1-100) at or above which an anomaly fires. |
 | `observability.anomaly_minimum_requests` | `int` | `20` | Requests in the window before the rate can fire. |
-| `observability.anomaly_debounce_seconds` | `int` | `3600` | At most one `ElevatedFailureRate` per integration until it recovers or this elapses. |
+| `observability.anomaly_debounce_seconds` | `int` | `3600` | TTL of the per-integration "incident open" marker; refreshed while elevated so each incident yields one `ElevatedFailureRate` and one `FailureRateRecovered`. Set above your evaluation interval. |
 | `observability.incidents_enabled` | `bool` | `true` | Master switch for the durable incident audit (`integration_incidents`). |
 
 ## Health
