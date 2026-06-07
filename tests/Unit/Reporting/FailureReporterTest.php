@@ -51,6 +51,25 @@ class FailureReporterTest extends TestCase
         );
     }
 
+    public function test_unclassified_failures_count_as_unknown(): void
+    {
+        $legacy = Integration::create(['provider' => 'test', 'name' => 'Legacy']);
+
+        // Failed requests with no persisted failure_class (e.g. rows from before
+        // the column existed) must fold into "unknown", not vanish.
+        $legacy->requests()->create(['endpoint' => '/a', 'method' => 'GET', 'response_success' => false, 'response_code' => 500]);
+        $legacy->requests()->create(['endpoint' => '/b', 'method' => 'GET', 'response_success' => false, 'response_code' => 500]);
+
+        $summary = $legacy->failureSummary(now()->subDay());
+
+        $this->assertSame(2, $summary->byFailureClass['unknown']);
+        $this->assertSame(2, array_sum($summary->byFailureClass));
+        $this->assertSame($summary->failedRequests, array_sum($summary->byFailureClass));
+
+        $snapshot = (new FailureReporter($legacy))->windowFailureRate(60);
+        $this->assertSame(FailureClass::Unknown, $snapshot->dominantClass);
+    }
+
     public function test_breaks_down_by_status_bucket(): void
     {
         $summary = $this->integration->failureSummary(now()->subDay());

@@ -74,17 +74,17 @@ final class FailureReporter
 
     private function dominantFailureClass(CarbonInterface $since): FailureClass
     {
-        $top = $this->integration->requests()
-            ->since($since)
-            ->failed()
-            ->whereNotNull('failure_class')
-            ->selectRaw('failure_class, COUNT(*) as count')
-            ->groupBy('failure_class')
-            ->orderByDesc('count')
-            ->toBase()
-            ->value('failure_class');
+        // Reuse the breakdown so the dominant class accounts for every failure,
+        // including unclassified ones folded into "unknown".
+        $counts = $this->failureClassBreakdown($since);
 
-        return is_string($top) ? (FailureClass::tryFrom($top) ?? FailureClass::Unknown) : FailureClass::Unknown;
+        if (array_sum($counts) === 0) {
+            return FailureClass::Unknown;
+        }
+
+        arsort($counts);
+
+        return FailureClass::tryFrom((string) array_key_first($counts)) ?? FailureClass::Unknown;
     }
 
     /**
@@ -131,9 +131,18 @@ final class FailureReporter
         ];
 
         foreach ($counts as $class => $count) {
-            if (is_string($class) && array_key_exists($class, $result) && is_numeric($count)) {
-                $result[$class] = (int) $count;
+            if (! is_numeric($count)) {
+                continue;
             }
+
+            // A null or unrecognised failure_class (e.g. rows written before the
+            // column existed) is, by definition, an unknown failure — fold it in
+            // rather than dropping it, so the breakdown sums to failedRequests.
+            $key = is_string($class) && array_key_exists($class, $result)
+                ? $class
+                : FailureClass::Unknown->value;
+
+            $result[$key] += (int) $count;
         }
 
         return $result;
