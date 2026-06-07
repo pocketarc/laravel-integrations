@@ -141,7 +141,7 @@ php artisan integrations:stats
 
 ## integrations:evaluate-failures
 
-Evaluate each active integration's failure rate over a rolling window and emit a debounced [anomaly signal](/advanced/circuit-breaker#anomaly-signal): one [`ElevatedFailureRate`](/reference/events#elevatedfailurerate) per incident, and a [`FailureRateRecovered`](/reference/events#failureraterecovered) when it clears.
+Evaluate each active integration's failure rate over a rolling window and emit the [anomaly signal](/advanced/circuit-breaker#anomaly-signal): one [`ElevatedFailureRate`](/reference/events#elevatedfailurerate) per incident, and a [`FailureRateRecovered`](/reference/events#failureraterecovered) when it clears.
 
 ```bash
 php artisan integrations:evaluate-failures
@@ -153,7 +153,7 @@ Add to your scheduler:
 Schedule::command('integrations:evaluate-failures')->everyFifteenMinutes();
 ```
 
-The package emits the events; routing them to Sentry, Slack, or elsewhere is the consumer's job. Thresholds and the debounce window are configured under [`observability`](/reference/configuration#observability).
+The package emits the events; routing them to Sentry, Slack, or elsewhere is the consumer's job. Thresholds are configured under [`observability`](/reference/configuration#observability).
 
 ## integrations:prune
 

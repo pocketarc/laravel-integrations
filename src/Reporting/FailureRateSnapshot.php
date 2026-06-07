@@ -20,6 +20,7 @@ final readonly class FailureRateSnapshot
         public int $observedRequests,
         /** The FailureClass with the most failures in the window. */
         public FailureClass $dominantClass,
+        /** Rolling window size in minutes. */
         public int $windowMinutes,
     ) {}
 }

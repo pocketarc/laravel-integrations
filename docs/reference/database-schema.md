@@ -24,6 +24,7 @@ The main table storing integration records.
 | `health_status` | string | Current health: healthy, degraded, failing, disabled |
 | `consecutive_failures` | int | Running failure counter |
 | `last_error_at` | timestamp (nullable) | When the last error occurred |
+| `anomaly_alerted_at` | timestamp (nullable) | Set while the anomaly evaluator considers the failure rate elevated; the durable open/closed marker for the anomaly signal |
 | `last_synced_at` | timestamp (nullable) | When the last sync completed |
 | `next_sync_at` | timestamp (nullable) | When the next sync should run |
 | `sync_interval_minutes` | int (nullable) | Override for provider's default interval |

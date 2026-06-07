@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Database\Eloquent\Model;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\CircuitClosed;
 use Integrations\Events\CircuitOpened;
@@ -166,6 +167,28 @@ class IncidentTrackingTest extends TestCase
         IntegrationHealthChanged::dispatch($this->integration, HealthStatus::Healthy, HealthStatus::Degraded);
 
         $this->assertDatabaseCount('integration_incidents', 0);
+    }
+
+    public function test_incident_accessors_do_not_lazy_load_the_full_history(): void
+    {
+        IntegrationHealthChanged::dispatch($this->integration, HealthStatus::Healthy, HealthStatus::Degraded);
+
+        Model::preventLazyLoading(true);
+
+        try {
+            // Not eager-loaded: the accessor runs a narrow query rather than
+            // lazy-loading the relation (which would throw here).
+            $fresh = Integration::findOrFail($this->integration->id);
+            $this->assertTrue($fresh->has_open_incident);
+            $this->assertNotNull($fresh->current_incident);
+
+            // Eager-loaded: reads the collection, no lazy load.
+            $eager = Integration::query()->with('incidents')->findOrFail($this->integration->id);
+            $this->assertTrue($eager->has_open_incident);
+            $this->assertNotNull($eager->current_incident);
+        } finally {
+            Model::preventLazyLoading(false);
+        }
     }
 
     /**

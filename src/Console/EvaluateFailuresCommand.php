@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\Cache;
 use Integrations\Events\ElevatedFailureRate;
 use Integrations\Events\FailureRateRecovered;
 use Integrations\Models\Integration;
@@ -15,9 +14,14 @@ use Integrations\Support\Config;
 
 /**
  * Evaluates each active integration's failure rate over the configured window
- * and emits a debounced anomaly signal: one ElevatedFailureRate per incident,
- * and a FailureRateRecovered when it clears. Schedule this (e.g. every fifteen
- * minutes); the package emits the events, the consumer decides where alerts go.
+ * and emits the anomaly signal: one ElevatedFailureRate when the rate first
+ * crosses the threshold, and a FailureRateRecovered when it drops back. Schedule
+ * this (e.g. every fifteen minutes); the package emits the events, the consumer
+ * decides where alerts go.
+ *
+ * The open/closed state lives in `integrations.anomaly_alerted_at`, so it's
+ * durable (a cache flush or a skipped run can't drop a pending recovery) and the
+ * edge is detected with an atomic conditional update rather than a debounce TTL.
  */
 class EvaluateFailuresCommand extends Command
 {
@@ -43,26 +47,26 @@ class EvaluateFailuresCommand extends Command
             $elevated = $snapshot->observedRequests >= $floor && $snapshot->rate >= $threshold;
 
             if ($elevated) {
-                $this->fireIfNew($integration, $snapshot);
+                $this->openIfNew($integration, $snapshot);
             } else {
-                $this->clearIfRecovered($integration);
+                $this->closeIfOpen($integration);
             }
         }
 
         return self::SUCCESS;
     }
 
-    private function fireIfNew(Integration $integration, FailureRateSnapshot $snapshot): void
+    private function openIfNew(Integration $integration, FailureRateSnapshot $snapshot): void
     {
-        // Cache::add is atomic, so exactly one evaluator opens the incident even
-        // if two run concurrently. While the rate stays elevated we refresh the
-        // marker's TTL each run so it never lapses mid-incident — otherwise a
-        // recovery landing after the TTL expired would go unannounced, leaving
-        // the consumer's alert open forever. (Set the debounce comfortably above
-        // the evaluation interval so the refresh always lands in time.)
-        if (! Cache::add($this->key($integration), 1, Config::anomalyDebounceSeconds())) {
-            Cache::put($this->key($integration), 1, Config::anomalyDebounceSeconds());
+        // Atomic set-if-null: only the transition into the open state updates a
+        // row, so exactly one ElevatedFailureRate fires per incident even if two
+        // evaluators race.
+        $opened = Integration::query()
+            ->whereKey($integration->id)
+            ->whereNull('anomaly_alerted_at')
+            ->update(['anomaly_alerted_at' => now()]);
 
+        if ($opened !== 1) {
             return;
         }
 
@@ -77,17 +81,17 @@ class EvaluateFailuresCommand extends Command
         $this->line("Elevated failure rate for {$integration->name}: ".round($snapshot->rate, 1).'%');
     }
 
-    private function clearIfRecovered(Integration $integration): void
+    private function closeIfOpen(Integration $integration): void
     {
-        // pull() reads and clears in one step; a non-null value means we had an
-        // open anomaly, so announce recovery and let the next one alert at once.
-        if (Cache::pull($this->key($integration)) !== null) {
+        // Atomic clear-if-set: the transition out of the open state updates a row
+        // exactly once, so recovery announces once and the next incident re-arms.
+        $closed = Integration::query()
+            ->whereKey($integration->id)
+            ->whereNotNull('anomaly_alerted_at')
+            ->update(['anomaly_alerted_at' => null]);
+
+        if ($closed === 1) {
             FailureRateRecovered::dispatch($integration);
         }
-    }
-
-    private function key(Integration $integration): string
-    {
-        return Config::cachePrefix().':anomaly:'.$integration->id;
     }
 }

@@ -158,6 +158,7 @@ class Integration extends Model
             'health_status' => HealthStatus::class,
             'consecutive_failures' => 'integer',
             'last_error_at' => 'datetime',
+            'anomaly_alerted_at' => 'datetime',
             'circuit_override' => CircuitOverride::class,
             'circuit_override_until' => 'datetime',
             'rate_limit_override' => 'array',
@@ -269,30 +270,40 @@ class Integration extends Model
     }
 
     /**
-     * The currently-open incident for this integration, if any. Reads the
-     * loaded `incidents` relation (there's only ever one open), so eager-load
-     * `incidents` to avoid a query.
+     * The currently-open incident for this integration, if any (there's only
+     * ever one open). Uses the loaded `incidents` relation when present, so an
+     * eager-loaded caller pays no query; otherwise it runs a narrow query
+     * rather than pulling the whole incident history.
      *
      * @return Attribute<IntegrationIncident|null, never>
      */
     protected function currentIncident(): Attribute
     {
-        return Attribute::get(
-            fn (): ?IntegrationIncident => $this->incidents->firstWhere('status', IntegrationIncident::STATUS_OPEN),
-        );
+        return Attribute::get(function (): ?IntegrationIncident {
+            if ($this->relationLoaded('incidents')) {
+                return $this->incidents->firstWhere('status', IntegrationIncident::STATUS_OPEN);
+            }
+
+            return $this->incidents()->open()->latest('opened_at')->first();
+        });
     }
 
     /**
-     * Whether an incident is currently open. Reads the loaded `incidents`
-     * relation, like {@see currentIncident()}.
+     * Whether an incident is currently open. Uses the loaded `incidents`
+     * relation when present, else a narrow existence query, like
+     * {@see currentIncident()}.
      *
      * @return Attribute<bool, never>
      */
     protected function hasOpenIncident(): Attribute
     {
-        return Attribute::get(
-            fn (): bool => $this->incidents->contains('status', IntegrationIncident::STATUS_OPEN),
-        );
+        return Attribute::get(function (): bool {
+            if ($this->relationLoaded('incidents')) {
+                return $this->incidents->contains('status', IntegrationIncident::STATUS_OPEN);
+            }
+
+            return $this->incidents()->open()->exists();
+        });
     }
 
     /**

@@ -197,12 +197,6 @@ return [
         // couple of failures in an otherwise quiet window don't raise an alert.
         'anomaly_minimum_requests' => 20,
 
-        // TTL (seconds) of the per-integration "incident open" marker. It's refreshed
-        // while the rate stays elevated, so each incident yields one ElevatedFailureRate
-        // and one FailureRateRecovered. Set it above your evaluation interval so the
-        // marker can't lapse mid-incident. Defaults to one hour.
-        'anomaly_debounce_seconds' => 3600,
-
         // Master switch for the durable incident audit (the integration_incidents table).
         // When enabled, the package opens one incident per integration from its own
         // health/circuit state-change events, folds flapping into it (tracking peak

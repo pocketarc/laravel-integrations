@@ -31,14 +31,7 @@ class EvaluateFailuresCommandTest extends TestCase
             'integrations.observability.anomaly_window_minutes' => 15,
             'integrations.observability.anomaly_failure_rate_threshold' => 25,
             'integrations.observability.anomaly_minimum_requests' => 4,
-            'integrations.observability.anomaly_debounce_seconds' => 3600,
         ]);
-    }
-
-    protected function tearDown(): void
-    {
-        Cache::flush();
-        parent::tearDown();
     }
 
     public function test_fires_when_the_failure_rate_crosses_the_threshold(): void
@@ -56,7 +49,7 @@ class EvaluateFailuresCommandTest extends TestCase
         });
     }
 
-    public function test_debounces_to_one_event_per_incident(): void
+    public function test_fires_once_per_incident_while_still_elevated(): void
     {
         Event::fake([ElevatedFailureRate::class]);
         $this->seedRequests(failed: 3, successful: 1);
@@ -82,11 +75,27 @@ class EvaluateFailuresCommandTest extends TestCase
             return $event->integration->is($this->integration);
         });
 
-        // The debounce is cleared, so a fresh spike alerts again.
+        // The open marker is cleared on recovery, so a fresh spike alerts again.
         $this->seedRequests(failed: 200, successful: 0);
         $this->artisan('integrations:evaluate-failures')->assertSuccessful();
 
         Event::assertDispatchedTimes(ElevatedFailureRate::class, 2);
+    }
+
+    public function test_recovery_survives_a_cache_flush(): void
+    {
+        Event::fake([ElevatedFailureRate::class, FailureRateRecovered::class]);
+        $this->seedRequests(failed: 3, successful: 1);
+        $this->artisan('integrations:evaluate-failures')->assertSuccessful();
+
+        // The open state is durable (a DB column), so wiping the cache mid-incident
+        // must not drop the pending recovery.
+        Cache::flush();
+
+        $this->seedRequests(failed: 0, successful: 100);
+        $this->artisan('integrations:evaluate-failures')->assertSuccessful();
+
+        Event::assertDispatched(FailureRateRecovered::class);
     }
 
     public function test_does_not_fire_below_the_minimum_requests_floor(): void

@@ -23,6 +23,10 @@ return new class extends Migration
             $table->string('health_status')->default('healthy');
             $table->unsignedInteger('consecutive_failures')->default(0);
             $table->timestamp('last_error_at')->nullable();
+            // Durable open/closed marker for the anomaly signal: set while the
+            // evaluator considers this integration's failure rate elevated, null
+            // otherwise. Drives the one-ElevatedFailureRate-per-incident edge.
+            $table->timestamp('anomaly_alerted_at')->nullable();
             // Runtime circuit-breaker override (operator control, no redeploy).
             // Null = auto. Backs Integrations\Enums\CircuitOverride.
             $table->string('circuit_override')->nullable();

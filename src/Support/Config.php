@@ -284,17 +284,6 @@ final class Config
     }
 
     /**
-     * TTL (seconds) of the per-integration "incident open" marker the anomaly
-     * evaluator keeps. It's refreshed while the rate stays elevated, so an
-     * incident yields one ElevatedFailureRate and one FailureRateRecovered. Set
-     * it above the evaluation interval so the marker can't lapse mid-incident.
-     */
-    public static function anomalyDebounceSeconds(): int
-    {
-        return self::boundedInt(config('integrations.observability.anomaly_debounce_seconds', 3600), 3600, 1);
-    }
-
-    /**
      * Master switch for the durable incident audit written from health/circuit
      * state-change events. When false no incidents are opened, escalated, or
      * closed.
