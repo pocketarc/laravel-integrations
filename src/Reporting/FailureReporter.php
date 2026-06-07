@@ -186,6 +186,9 @@ final class FailureReporter
         $pairs = $this->integration->requests()
             ->since($since)
             ->failed()
+            // Exclude failures with no error message before grouping, so a blank
+            // group can't take one of the top-N slots and push out a real one.
+            ->whereRaw("{$expr} IS NOT NULL AND {$expr} <> ''")
             ->selectRaw("{$expr} as error_message, COUNT(*) as count")
             ->groupByRaw($expr)
             ->orderByDesc('count')
@@ -196,9 +199,7 @@ final class FailureReporter
         $result = [];
 
         foreach ($pairs as $message => $count) {
-            // A null JSON extraction (no message field) lands as an empty-string
-            // key; skip it rather than reporting a blank error.
-            if ($message === '' || ! is_numeric($count)) {
+            if (! is_numeric($count)) {
                 continue;
             }
 

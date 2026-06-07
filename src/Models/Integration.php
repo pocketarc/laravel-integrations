@@ -659,9 +659,16 @@ class Integration extends Model
     ): IntegrationLog {
         // A failure logged inside a ProcessSyncItem run carries the attempt
         // context, so the row and the OperationFailed event record which retry
-        // this was. Only the failed path reads it; success/processing rows
-        // keep the columns null so they stay meaningful as failure provenance.
-        $attemptContext = $status === IntegrationLog::STATUS_FAILED ? self::currentSyncAttempt() : null;
+        // this was. Only the failed path reads it; success/processing rows keep
+        // the columns null. Scope it to this integration: a listener may log
+        // against a different one than the run is syncing, and that log mustn't
+        // inherit the synced integration's attempt metadata.
+        $ambient = self::currentSyncAttempt();
+        $attemptContext = $status === IntegrationLog::STATUS_FAILED
+            && $ambient !== null
+            && $ambient->integrationId === $this->id
+                ? $ambient
+                : null;
 
         $log = $this->logs()->create([
             'parent_id' => $parentId,

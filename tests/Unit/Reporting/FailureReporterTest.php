@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit\Reporting;
 use Integrations\Enums\FailureClass;
 use Integrations\Models\Integration;
 use Integrations\Reporting\FailureReporter;
+use Integrations\Reporting\TopError;
 use Integrations\Tests\TestCase;
 
 class FailureReporterTest extends TestCase
@@ -64,6 +65,30 @@ class FailureReporterTest extends TestCase
         $this->assertCount(3, $summary->topErrors);
         $this->assertSame('boom', $summary->topErrors[0]->message);
         $this->assertSame(2, $summary->topErrors[0]->count);
+    }
+
+    public function test_top_errors_excludes_blank_messages_before_limiting(): void
+    {
+        // Five failures with no message would otherwise be the highest-count
+        // group and consume a top-3 slot, dropping a real message. The SQL-level
+        // filter must keep all three real messages (boom/slow/bad from setUp).
+        for ($i = 0; $i < 5; $i++) {
+            $this->integration->requests()->create([
+                'endpoint' => '/blank',
+                'method' => 'GET',
+                'response_success' => false,
+                'response_code' => 500,
+                'error' => null,
+            ]);
+        }
+
+        $summary = $this->integration->failureSummary(now()->subDay());
+
+        $this->assertCount(3, $summary->topErrors);
+
+        $messages = array_map(static fn (TopError $e): string => $e->message, $summary->topErrors);
+        sort($messages);
+        $this->assertSame(['bad', 'boom', 'slow'], $messages);
     }
 
     public function test_reports_the_last_error(): void

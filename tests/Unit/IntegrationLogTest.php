@@ -224,6 +224,23 @@ class IntegrationLogTest extends TestCase
         });
     }
 
+    public function test_operation_failed_ignores_attempt_context_from_another_integration(): void
+    {
+        Event::fake();
+
+        $other = Integration::create(['provider' => 'test', 'name' => 'Other']);
+
+        // The ambient context belongs to $other, not the integration we log on.
+        Integration::setCurrentSyncAttempt(new SyncAttemptContext(2, 5, 10, $other->id, 99, 'EXT-7'));
+
+        $log = $this->integration->logOperation(operation: 'import', direction: 'inbound', status: 'failed', error: 'boom');
+
+        $this->assertNull($log->attempt);
+        $this->assertNull($log->max_attempts);
+
+        Event::assertDispatched(OperationFailed::class, fn (OperationFailed $event): bool => $event->attempt === null);
+    }
+
     public function test_attempt_columns_ignored_for_non_failed_status(): void
     {
         Integration::setCurrentSyncAttempt(new SyncAttemptContext(2, 5, 10, $this->integration->id, 99, 'EXT-7'));
