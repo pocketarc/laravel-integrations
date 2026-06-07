@@ -10,6 +10,7 @@ use Integrations\Events\OperationFailed;
 use Integrations\Events\OperationStarted;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
+use Integrations\Sync\SyncAttemptContext;
 use Integrations\Tests\TestCase;
 
 class IntegrationLogTest extends TestCase
@@ -24,6 +25,12 @@ class IntegrationLogTest extends TestCase
             'provider' => 'test',
             'name' => 'Test',
         ]);
+    }
+
+    protected function tearDown(): void
+    {
+        Integration::setCurrentSyncAttempt(null);
+        parent::tearDown();
     }
 
     public function test_log_operation(): void
@@ -172,5 +179,78 @@ class IntegrationLogTest extends TestCase
         Event::assertNotDispatched(OperationCompleted::class);
         Event::assertNotDispatched(OperationFailed::class);
         Event::assertNotDispatched(OperationStarted::class);
+    }
+
+    public function test_operation_failed_carries_null_attempt_outside_a_sync(): void
+    {
+        Event::fake();
+
+        $log = $this->integration->logOperation(operation: 'sync', direction: 'inbound', status: 'failed', error: 'boom');
+
+        $this->assertNull($log->attempt);
+        $this->assertNull($log->max_attempts);
+
+        Event::assertDispatched(OperationFailed::class, function (OperationFailed $event): bool {
+            return $event->attempt === null;
+        });
+    }
+
+    public function test_operation_failed_carries_attempt_context_inside_a_sync(): void
+    {
+        Event::fake();
+
+        $context = new SyncAttemptContext(
+            attempt: 2,
+            maxAttempts: 5,
+            syncItemId: 10,
+            integrationId: $this->integration->id,
+            syncLogId: 99,
+            externalId: 'EXT-7',
+        );
+        Integration::setCurrentSyncAttempt($context);
+
+        $log = $this->integration->logOperation(operation: 'import', direction: 'inbound', status: 'failed', error: 'boom');
+
+        $this->assertSame(2, $log->attempt);
+        $this->assertSame(5, $log->max_attempts);
+
+        $fresh = $log->fresh();
+        $this->assertNotNull($fresh);
+        $this->assertSame(2, $fresh->attempt);
+        $this->assertSame(5, $fresh->max_attempts);
+
+        Event::assertDispatched(OperationFailed::class, function (OperationFailed $event) use ($context): bool {
+            return $event->attempt === $context;
+        });
+    }
+
+    public function test_operation_failed_ignores_attempt_context_from_another_integration(): void
+    {
+        Event::fake();
+
+        $other = Integration::create(['provider' => 'test', 'name' => 'Other']);
+
+        // The ambient context belongs to $other, not the integration we log on.
+        Integration::setCurrentSyncAttempt(new SyncAttemptContext(2, 5, 10, $other->id, 99, 'EXT-7'));
+
+        $log = $this->integration->logOperation(operation: 'import', direction: 'inbound', status: 'failed', error: 'boom');
+
+        $this->assertNull($log->attempt);
+        $this->assertNull($log->max_attempts);
+
+        Event::assertDispatched(OperationFailed::class, fn (OperationFailed $event): bool => $event->attempt === null);
+    }
+
+    public function test_attempt_columns_ignored_for_non_failed_status(): void
+    {
+        Integration::setCurrentSyncAttempt(new SyncAttemptContext(2, 5, 10, $this->integration->id, 99, 'EXT-7'));
+
+        $success = $this->integration->logOperation(operation: 'import', direction: 'inbound', status: 'success');
+        $processing = $this->integration->logOperation(operation: 'import', direction: 'inbound', status: 'processing');
+
+        $this->assertNull($success->attempt);
+        $this->assertNull($success->max_attempts);
+        $this->assertNull($processing->attempt);
+        $this->assertNull($processing->max_attempts);
     }
 }

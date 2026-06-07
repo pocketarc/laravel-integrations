@@ -72,6 +72,32 @@ Dispatched when the breaker transitions to closed — whether a half-open probe 
 
 A publishable `SendCircuitNotification` listener can turn these into notifications — see [Notifications](/advanced/notifications#circuit-breaker-notifications).
 
+These four events — `IntegrationHealthChanged`, `IntegrationDisabled`, `CircuitOpened`, and `CircuitClosed` — also drive the durable [incident history](/core-concepts/health-monitoring#incident-history) the package records. Operator overrides (`forced_open` / `forced_closed`) are excluded.
+
+## Failure anomalies
+
+These fire from [`integrations:evaluate-failures`](/reference/artisan-commands#integrations-evaluate-failures), not the request path. See the [anomaly signal](/advanced/circuit-breaker#anomaly-signal).
+
+### ElevatedFailureRate
+
+Dispatched when an integration's failure rate over the configured window crosses the threshold. Debounced to one event per incident, so a consumer raises a single alert rather than one per failure.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `failureRate` | `float` | Failed share of requests in the window (0–100) |
+| `windowMinutes` | `int` | The measured window |
+| `observedRequests` | `int` | Requests seen in the window |
+| `dominantClass` | `FailureClass` | The `FailureClass` with the most failures in the window |
+
+### FailureRateRecovered
+
+Dispatched when an integration that previously had an elevated rate drops back below the threshold. The mirror of `ElevatedFailureRate`, so a consumer can resolve its alert and the next incident alerts immediately.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+
 ## Operations
 
 ### OperationStarted
@@ -100,6 +126,11 @@ Dispatched when an operation fails.
 |----------|------|-------------|
 | `integration` | `Integration` | The integration |
 | `log` | `IntegrationLog` | The operation log record |
+| `attempt` | `?SyncAttemptContext` | Retry-attempt context when the failure was logged inside a [sync item](/features/scheduled-syncs) run; `null` otherwise. Lets a listener down-rank mid-retry noise via `isLikelyFinalAttempt()`. See [terminal-vs-transient failures](/core-concepts/logging#terminal-vs-transient-failures). |
+
+::: tip Alert on terminal failures only
+Inside a sync, a re-throwing listener logs `failed` on every attempt, so `OperationFailed` fires per attempt by design. For one alert per dead item, route terminal alerting to [`SyncItemFailed`](#syncitemfailed) (fires once on exhaustion). The `attempt` context is a best-effort filter for operation-granularity hooks, not a replacement.
+:::
 
 ## Sync
 

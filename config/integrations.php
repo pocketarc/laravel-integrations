@@ -175,6 +175,36 @@ return [
         'overrides_enabled' => true,
     ],
 
+    'observability' => [
+        // Failure-anomaly evaluation, run by `integrations:evaluate-failures` (schedule
+        // it yourself, e.g. ->everyFifteenMinutes()). It measures each active
+        // integration's failure rate over a rolling window from the persisted
+        // integration_requests rows and emits one ElevatedFailureRate event per
+        // incident (debounced) plus a FailureRateRecovered event when it clears, so a
+        // consumer can fire a single alert per incident instead of one per failure.
+        // Thresholds live here; where alerts go (Sentry, Slack) stays in the consumer.
+        // This is separate from the circuit breaker's own window: the breaker protects
+        // the upstream, this watches for an alert-worthy spike.
+        'anomaly_enabled' => true,
+
+        // Rolling window, in minutes, the failure rate is measured over.
+        'anomaly_window_minutes' => 15,
+
+        // Failure-rate percentage (1-100) at or above which an anomaly fires.
+        'anomaly_failure_rate_threshold' => 25,
+
+        // Minimum number of requests in the window before the rate can fire, so a
+        // couple of failures in an otherwise quiet window don't raise an alert.
+        'anomaly_minimum_requests' => 20,
+
+        // Master switch for the durable incident audit (the integration_incidents table).
+        // When enabled, the package opens one incident per integration from its own
+        // health/circuit state-change events, folds flapping into it (tracking peak
+        // severity), and closes it on recovery. Circuit state is cache-only and
+        // ephemeral; this persists the history so "incidents since T" is answerable.
+        'incidents_enabled' => true,
+    ],
+
     'health' => [
         // Number of consecutive failed requests before an integration is marked "degraded".
         // Degraded integrations sync at a reduced frequency (see degraded_backoff).
@@ -221,6 +251,16 @@ return [
         // status are kept indefinitely so an operator can find and recover them; clear
         // them by resolving the item (retry or skip) before they age out.
         'sync_items_days' => 30,
+
+        // Delete closed integration_incidents older than this many days (by closed_at)
+        // when running integrations:prune. Open incidents are live state and are never
+        // pruned. Incidents are audit history, so kept a year by default.
+        'incidents_days' => 365,
+
+        // Safety net: when running integrations:prune, auto-close any incident left open
+        // longer than this many days for an integration that is currently healthy. Covers
+        // the case where a CircuitClosed event never fired because the cache state expired.
+        'incidents_stale_after_days' => 7,
 
         // Number of rows to delete per batch. Deleting in chunks avoids holding a table lock
         // for the entire duration of a large delete, keeping the table responsive for normal

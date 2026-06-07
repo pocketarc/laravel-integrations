@@ -24,6 +24,8 @@ use Integrations\Support\Config;
  * @property array<string, mixed>|null $metadata
  * @property array<string, mixed>|null $result_data
  * @property string|null $error
+ * @property int|null $attempt
+ * @property int|null $max_attempts
  * @property int|null $duration_ms
  * @property Carbon|null $created_at
  * @property Carbon|null $updated_at
@@ -34,6 +36,7 @@ use Integrations\Support\Config;
  * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog successful()
  * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog failed()
  * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog forOperation(string $operation)
+ * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog withStatus(string $status)
  * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog topLevel()
  *
  * @property-read Collection<int, IntegrationLog> $children
@@ -42,11 +45,30 @@ use Integrations\Support\Config;
  * @property-read IntegrationLog|null $parent
  *
  * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog recent(int $hours = 24)
+ * @method static Builders\IntegrationLogBuilder<static>|IntegrationLog since(\Carbon\CarbonInterface $since)
  *
  * @mixin \Eloquent
  */
 class IntegrationLog extends Model
 {
+    /**
+     * The documented `status` vocabulary. The column stays a free string —
+     * any value is accepted — but only three dispatch an event: `success` →
+     * OperationCompleted, `failed` → OperationFailed, `processing` →
+     * OperationStarted. `partial` marks a sync run where some items failed, and
+     * `deferred` an expected wait; both are recorded without an event, as is
+     * any other custom status.
+     */
+    public const STATUS_SUCCESS = 'success';
+
+    public const STATUS_FAILED = 'failed';
+
+    public const STATUS_PROCESSING = 'processing';
+
+    public const STATUS_PARTIAL = 'partial';
+
+    public const STATUS_DEFERRED = 'deferred';
+
     /** @var array<string> */
     protected $guarded = [];
 
@@ -66,6 +88,8 @@ class IntegrationLog extends Model
             'metadata' => 'json',
             'result_data' => 'json',
             'duration_ms' => 'integer',
+            'attempt' => 'integer',
+            'max_attempts' => 'integer',
         ];
     }
 

@@ -115,15 +115,15 @@ class FinaliseSyncRun implements ShouldQueue
     private function finaliseLog(Integration $integration, int $successCount, int $failureCount): ?SyncResult
     {
         $log = IntegrationLog::query()->find($this->syncLogId);
-        if ($log === null || $log->status !== 'processing') {
+        if ($log === null || $log->status !== IntegrationLog::STATUS_PROCESSING) {
             return null;
         }
 
         $log->update([
             'status' => match (true) {
-                $failureCount === 0 => 'success',
-                $successCount === 0 => 'failed',
-                default => 'partial',
+                $failureCount === 0 => IntegrationLog::STATUS_SUCCESS,
+                $successCount === 0 => IntegrationLog::STATUS_FAILED,
+                default => IntegrationLog::STATUS_PARTIAL,
             },
             'summary' => sprintf('Sync completed: %d succeeded, %d failed.', $successCount, $failureCount),
             'metadata' => array_merge(

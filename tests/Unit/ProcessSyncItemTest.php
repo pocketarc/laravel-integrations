@@ -12,6 +12,7 @@ use Integrations\IntegrationManager;
 use Integrations\Jobs\ProcessSyncItem;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationSyncItem;
+use Integrations\Sync\SyncAttemptContext;
 use Integrations\Tests\Fixtures\QueuedSyncListener;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\Fixtures\TestSyncItemEvent;
@@ -25,6 +26,12 @@ class ProcessSyncItemTest extends TestCase
         parent::setUp();
 
         app(IntegrationManager::class)->register('test', TestProvider::class);
+    }
+
+    protected function tearDown(): void
+    {
+        Integration::setCurrentSyncAttempt(null);
+        parent::tearDown();
     }
 
     public function test_runs_the_listener_and_marks_the_item_success(): void
@@ -154,6 +161,112 @@ class ProcessSyncItemTest extends TestCase
 
         $this->assertGreaterThanOrEqual($before + 1800, $retryUntil->getTimestamp());
         $this->assertLessThanOrEqual($after + 1800, $retryUntil->getTimestamp());
+    }
+
+    public function test_sets_sync_attempt_context_around_the_event(): void
+    {
+        config(['integrations.sync.item_tries' => 5]);
+
+        $captured = null;
+        Event::listen(TestSyncItemEvent::class, function () use (&$captured): void {
+            $captured = Integration::currentSyncAttempt();
+        });
+
+        $integration = $this->makeIntegration();
+        $item = IntegrationSyncItem::create([
+            'integration_id' => $integration->id,
+            'sync_log_id' => $this->logId,
+            'event_class' => TestSyncItemEvent::class,
+            'external_id' => 'EXT-9',
+            'checkpoint_value' => '2026-01-01T00:00:00+00:00',
+            'status' => IntegrationSyncItem::STATUS_PENDING,
+            'attempts' => 0,
+        ]);
+
+        $queueJob = $this->createMock(Job::class);
+        $queueJob->method('attempts')->willReturn(3);
+
+        $job = new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId);
+        $job->setJob($queueJob);
+        $job->handle();
+
+        $this->assertInstanceOf(SyncAttemptContext::class, $captured);
+        $this->assertSame(3, $captured->attempt);
+        $this->assertSame(5, $captured->maxAttempts);
+        $this->assertSame($item->id, $captured->syncItemId);
+        $this->assertSame($integration->id, $captured->integrationId);
+        $this->assertSame($this->logId, $captured->syncLogId);
+        $this->assertSame('EXT-9', $captured->externalId);
+        $this->assertFalse($captured->isLikelyFinalAttempt());
+    }
+
+    public function test_clears_sync_attempt_context_after_a_successful_run(): void
+    {
+        Event::listen(TestSyncItemEvent::class, function (): void {});
+
+        $integration = $this->makeIntegration();
+        $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
+
+        (new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId))->handle();
+
+        $this->assertNull(Integration::currentSyncAttempt());
+    }
+
+    public function test_clears_sync_attempt_context_when_the_listener_throws(): void
+    {
+        Event::listen(TestSyncItemEvent::class, function (): void {
+            throw new RuntimeException('listener boom');
+        });
+
+        $integration = $this->makeIntegration();
+        $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
+
+        $job = new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId);
+
+        try {
+            $job->handle();
+            $this->fail('Expected the listener exception to propagate.');
+        } catch (RuntimeException) {
+            // expected
+        }
+
+        $this->assertNull(Integration::currentSyncAttempt());
+    }
+
+    public function test_restores_the_previous_sync_attempt_context(): void
+    {
+        $outer = new SyncAttemptContext(1, 5, 1, 1, 1, 'OUTER');
+        Integration::setCurrentSyncAttempt($outer);
+
+        Event::listen(TestSyncItemEvent::class, function (): void {});
+
+        $integration = $this->makeIntegration();
+        $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
+
+        (new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId))->handle();
+
+        $this->assertSame($outer, Integration::currentSyncAttempt());
+    }
+
+    public function test_rate_limit_path_clears_the_sync_attempt_context(): void
+    {
+        $integration = $this->makeIntegration();
+
+        Event::listen(TestSyncItemEvent::class, function () use ($integration): never {
+            throw new RateLimitExceededException($integration, 90);
+        });
+
+        $item = $this->makeItem($integration, IntegrationSyncItem::STATUS_PENDING);
+
+        $queueJob = $this->createMock(Job::class);
+        $queueJob->method('attempts')->willReturn(1);
+        $queueJob->expects($this->once())->method('release')->with(90);
+
+        $job = new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId);
+        $job->setJob($queueJob);
+        $job->handle();
+
+        $this->assertNull(Integration::currentSyncAttempt());
     }
 
     private int $logId = 0;

@@ -77,6 +77,18 @@ See [Circuit breaker](/advanced/circuit-breaker) for the full state machine, str
 | `circuit_breaker.cooldown_seconds` | `int` | `60` | Seconds to stay open before allowing a half-open probe. |
 | `circuit_breaker.overrides_enabled` | `bool` | `true` | Honour per-integration circuit overrides. `false` ignores the override columns. |
 
+## Observability
+
+Failure-anomaly evaluation and the incident audit. See [the anomaly signal](/advanced/circuit-breaker#anomaly-signal) and [incident history](/core-concepts/health-monitoring#incident-history).
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `observability.anomaly_enabled` | `bool` | `true` | Master switch for `integrations:evaluate-failures`. `false` makes it a no-op. |
+| `observability.anomaly_window_minutes` | `int` | `15` | Rolling window the failure rate is measured over. |
+| `observability.anomaly_failure_rate_threshold` | `int` | `25` | Failure percentage (1-100) at or above which an anomaly fires. |
+| `observability.anomaly_minimum_requests` | `int` | `20` | Requests in the window before the rate can fire. |
+| `observability.incidents_enabled` | `bool` | `true` | Master switch for the durable incident audit (`integration_incidents`). |
+
 ## Health
 
 | Key | Type | Default | Description |
@@ -95,6 +107,8 @@ See [Circuit breaker](/advanced/circuit-breaker) for the full state machine, str
 | `pruning.logs_days` | `int` | `365` | Retention for `integration_logs` |
 | `pruning.idempotency_keys_days` | `int` | `90` | Retention for `integration_idempotency_keys`. Set comfortably longer than your longest queue retry window. |
 | `pruning.sync_items_days` | `int` | `30` | Retention for completed (`success` / `skipped`) `integration_sync_items`. `failed` rows are kept until resolved. |
+| `pruning.incidents_days` | `int` | `365` | Retention for closed `integration_incidents` (by `closed_at`). Open incidents are never pruned. |
+| `pruning.incidents_stale_after_days` | `int` | `7` | Auto-close incidents left open longer than this for a currently-healthy integration. |
 | `pruning.chunk_size` | `int` | `1000` | Rows per delete batch |
 
 ## Providers

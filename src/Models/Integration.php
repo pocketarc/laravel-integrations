@@ -6,6 +6,7 @@ namespace Integrations\Models;
 
 use Carbon\CarbonInterface;
 use Closure;
+use Illuminate\Database\Eloquent\Casts\Attribute;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\HasMany;
@@ -37,9 +38,12 @@ use Integrations\Exceptions\UnsupportedByProvider;
 use Integrations\IdempotencyRecovery;
 use Integrations\IntegrationManager;
 use Integrations\PendingRequest;
+use Integrations\Reporting\FailureReporter;
+use Integrations\Reporting\FailureSummary;
 use Integrations\RequestContext;
 use Integrations\RequestExecutor;
 use Integrations\Support\Config;
+use Integrations\Sync\SyncAttemptContext;
 use Integrations\Testing\IntegrationRequestFake;
 use InvalidArgumentException;
 use JsonException;
@@ -79,6 +83,8 @@ use function Safe\json_encode;
  * @method static Builders\IntegrationBuilder<static>|Integration dueForSync()
  * @method static Builders\IntegrationBuilder<static>|Integration ownedBy(\Illuminate\Database\Eloquent\Model $owner)
  *
+ * @property-read Collection<int, IntegrationIncident> $incidents
+ * @property-read int|null $incidents_count
  * @property-read Collection<int, IntegrationLog> $logs
  * @property-read int|null $logs_count
  * @property-read Collection<int, IntegrationMapping> $mappings
@@ -90,6 +96,8 @@ use function Safe\json_encode;
  * @property-read int|null $sync_items_count
  * @property-read Collection<int, IntegrationWebhook> $webhooks
  * @property-read int|null $webhooks_count
+ * @property-read IntegrationIncident|null $current_incident
+ * @property-read bool $has_open_incident
  *
  * @mixin \Eloquent
  */
@@ -114,6 +122,14 @@ class Integration extends Model
      * shared across coroutines under Swoole/RoadRunner.
      */
     private static ?RequestContext $currentContext = null;
+
+    /**
+     * Ambient slot for the active sync-item attempt, set by ProcessSyncItem
+     * around the per-item event dispatch and cleared in a `finally`. Lets a
+     * listener (and logOperation) read attempt/maxAttempts without a signature
+     * change. Same single-static-slot caveat as $currentContext above.
+     */
+    private static ?SyncAttemptContext $currentSyncAttempt = null;
 
     #[\Override]
     protected static function booted(): void
@@ -142,6 +158,7 @@ class Integration extends Model
             'health_status' => HealthStatus::class,
             'consecutive_failures' => 'integer',
             'last_error_at' => 'datetime',
+            'anomaly_alerted_at' => 'datetime',
             'circuit_override' => CircuitOverride::class,
             'circuit_override_until' => 'datetime',
             'rate_limit_override' => 'array',
@@ -246,6 +263,49 @@ class Integration extends Model
         return $this->hasMany(IntegrationSyncItem::class);
     }
 
+    /** @return HasMany<IntegrationIncident, $this> */
+    public function incidents(): HasMany
+    {
+        return $this->hasMany(IntegrationIncident::class);
+    }
+
+    /**
+     * The currently-open incident for this integration, if any (there's only
+     * ever one open). Uses the loaded `incidents` relation when present, so an
+     * eager-loaded caller pays no query; otherwise it runs a narrow query
+     * rather than pulling the whole incident history.
+     *
+     * @return Attribute<IntegrationIncident|null, never>
+     */
+    protected function currentIncident(): Attribute
+    {
+        return Attribute::get(function (): ?IntegrationIncident {
+            if ($this->relationLoaded('incidents')) {
+                return $this->incidents->firstWhere('status', IntegrationIncident::STATUS_OPEN);
+            }
+
+            return $this->incidents()->open()->latest('opened_at')->first();
+        });
+    }
+
+    /**
+     * Whether an incident is currently open. Uses the loaded `incidents`
+     * relation when present, else a narrow existence query, like
+     * {@see currentIncident()}.
+     *
+     * @return Attribute<bool, never>
+     */
+    protected function hasOpenIncident(): Attribute
+    {
+        return Attribute::get(function (): bool {
+            if ($this->relationLoaded('incidents')) {
+                return $this->incidents->contains('status', IntegrationIncident::STATUS_OPEN);
+            }
+
+            return $this->incidents()->open()->exists();
+        });
+    }
+
     /**
      * Count of sync items still in flight (pending or processing). A non-zero
      * count means a sync run's batch hasn't finished; `SyncIntegration` uses
@@ -294,6 +354,24 @@ class Integration extends Model
     public static function setCurrentContext(?RequestContext $context): void
     {
         self::$currentContext = $context;
+    }
+
+    /**
+     * Read the active sync-item attempt context from inside a listener.
+     * Returns null outside an in-flight sync item (e.g. an operation logged
+     * from a webhook or a manual call), so always null-check before reading.
+     */
+    public static function currentSyncAttempt(): ?SyncAttemptContext
+    {
+        return self::$currentSyncAttempt;
+    }
+
+    /**
+     * @internal Called by ProcessSyncItem around the per-item event dispatch.
+     */
+    public static function setCurrentSyncAttempt(?SyncAttemptContext $context): void
+    {
+        self::$currentSyncAttempt = $context;
     }
 
     private ?int $activeSyncLogId = null;
@@ -579,6 +657,19 @@ class Integration extends Model
         ?int $parentId = null,
         ?array $resultData = null,
     ): IntegrationLog {
+        // A failure logged inside a ProcessSyncItem run carries the attempt
+        // context, so the row and the OperationFailed event record which retry
+        // this was. Only the failed path reads it; success/processing rows keep
+        // the columns null. Scope it to this integration: a listener may log
+        // against a different one than the run is syncing, and that log mustn't
+        // inherit the synced integration's attempt metadata.
+        $ambient = self::currentSyncAttempt();
+        $attemptContext = $status === IntegrationLog::STATUS_FAILED
+            && $ambient !== null
+            && $ambient->integrationId === $this->id
+                ? $ambient
+                : null;
+
         $log = $this->logs()->create([
             'parent_id' => $parentId,
             'operation' => $operation,
@@ -589,18 +680,31 @@ class Integration extends Model
             'metadata' => $metadata,
             'result_data' => $resultData,
             'error' => $error,
+            'attempt' => $attemptContext?->attempt,
+            'max_attempts' => $attemptContext?->maxAttempts,
             'duration_ms' => $durationMs,
         ]);
 
-        if ($status === 'success') {
+        if ($status === IntegrationLog::STATUS_SUCCESS) {
             OperationCompleted::dispatch($this, $log);
-        } elseif ($status === 'failed') {
-            OperationFailed::dispatch($this, $log);
-        } elseif ($status === 'processing') {
+        } elseif ($status === IntegrationLog::STATUS_FAILED) {
+            OperationFailed::dispatch($this, $log, $attemptContext);
+        } elseif ($status === IntegrationLog::STATUS_PROCESSING) {
             OperationStarted::dispatch($this, $log);
         }
 
         return $log;
+    }
+
+    /**
+     * Failure report for this integration over the given window: per-operation
+     * counts, failure rate, last error, and per-status / per-FailureClass
+     * breakdowns. Drives the CLI reports and is the surface consumers render
+     * on a status page. See {@see FailureReporter}.
+     */
+    public function failureSummary(CarbonInterface $since): FailureSummary
+    {
+        return (new FailureReporter($this))->summary($since);
     }
 
     public function mapExternalId(string $externalId, Model $internalModel): IntegrationMapping

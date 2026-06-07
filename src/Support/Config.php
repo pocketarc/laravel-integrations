@@ -254,6 +254,66 @@ final class Config
         return is_bool($value) ? $value : true;
     }
 
+    /**
+     * Master switch for failure-anomaly evaluation (integrations:evaluate-failures).
+     * When false the command is a no-op and no anomaly events fire.
+     */
+    public static function anomalyEnabled(): bool
+    {
+        $value = config('integrations.observability.anomaly_enabled', true);
+
+        return is_bool($value) ? $value : true;
+    }
+
+    /** Rolling window (minutes) the anomaly evaluator measures the failure rate over. */
+    public static function anomalyWindowMinutes(): int
+    {
+        return self::boundedInt(config('integrations.observability.anomaly_window_minutes', 15), 15, 1);
+    }
+
+    /** Failure-rate percentage (1-100) at or above which an anomaly fires. */
+    public static function anomalyFailureRateThreshold(): int
+    {
+        return min(100, self::boundedInt(config('integrations.observability.anomaly_failure_rate_threshold', 25), 25, 1));
+    }
+
+    /** Minimum requests in the window before the anomaly rate can fire. */
+    public static function anomalyMinimumRequests(): int
+    {
+        return self::boundedInt(config('integrations.observability.anomaly_minimum_requests', 20), 20, 1);
+    }
+
+    /**
+     * Master switch for the durable incident audit written from health/circuit
+     * state-change events. When false no incidents are opened, escalated, or
+     * closed.
+     */
+    public static function incidentsEnabled(): bool
+    {
+        $value = config('integrations.observability.incidents_enabled', true);
+
+        return is_bool($value) ? $value : true;
+    }
+
+    /**
+     * Delete closed integration_incidents older than this many days when
+     * running integrations:prune.
+     */
+    public static function pruningIncidentsDays(): int
+    {
+        return self::boundedInt(config('integrations.pruning.incidents_days', 365), 365, 1);
+    }
+
+    /**
+     * Safety net: auto-close an incident left open longer than this many days
+     * for an integration that is currently healthy (covers the case where a
+     * CircuitClosed event never fired because the cache state expired).
+     */
+    public static function incidentsStaleAfterDays(): int
+    {
+        return self::boundedInt(config('integrations.pruning.incidents_stale_after_days', 7), 7, 1);
+    }
+
     public static function degradedAfter(): int
     {
         return self::boundedInt(config('integrations.health.degraded_after', 5), 5, 1);

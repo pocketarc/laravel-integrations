@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Models\Builders;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Integrations\Models\IntegrationLog;
 
 /**
  * @template TModel of \Integrations\Models\IntegrationLog
@@ -15,14 +17,14 @@ class IntegrationLogBuilder extends Builder
 {
     public function successful(): static
     {
-        $this->where('status', 'success');
+        $this->where('status', IntegrationLog::STATUS_SUCCESS);
 
         return $this;
     }
 
     public function failed(): static
     {
-        $this->where('status', 'failed');
+        $this->where('status', IntegrationLog::STATUS_FAILED);
 
         return $this;
     }
@@ -44,6 +46,13 @@ class IntegrationLogBuilder extends Builder
     public function recent(int $hours = 24): static
     {
         $this->where('created_at', '>=', now()->subHours($hours));
+
+        return $this;
+    }
+
+    public function since(CarbonInterface $since): static
+    {
+        $this->where('created_at', '>=', $since);
 
         return $this;
     }

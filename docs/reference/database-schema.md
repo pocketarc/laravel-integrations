@@ -24,6 +24,7 @@ The main table storing integration records.
 | `health_status` | string | Current health: healthy, degraded, failing, disabled |
 | `consecutive_failures` | int | Running failure counter |
 | `last_error_at` | timestamp (nullable) | When the last error occurred |
+| `anomaly_alerted_at` | timestamp (nullable) | Set while the anomaly evaluator considers the failure rate elevated; the durable open/closed marker for the anomaly signal |
 | `last_synced_at` | timestamp (nullable) | When the last sync completed |
 | `next_sync_at` | timestamp (nullable) | When the next sync should run |
 | `sync_interval_minutes` | int (nullable) | Override for provider's default interval |
@@ -46,6 +47,7 @@ API request/response log. One row per API call (including retries).
 | `provider_request_id` | string (nullable) | Upstream's request ID (Stripe `Request-Id`, GitHub `X-GitHub-Request-Id`, etc.). |
 | `response_data` | text (nullable) | Response body (redacted if applicable) |
 | `error` | text (nullable) | Error message on failure |
+| `failure_class` | string (nullable) | [`FailureClass`](/advanced/circuit-breaker#what-counts-as-a-failure) on the failure path (`upstream` / `throttle` / `client` / `unknown`); `null` on success |
 | `duration_ms` | int (nullable) | Request duration in milliseconds |
 | `retry_of` | bigint (nullable) | Points to the original request if this is a retry |
 | `related_type` | string (nullable) | Polymorphic related model type |
@@ -70,6 +72,8 @@ Operation-level logs (syncs, imports, webhooks).
 | `metadata`       | json (nullable)   | Structured metadata (counts, request IDs, etc.)                  |
 | `result_data`    | json (nullable)   | Structured output from the operation                             |
 | `error`          | text (nullable)   | Error message on failure                                         |
+| `attempt`        | smallint (nullable) | Retry attempt when a failure was logged inside a sync item run; `null` otherwise |
+| `max_attempts`   | smallint (nullable) | The configured retry ceiling at log time; `null` outside a sync item run |
 | `duration_ms`    | int (nullable)    | Operation duration                                               |
 | `parent_id`      | bigint (nullable) | For hierarchical logging                                         |
 | `timestamps`     |                   | `created_at`, `updated_at`                                       |
@@ -122,6 +126,25 @@ One row per item dispatched during a sync run. Tracks whether the item's listene
 | `timestamps`       |                | `created_at`, `updated_at`                                                   |
 
 Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(sync_log_id, status)`, `(batch_id, status)`. Completed (`success` / `skipped`) rows are pruned by `integrations:prune`; `failed` rows are kept until resolved.
+
+## integration_incidents
+
+Durable audit of periods an integration was in trouble. One open row per integration, written from health/circuit state-change events; see [Incident history](/core-concepts/health-monitoring#incident-history).
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | bigint (PK) | Auto-incrementing ID |
+| `integration_id` | bigint (FK) | Parent integration |
+| `status` | string(16) | `open` or `closed` |
+| `source` | string(16) | What opened it: `health` or `circuit` |
+| `reason` | string | Opening reason (e.g. `health_degraded`, `threshold_reached`) |
+| `peak_severity` | string | Worst `HealthStatus` reached over the incident's life |
+| `opened_at` | timestamp | When the incident opened |
+| `last_error_at` | timestamp (nullable) | Snapshot of the integration's `last_error_at`, refreshed on escalate |
+| `closed_at` | timestamp (nullable) | When the incident closed |
+| `timestamps` | | `created_at`, `updated_at` |
+
+Indexed on `(integration_id, status)` and `(integration_id, opened_at)`. Closed rows are pruned by `integrations:prune` (`pruning.incidents_days`, default 365); open rows are never pruned.
 
 ## integration_webhooks
 

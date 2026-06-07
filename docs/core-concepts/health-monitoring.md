@@ -37,6 +37,37 @@ class NotifyOnHealthDegradation
 }
 ```
 
+## Failure summary {#failure-summary}
+
+`Integration::failureSummary(CarbonInterface $since)` returns a report over a window — the same shape `integrations:health` and `integrations:stats` render, so a status page and the CLI agree on the numbers:
+
+```php
+$summary = $integration->failureSummary(now()->subDay());
+
+$summary->failureRate();          // failed share of all requests (0–100)
+$summary->byFailureClass;         // ['upstream' => 12, 'throttle' => 3, 'client' => 1, 'unknown' => 0]
+$summary->byStatus;               // ['5xx' => 12, '4xx' => 1, '429' => 3, 'other' => 0]
+$summary->topErrors;              // list<TopError> (message + count), highest first
+$summary->lastErrorMessage;       // most recent error string
+$summary->operations['sync'];     // OperationFailureBreakdown: total / successful / partial / failed / distinctItems
+```
+
+The headline `failureRate()` counts every failed request; use `byFailureClass` to derive an upstream-only rate, since only `FailureClass::Upstream` degrades health. The breakdown draws from `integration_requests` (HTTP-level failures) and `integration_logs` (operation-level outcomes). `failure_class` is persisted on each request row, so the per-class breakdown is queryable without re-classifying.
+
+## Incident history {#incident-history}
+
+Health transitions and circuit trips are events; nothing persisted them, and circuit state is cache-only and lost on `cache:clear`. The package now records a durable `integration_incidents` audit from its own `IntegrationHealthChanged`, `CircuitOpened`, `CircuitClosed`, and `IntegrationDisabled` events.
+
+There's **one open incident per integration**: health degradation and circuit trips fold into the same row, which tracks the worst severity reached (`peak_severity`). It closes when health returns to `Healthy` (a circuit-close only closes it once health agrees). Operator overrides (`forced_open` / `forced_closed`) are deliberate actions, not detected failures, so they neither open nor close an incident.
+
+```php
+$integration->has_open_incident;       // bool (accessor; reads the loaded incidents relation)
+$integration->current_incident;        // ?IntegrationIncident
+$integration->incidents()->since(now()->subWeek())->get();
+```
+
+`integrations:prune` sweeps closed incidents (`pruning.incidents_days`, default 365) and, as a safety net, auto-closes incidents left open past `pruning.incidents_stale_after_days` for an integration that's currently healthy. Turn the whole audit off with `observability.incidents_enabled`.
+
 ## Health checks
 
 Providers that implement `HasHealthCheck` can be probed without running a full sync:

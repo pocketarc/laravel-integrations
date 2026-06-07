@@ -209,3 +209,15 @@ If it doesn't trip when it should:
 
 - Check the failure is being classified as `Upstream` and not `Client`/`Throttle`/`Unknown`. An upstream that signals transient errors with an odd status, or an SDK exception core can't read, may need a provider [`ClassifiesFailures`](#provider-classification) implementation.
 - Under the rate strategy, confirm the integration actually makes `minimum_requests` per window. See the [low-volume warning](#strategies).
+
+## Anomaly signal {#anomaly-signal}
+
+The breaker protects the *upstream* — it short-circuits requests so a broken dependency isn't hammered. When to *alert a human* is separate: a failure rate over a window is the signal, and one event per incident is the cadence. Alerting per failed request just buries the operator in noise.
+
+[`integrations:evaluate-failures`](/reference/artisan-commands#integrations-evaluate-failures) measures each active integration's failure rate over `observability.anomaly_window_minutes` from the persisted `integration_requests` rows. When the rate crosses `observability.anomaly_failure_rate_threshold` (with at least `observability.anomaly_minimum_requests` in the window), it dispatches [`ElevatedFailureRate`](/reference/events#elevatedfailurerate) once — no further event for that integration until the rate drops back, when [`FailureRateRecovered`](/reference/events#failureraterecovered) fires and re-arms it. The open/closed state is a durable column (`integrations.anomaly_alerted_at`), so a cache flush or a skipped run can't drop a pending recovery. Schedule it yourself:
+
+```php
+Schedule::command('integrations:evaluate-failures')->everyFifteenMinutes();
+```
+
+The package emits the events; where alerts go (Sentry, Slack) is the consumer's call, like [`CircuitOpened`](/reference/events#circuitopened) and [`SyncItemFailed`](/reference/events#syncitemfailed). The anomaly window is intentionally distinct from the breaker's `time_window`: the breaker reacts in seconds to protect the upstream, while alerting wants a longer view to avoid paging on a blip. The breaker's own live window rate is available for display via `CircuitBreaker::inspect()['failure_rate']`, which `integrations:health` surfaces.

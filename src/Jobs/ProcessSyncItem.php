@@ -14,8 +14,10 @@ use Illuminate\Support\Str;
 use Integrations\Events\SyncItemFailed;
 use Integrations\Exceptions\RateLimitExceededException;
 use Integrations\Exceptions\SyncListenerMustNotBeQueuedException;
+use Integrations\Models\Integration;
 use Integrations\Models\IntegrationSyncItem;
 use Integrations\Support\Config;
+use Integrations\Sync\SyncAttemptContext;
 use Integrations\Sync\SyncItemEvent;
 use Throwable;
 
@@ -100,6 +102,23 @@ class ProcessSyncItem implements ShouldQueue
             'attempts' => $this->attempts(),
         ]);
 
+        // Make the retry state visible to listeners (and to logOperation), so
+        // a failure logged inside the listener can tell mid-retry from likely-
+        // final. Save and restore around the dispatch so a nested sync from
+        // inside a listener doesn't clobber the outer context (mirrors
+        // RequestExecutor::invokeCallback()).
+        $attemptContext = new SyncAttemptContext(
+            attempt: $this->attempts(),
+            maxAttempts: $this->maxExceptions,
+            syncItemId: $this->syncItemId,
+            integrationId: $item->integration_id,
+            syncLogId: $this->syncLogId,
+            externalId: $item->external_id,
+        );
+
+        $previousAttempt = Integration::currentSyncAttempt();
+        Integration::setCurrentSyncAttempt($attemptContext);
+
         // Listeners run synchronously here (we verified none are queued). A
         // throw propagates out, so the queue retries the whole job, which
         // means listeners must be idempotent.
@@ -114,6 +133,8 @@ class ProcessSyncItem implements ShouldQueue
             $this->release($e->retryAfterSeconds);
 
             return;
+        } finally {
+            Integration::setCurrentSyncAttempt($previousAttempt);
         }
 
         $item->update([

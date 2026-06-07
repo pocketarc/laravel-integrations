@@ -205,7 +205,11 @@ The sync scheduler respects health status. Degraded integrations sync at a reduc
 
 ## Recovering failed items
 
-When a per-item job exhausts its retries, its row is marked `failed`, the underlying job lands in Laravel's `failed_jobs` table, and a [`SyncItemFailed`](/reference/events#sync) event fires. The cursor stays put: the run can't advance past an unresolved item.
+When a per-item job exhausts its retries, its row is marked `failed`, the underlying job lands in Laravel's `failed_jobs` table, and a [`SyncItemFailed`](/reference/events#syncitemfailed) event fires. The cursor stays put: the run can't advance past an unresolved item.
+
+::: tip Alerting on terminal failures
+`SyncItemFailed` fires exactly once, only on genuine exhaustion — so it's the event to forward to Sentry or Slack. A listener that logs `failed` and re-throws fires [`OperationFailed`](/reference/events#operationfailed) on *every* attempt by design; alert on that and a transient hiccup that recovers on retry still pages you. See [terminal vs transient failures](/core-concepts/logging#terminal-vs-transient-failures).
+:::
 
 To find and recover them:
 
