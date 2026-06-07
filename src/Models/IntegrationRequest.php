@@ -11,6 +11,7 @@ use Illuminate\Database\Eloquent\Relations\HasMany;
 use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
+use Integrations\Enums\FailureClass;
 use Integrations\Support\Config;
 use Integrations\Testing\IntegrationRequestFake;
 
@@ -30,6 +31,7 @@ use Integrations\Testing\IntegrationRequestFake;
  * @property string|null $response_data
  * @property bool $response_success
  * @property array<string, mixed>|null $error
+ * @property FailureClass|null $failure_class
  * @property int|null $duration_ms
  * @property array<string, mixed>|null $metadata
  * @property Carbon|null $expires_at
@@ -44,6 +46,7 @@ use Integrations\Testing\IntegrationRequestFake;
  * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest successful()
  * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest failed()
  * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest forEndpoint(string $endpoint)
+ * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest withFailureClass(FailureClass $class)
  *
  * @property-read Integration|null $integration
  * @property-read IntegrationRequest|null $originalRequest
@@ -52,6 +55,7 @@ use Integrations\Testing\IntegrationRequestFake;
  * @property-read int|null $retries_count
  *
  * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest recent(int $hours = 24)
+ * @method static Builders\IntegrationRequestBuilder<static>|IntegrationRequest since(\Carbon\CarbonInterface $since)
  *
  * @mixin \Eloquent
  */
@@ -75,6 +79,7 @@ class IntegrationRequest extends Model
         return [
             'response_success' => 'boolean',
             'error' => 'json',
+            'failure_class' => FailureClass::class,
             'metadata' => 'json',
             'expires_at' => 'datetime',
             'cache_hits' => 'integer',

@@ -210,7 +210,7 @@ final class RequestExecutor
         $request = $this->persistRequest(
             $endpoint, $method, $encodedRequestData, $retryOfId,
             $relatedTo, $responseCode, $responseData, $responseSuccess,
-            $error, $durationMs, $cacheFor,
+            $error, $failureClass, $durationMs, $cacheFor,
         );
         $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
@@ -310,7 +310,7 @@ final class RequestExecutor
             $request = $this->persistRequest(
                 $endpoint, $method, $encodedRequestData, $retryOfId,
                 $relatedTo, $responseCode, $responseData, false,
-                $error, $durationMs, $cacheFor,
+                $error, $failureClass, $durationMs, $cacheFor,
             );
             $this->lastCreatedRequestId = is_int($request->getKey()) ? $request->getKey() : null;
 
@@ -335,6 +335,7 @@ final class RequestExecutor
         ?string $responseData,
         bool $responseSuccess,
         ?array $error,
+        ?FailureClass $failureClass,
         int $durationMs,
         ?CarbonInterface $cacheFor,
     ): IntegrationRequest {
@@ -365,6 +366,7 @@ final class RequestExecutor
             'response_data' => $responseData,
             'response_success' => $responseSuccess,
             'error' => $error,
+            'failure_class' => $failureClass?->value,
             'duration_ms' => $durationMs,
             'expires_at' => $cacheFor,
         ]);

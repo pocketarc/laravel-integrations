@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Models\Builders;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Builder;
+use Integrations\Enums\FailureClass;
 
 /**
  * @template TModel of \Integrations\Models\IntegrationRequest
@@ -27,6 +29,13 @@ class IntegrationRequestBuilder extends Builder
         return $this;
     }
 
+    public function withFailureClass(FailureClass $class): static
+    {
+        $this->where('failure_class', $class->value);
+
+        return $this;
+    }
+
     public function forEndpoint(string $endpoint): static
     {
         $this->where('endpoint', $endpoint);
@@ -37,6 +46,13 @@ class IntegrationRequestBuilder extends Builder
     public function recent(int $hours = 24): static
     {
         $this->where('created_at', '>=', now()->subHours($hours));
+
+        return $this;
+    }
+
+    public function since(CarbonInterface $since): static
+    {
+        $this->where('created_at', '>=', $since);
 
         return $this;
     }

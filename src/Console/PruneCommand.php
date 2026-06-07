@@ -5,7 +5,10 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
+use Integrations\Enums\HealthStatus;
+use Integrations\Models\Integration;
 use Integrations\Models\IntegrationIdempotencyKey;
+use Integrations\Models\IntegrationIncident;
 use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Models\IntegrationSyncItem;
@@ -15,7 +18,7 @@ class PruneCommand extends Command
 {
     protected $signature = 'integrations:prune';
 
-    protected $description = 'Delete old integration requests, logs, idempotency keys, and completed sync items based on retention settings.';
+    protected $description = 'Delete old integration requests, logs, idempotency keys, completed sync items, and closed incidents based on retention settings.';
 
     public function handle(): int
     {
@@ -23,6 +26,8 @@ class PruneCommand extends Command
         $logsDays = Config::pruningLogsDays();
         $idempotencyKeysDays = Config::pruningIdempotencyKeysDays();
         $syncItemsDays = Config::pruningSyncItemsDays();
+        $incidentsDays = Config::pruningIncidentsDays();
+        $staleAfterDays = Config::incidentsStaleAfterDays();
         $chunkSize = Config::pruningChunkSize();
 
         $requestsPruned = $this->pruneTable(
@@ -45,12 +50,68 @@ class PruneCommand extends Command
 
         $syncItemsPruned = $this->pruneCompletedSyncItems($syncItemsDays, $chunkSize);
 
+        $staleIncidentsClosed = $this->autoCloseStaleIncidents($staleAfterDays);
+        $incidentsPruned = $this->pruneClosedIncidents($incidentsDays, $chunkSize);
+
         $this->info("Pruned {$requestsPruned} request(s) older than {$requestsDays} days.");
         $this->info("Pruned {$logsPruned} log(s) older than {$logsDays} days.");
         $this->info("Pruned {$idempotencyKeysPruned} idempotency key(s) older than {$idempotencyKeysDays} days.");
         $this->info("Pruned {$syncItemsPruned} completed sync item(s) older than {$syncItemsDays} days.");
+        $this->info("Auto-closed {$staleIncidentsClosed} stale open incident(s) for healthy integrations.");
+        $this->info("Pruned {$incidentsPruned} closed incident(s) older than {$incidentsDays} days.");
 
         return self::SUCCESS;
+    }
+
+    /**
+     * Force-close incidents left open longer than the stale threshold for an
+     * integration that is currently healthy. Covers the case where the closing
+     * CircuitClosed event never fired because the cache state expired.
+     */
+    private function autoCloseStaleIncidents(int $days): int
+    {
+        $cutoff = now()->subDays($days);
+
+        $healthyIds = Integration::query()
+            ->where('health_status', HealthStatus::Healthy->value)
+            ->select('id');
+
+        return IntegrationIncident::query()
+            ->open()
+            ->where('opened_at', '<', $cutoff)
+            ->whereIn('integration_id', $healthyIds)
+            ->update([
+                'status' => IntegrationIncident::STATUS_CLOSED,
+                'closed_at' => now(),
+            ]);
+    }
+
+    /**
+     * Prune closed incidents only, by closed_at. Open incidents are live state
+     * and are never deleted.
+     */
+    private function pruneClosedIncidents(int $days, int $chunkSize): int
+    {
+        $cutoff = now()->subDays($days);
+        $totalDeleted = 0;
+
+        do {
+            $ids = IntegrationIncident::query()
+                ->closed()
+                ->where('closed_at', '<', $cutoff)
+                ->limit($chunkSize)
+                ->pluck('id');
+
+            if ($ids->isEmpty()) {
+                break;
+            }
+
+            /** @var int $deleted */
+            $deleted = IntegrationIncident::query()->whereIn('id', $ids)->delete();
+            $totalDeleted += $deleted;
+        } while ($ids->count() >= $chunkSize);
+
+        return $totalDeleted;
     }
 
     /**

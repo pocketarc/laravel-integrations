@@ -51,6 +51,18 @@ $log->result_data['issue_number']; // 42
 
 `metadata` is for operational context (configuration, counts, request IDs). `resultData` is for what the operation produced (references, created IDs, output values).
 
+### Status vocabulary
+
+`status` is a free string, so any value is accepted. Three drive events:
+
+| Status | Event |
+|--------|-------|
+| `success` | `OperationCompleted` |
+| `failed` | `OperationFailed` |
+| `processing` | `OperationStarted` |
+
+`deferred` is the conventional value for an expected wait (recorded without an event); any other custom status is likewise stored silently. The documented values are available as `IntegrationLog::STATUS_SUCCESS`, `STATUS_FAILED`, `STATUS_PROCESSING`, and `STATUS_DEFERRED`.
+
 ### Hierarchical logging
 
 Use `parentId` for per-record granularity under a parent operation:
@@ -82,6 +94,40 @@ $integration->logs()->successful()->get();
 $integration->logs()->failed()->forOperation('sync')->get();
 $integration->logs()->topLevel()->recent(48)->get(); // top-level logs from last 48 hours
 ```
+
+## Terminal vs transient failures {#terminal-vs-transient-failures}
+
+A listener running inside a [sync item](/features/scheduled-syncs) (`event($this->event)` in `ProcessSyncItem`) often catches a sub-step error, logs `failed`, and re-throws so the queue retries the whole job. Because `logOperation(status: 'failed')` dispatches `OperationFailed` every time, the *same* condition re-fires the event on every attempt — even when the item succeeds on a later one. The retry state that would let you tell "failed this attempt" from "failed terminally" lives in the job, not the listener.
+
+The package threads it through as ambient context, the same way `RequestContext` reaches a request closure. Inside a sync item, read it with `Integration::currentSyncAttempt()`:
+
+```php
+class IngestGitHubIssue
+{
+    public function handle(GitHubIssueSynced $event): void
+    {
+        try {
+            // ... sub-step that can fail ...
+        } catch (\Throwable $e) {
+            $attempt = $event->integration->currentSyncAttempt();
+            $event->integration->logOperation(
+                operation: 'ingest',
+                direction: 'inbound',
+                status: 'failed',
+                error: $e->getMessage(),
+            );
+
+            throw $e; // let the queue retry
+        }
+    }
+}
+```
+
+When a failure is logged inside a sync item, `logOperation()` records the attempt on the new `integration_logs.attempt` / `max_attempts` columns and attaches a `SyncAttemptContext` to the [`OperationFailed`](/reference/events#operationfailed) event. A listener can read `$event->attempt?->isLikelyFinalAttempt()` to down-rank mid-retry noise.
+
+::: warning isLikelyFinalAttempt() is a heuristic
+"Final attempt" can't be known for certain at log time: the wall-clock [retry window](/features/scheduled-syncs#configuration) can cut retries short, and even the last attempt may still succeed. For terminal alerting that fires exactly once per dead item, route it to [`SyncItemFailed`](/reference/events#syncitemfailed) — dispatched from `ProcessSyncItem::failed()` on genuine exhaustion — and use the attempt context only as a best-effort filter for operation-granularity `OperationFailed` hooks.
+:::
 
 ## Structured Laravel log context
 

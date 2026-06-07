@@ -139,9 +139,25 @@ Show request counts, error rates, and cache hit ratios per integration.
 php artisan integrations:stats
 ```
 
+## integrations:evaluate-failures
+
+Evaluate each active integration's failure rate over a rolling window and emit a debounced [anomaly signal](/advanced/circuit-breaker#anomaly-signal): one [`ElevatedFailureRate`](/reference/events#elevatedfailurerate) per incident, and a [`FailureRateRecovered`](/reference/events#failureraterecovered) when it clears.
+
+```bash
+php artisan integrations:evaluate-failures
+```
+
+Add to your scheduler:
+
+```php
+Schedule::command('integrations:evaluate-failures')->everyFifteenMinutes();
+```
+
+The package emits the events; routing them to Sentry, Slack, or elsewhere is the consumer's job. Thresholds and the debounce window are configured under [`observability`](/reference/configuration#observability).
+
 ## integrations:prune
 
-Clean up old request and log records based on configured retention.
+Clean up old request, log, idempotency-key, sync-item, and incident records based on configured retention. Also auto-closes stale-open incidents for currently-healthy integrations.
 
 ```bash
 php artisan integrations:prune
@@ -159,6 +175,7 @@ Configure retention in `config/integrations.php`:
 'pruning' => [
     'requests_days' => 90,
     'logs_days' => 365,
+    'incidents_days' => 365,
     'chunk_size' => 1000,
 ],
 ```

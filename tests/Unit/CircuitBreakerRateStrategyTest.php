@@ -11,6 +11,7 @@ use Integrations\Enums\FailureClass;
 use Integrations\Exceptions\CircuitOpenException;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Support\CircuitBreakerRateStrategy;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -147,5 +148,36 @@ class CircuitBreakerRateStrategyTest extends TestCase
         $breaker->recordFailure(FailureClass::Upstream);
         $breaker->enforce();
         $this->assertTrue(true);
+    }
+
+    public function test_current_failure_rate_is_null_before_any_outcome(): void
+    {
+        $strategy = new CircuitBreakerRateStrategy;
+
+        $this->assertNull($strategy->currentFailureRate($this->integration->id));
+    }
+
+    public function test_current_failure_rate_reflects_recorded_outcomes(): void
+    {
+        $strategy = new CircuitBreakerRateStrategy;
+
+        // 3 failures + 1 success = 4 outcomes, 75% failure rate. No floor applied.
+        $strategy->recordOutcome($this->integration->id, true);
+        $strategy->recordOutcome($this->integration->id, true);
+        $strategy->recordOutcome($this->integration->id, true);
+        $strategy->recordOutcome($this->integration->id, false);
+
+        $this->assertEqualsWithDelta(75.0, $strategy->currentFailureRate($this->integration->id), 0.01);
+    }
+
+    public function test_inspect_surfaces_the_live_failure_rate(): void
+    {
+        $breaker = new CircuitBreaker($this->integration);
+        $breaker->recordFailure(FailureClass::Upstream);
+        $breaker->recordSuccess();
+
+        $rate = $breaker->inspect()['failure_rate'];
+        $this->assertNotNull($rate);
+        $this->assertEqualsWithDelta(50.0, $rate, 0.01);
     }
 }

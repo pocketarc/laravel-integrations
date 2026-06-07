@@ -199,11 +199,19 @@ final class CircuitBreaker
     /**
      * Read-only snapshot of the live state machine, for CLI/observability.
      *
-     * @return array{state: string, failures: int, opened_at: ?int}
+     * @return array{state: string, failures: int, opened_at: ?int, failure_rate: ?float}
      */
     public function inspect(): array
     {
-        return $this->loadState();
+        $state = $this->loadState();
+
+        // The live window failure rate the breaker is acting on.
+        // Null under the count strategy (no rate buckets) or before any traffic.
+        $failureRate = $this->usesRateStrategy()
+            ? $this->rateStrategy()->currentFailureRate($this->integration->id)
+            : null;
+
+        return [...$state, 'failure_rate' => $failureRate];
     }
 
     /**

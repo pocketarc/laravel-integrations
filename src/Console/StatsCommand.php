@@ -23,31 +23,37 @@ class StatsCommand extends Command
             return self::SUCCESS;
         }
 
-        $rows = $integrations->map(function (Integration $integration): array {
-            $requests24h = $integration->requests()->recent(24)->count();
+        $rows = [];
+
+        foreach ($integrations as $integration) {
+            // The 24h failure-shape (totals, error rate, latency, per-operation
+            // sync outcomes) comes from one summary so the CLI and consumers
+            // agree on the numbers; the wider counts stay as cheap queries.
+            $summary = $integration->failureSummary(now()->subHours(24));
+
+            $requests24h = $summary->totalRequests;
             $requests7d = $integration->requests()->recent(168)->count();
             $requests30d = $integration->requests()->recent(720)->count();
 
-            $failed24h = $integration->requests()->recent(24)->failed()->count();
             $errorRate = $requests24h > 0
-                ? round(($failed24h / $requests24h) * 100, 1).'%'
+                ? round($summary->failureRate(), 1).'%'
                 : 'N/A';
 
-            $avgLatency = $integration->requests()->recent(24)->successful()->avg('duration_ms');
-            $avgLatencyStr = is_numeric($avgLatency) ? round((float) $avgLatency).'ms' : 'N/A';
+            $avgLatencyStr = $summary->avgSuccessfulDurationMs !== null
+                ? round($summary->avgSuccessfulDurationMs).'ms'
+                : 'N/A';
 
             $cacheHits = (int) $integration->requests()->recent(24)->sum('cache_hits');
             $cacheRatio = ($requests24h + $cacheHits) > 0
                 ? round(($cacheHits / ($requests24h + $cacheHits)) * 100, 1).'%'
                 : 'N/A';
 
-            $syncLogs = $integration->logs()->forOperation('sync')->recent(168);
-            $syncSuccess = (clone $syncLogs)->where('status', 'success')->count();
-            $syncPartial = (clone $syncLogs)->where('status', 'partial')->count();
-            $syncFailed = (clone $syncLogs)->where('status', 'failed')->count();
-            $syncStr = "{$syncSuccess}/{$syncPartial}/{$syncFailed}";
+            $sync = $summary->operations['sync'] ?? null;
+            $syncStr = $sync !== null
+                ? "{$sync->successful}/{$sync->partial}/{$sync->failed}"
+                : '0/0/0';
 
-            return [
+            $rows[] = [
                 $integration->name,
                 (string) $requests24h,
                 (string) $requests7d,
@@ -57,7 +63,7 @@ class StatsCommand extends Command
                 $cacheRatio,
                 $syncStr,
             ];
-        })->all();
+        }
 
         $this->table(
             ['Name', '24h', '7d', '30d', 'Err %', 'Avg Latency', 'Cache Hit %', 'Syncs (ok/partial/fail)'],

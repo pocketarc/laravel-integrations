@@ -71,6 +71,29 @@ final class CircuitBreakerRateStrategy
     }
 
     /**
+     * The live failure rate (0–100) over the current and previous window, as
+     * the breaker sees it. Null when no outcomes have been recorded yet (so a
+     * caller can show "n/a" rather than a misleading 0%). This is the
+     * breaker's upstream-only view; it does not apply the minimum-request floor.
+     */
+    public function currentFailureRate(int $integrationId): ?float
+    {
+        $window = Config::circuitBreakerTimeWindow();
+        $start = $this->windowStart($window);
+
+        $failures = $this->count($integrationId, $start, 'fail')
+            + $this->count($integrationId, $start - $window, 'fail');
+        $total = $this->count($integrationId, $start, 'total')
+            + $this->count($integrationId, $start - $window, 'total');
+
+        if ($total === 0) {
+            return null;
+        }
+
+        return ($failures / $total) * 100.0;
+    }
+
+    /**
      * Clear the failure-rate buckets (current and previous window) so a closed
      * breaker starts its accounting fresh.
      */

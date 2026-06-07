@@ -5,10 +5,12 @@ declare(strict_types=1);
 namespace Integrations;
 
 use Illuminate\Contracts\Container\Container;
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Route;
 use Illuminate\Support\ServiceProvider;
 use Integrations\Console\AdvanceCursorCommand;
 use Integrations\Console\CircuitCommand;
+use Integrations\Console\EvaluateFailuresCommand;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\InstallCommand;
 use Integrations\Console\ListCommand;
@@ -25,6 +27,7 @@ use Integrations\Console\TestCommand;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Http\OAuthController;
 use Integrations\Http\WebhookController;
+use Integrations\Listeners\RecordIntegrationIncidents;
 use Integrations\Support\Config;
 use InvalidArgumentException;
 
@@ -87,8 +90,14 @@ class IntegrationsServiceProvider extends ServiceProvider
                 ListFailedItemsCommand::class,
                 CircuitCommand::class,
                 RateLimitCommand::class,
+                EvaluateFailuresCommand::class,
             ]);
         }
+
+        // Record the durable incident audit from the package's own state-change
+        // events. Registered outside the console block so it's active for web
+        // and queue workers too. Runs synchronously (see the listener).
+        Event::subscribe(RecordIntegrationIncidents::class);
 
         $this->registerRoutes();
     }

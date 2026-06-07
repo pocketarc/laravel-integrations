@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Support\Facades\DB;
 use Integrations\CircuitBreaker;
 use Integrations\Enums\HealthStatus;
 use Integrations\Models\Integration;
@@ -60,38 +59,20 @@ class HealthCommand extends Command
 
         $this->renderAuthenticatedUser($integration);
 
-        $recentRequests = $integration->requests()->recent(24);
-        $total = $recentRequests->count();
-        $successful = (clone $recentRequests)->successful()->count();
-        $avgDuration = (clone $recentRequests)->successful()->avg('duration_ms');
+        $summary = $integration->failureSummary(now()->subHours(24));
+        $total = $summary->totalRequests;
+        $successful = $total - $summary->failedRequests;
 
         $this->line("  Requests (24h): {$total} total, {$successful} successful");
-        $this->line('  Avg response time: '.(is_numeric($avgDuration) ? round((float) $avgDuration).'ms' : 'N/A'));
+        $this->line('  Avg response time: '.($summary->avgSuccessfulDurationMs !== null ? round($summary->avgSuccessfulDurationMs).'ms' : 'N/A'));
 
-        $jsonExpr = match (DB::getDriverName()) {
-            'pgsql' => "error->>'message'",
-            'sqlite' => "json_extract(error, '$.message')",
-            default => "JSON_UNQUOTE(JSON_EXTRACT(error, '$.message'))",
-        };
-
-        $topErrors = $integration->requests()
-            ->recent(24)
-            ->failed()
-            ->selectRaw("{$jsonExpr} as error_message, COUNT(*) as count")
-            ->groupByRaw("{$jsonExpr}")
-            ->orderByDesc('count')
-            ->limit(3)
-            ->toBase()
-            ->pluck('count', 'error_message');
-
-        if ($topErrors->isNotEmpty()) {
+        if ($summary->topErrors !== []) {
             $this->line('  Top errors:');
-            foreach ($topErrors as $message => $count) {
+            foreach ($summary->topErrors as $topError) {
                 // The logged error message is upstream/SDK text; escape it so
                 // a `<...>` in it isn't parsed as console formatting.
-                $truncated = OutputFormatter::escape(mb_substr((string) $message, 0, 80));
-                $countStr = is_scalar($count) ? (string) $count : '?';
-                $this->line("    [{$countStr}x] {$truncated}");
+                $truncated = OutputFormatter::escape(mb_substr($topError->message, 0, 80));
+                $this->line("    [{$topError->count}x] {$truncated}");
             }
         }
     }
