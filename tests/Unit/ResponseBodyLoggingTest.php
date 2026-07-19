@@ -28,7 +28,7 @@ class ResponseBodyLoggingTest extends TestCase
         $this->integration->refresh();
     }
 
-    public function test_a_body_over_the_cap_is_truncated_with_its_original_size(): void
+    public function test_a_body_over_the_cap_is_truncated_and_notes_its_original_size(): void
     {
         config(['integrations.logging.max_response_bytes' => 1024]);
 
@@ -50,7 +50,7 @@ class ResponseBodyLoggingTest extends TestCase
         $this->assertSame('{"ok":true}', $this->latestRequest()->response_data);
     }
 
-    public function test_no_cap_stores_the_body_whole(): void
+    public function test_a_body_is_stored_whole_when_no_cap_is_set(): void
     {
         $this->integration->at('/api/data')->get(fn (): array => ['blob' => str_repeat('x', 5000)]);
 
@@ -62,8 +62,8 @@ class ResponseBodyLoggingTest extends TestCase
 
     public function test_a_cached_response_keeps_its_body_despite_the_cap(): void
     {
-        // The cache reads this column back: truncating here would serve the
-        // next caller a broken payload.
+        // The cache decodes this column back into a response, so truncating
+        // here would break the next cache hit.
         config(['integrations.logging.max_response_bytes' => 1024]);
 
         $this->integration->request(
@@ -83,8 +83,8 @@ class ResponseBodyLoggingTest extends TestCase
 
     public function test_an_idempotent_write_keeps_its_body_despite_the_cap(): void
     {
-        // IdempotencyConflict recovery replays this body: dropping it would
-        // turn a logging setting into a lost prior response.
+        // IdempotencyConflict recovery decodes this column to replay the prior
+        // response, so truncating here would lose it.
         config(['integrations.logging.max_response_bytes' => 1024]);
 
         $this->integration->at('/api/charge')
@@ -110,7 +110,7 @@ class ResponseBodyLoggingTest extends TestCase
         $this->assertNotNull($stored);
         $this->assertStringContainsString('not stored', $stored);
 
-        // The row itself survives, so health and request counts are unaffected.
+        // The row is still written, so health and request counts are unaffected.
         $this->assertSame('chat/completions', $this->latestRequest()->endpoint);
         $this->assertTrue($this->latestRequest()->response_success);
     }
@@ -130,7 +130,7 @@ class ResponseBodyLoggingTest extends TestCase
         $integration = Integration::create(['provider' => 'quiet', 'name' => 'Quiet']);
         $integration->refresh();
 
-        // The provider only silences POST on this endpoint.
+        // The provider's pattern is POST:embeddings, so a GET is unaffected.
         $integration->at('embeddings')->get(fn (): array => ['vector' => [1, 2, 3]]);
         $this->assertSame('{"vector":[1,2,3]}', $this->latestRequest()->response_data);
 

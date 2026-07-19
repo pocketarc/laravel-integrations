@@ -412,14 +412,14 @@ final class RequestExecutor
 
         if ($provider instanceof LimitsRequestLogging
             && EndpointPattern::matchesAny($provider->unloggedResponseEndpoints(), $endpoint, $method)) {
-            return sprintf('[response body not stored: %s bytes]', number_format(mb_strlen($responseData, '8bit')));
+            return sprintf('[response body not stored: %s bytes; provider opted out]', number_format(mb_strlen($responseData, '8bit')));
         }
 
         $maxBytes = Config::loggingMaxResponseBytes();
 
         if ($maxBytes !== null && mb_strlen($responseData, '8bit') > $maxBytes) {
             return mb_strcut($responseData, 0, $maxBytes).sprintf(
-                '... [truncated from %s bytes]',
+                '... [truncated from %s bytes; over logging.max_response_bytes]',
                 number_format(mb_strlen($responseData, '8bit')),
             );
         }
