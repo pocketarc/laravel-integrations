@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 5.4.0
+
+- Fix: `FinaliseSyncRun` now dispatches onto the same queue as the run's `ProcessSyncItem` jobs instead of the default queue. Reconciliation is the bookkeeping the cursor depends on, and on the default queue it competed with whatever else a consumer runs there; a backed-up default queue could leave runs unfinalised indefinitely while their items succeeded. On the item queue, finalisation drains with the batch it belongs to and honours per-provider [`sync.queues`](/reference/configuration#sync) routing. The new `FinaliseSyncRun::dispatchFor()` is the single dispatch path used by the batch's `finally` callback, the retry catch-up in `ProcessSyncItem`, [`integrations:skip-sync-item`](/reference/artisan-commands#integrations-skip-sync-item), and [`integrations:advance-cursor`](/reference/artisan-commands#integrations-advance-cursor).
+
 ## 5.3.1
 
 - Fix: [`failureSummary()`](/core-concepts/health-monitoring#failure-summary) no longer trips PHP 8.4+'s "Using null as an array offset is deprecated" warning. `FailureReporter`'s per-class and per-status breakdowns grouped on a nullable column and fed the result to `pluck('count', <column>)`, so a failed request with a null `failure_class` (a row written before that column existed) or a null `response_code` (a connection error or timeout, which carries no HTTP status) built a null array key. They now iterate the grouped rows, folding a null `failure_class` into `unknown` and a null `response_code` into `other` as before. The call was silent on PHP 8.2/8.3; on 8.4/8.5 it fired on routine summary calls, and a consumer that promotes deprecations to exceptions saw the call abort rather than warn. The test suite now sets `failOnDeprecation` in `phpunit.xml`, so the PHP 8.4/8.5 CI matrix catches this class of regression.
