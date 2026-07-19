@@ -49,7 +49,7 @@ class AdvanceCursorCommand extends Command
         }
 
         foreach ($processingLogs as $log) {
-            FinaliseSyncRun::dispatch($integration->id, $log->id);
+            FinaliseSyncRun::dispatchFor($integration->id, $log->id, $integration->provider);
         }
 
         $this->info("Dispatched FinaliseSyncRun for {$processingLogs->count()} unreconciled sync run(s).");

@@ -234,13 +234,14 @@ class SyncIntegration implements ShouldQueue
 
         $integrationId = $integration->id;
         $syncLogId = $log->id;
+        $providerKey = $integration->provider;
 
         $batch = Bus::batch($jobs)
             ->name("integration-sync-{$integrationId}-{$syncLogId}")
-            ->onQueue(Config::syncItemQueue($integration->provider))
+            ->onQueue(Config::syncItemQueue($providerKey))
             ->allowFailures()
-            ->finally(function () use ($integrationId, $syncLogId): void {
-                FinaliseSyncRun::dispatch($integrationId, $syncLogId);
+            ->finally(function () use ($integrationId, $syncLogId, $providerKey): void {
+                FinaliseSyncRun::dispatchFor($integrationId, $syncLogId, $providerKey);
             })
             ->dispatch();
 

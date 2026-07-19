@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Support\Facades\Event;
+use Illuminate\Support\Facades\Queue;
 use Integrations\Events\SyncCompleted;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\FinaliseSyncRun;
@@ -161,6 +162,28 @@ class FinaliseSyncRunTest extends TestCase
         $this->assertSame('2026-01-01T12:00:00+00:00', $integration->sync_cursor);
 
         $this->assertSame(IntegrationSyncItem::STATUS_SUCCESS, $success->refresh()->status);
+    }
+
+    public function test_dispatch_for_rides_the_item_queue(): void
+    {
+        // Reconciliation must share the item jobs' queue: on the default queue
+        // it once sat behind an unrelated backlog for days, parking cursors.
+        config(['integrations.sync.queue' => 'integrations-sync']);
+        Queue::fake();
+
+        FinaliseSyncRun::dispatchFor(1, 2);
+
+        Queue::assertPushedOn('integrations-sync', FinaliseSyncRun::class);
+    }
+
+    public function test_dispatch_for_honours_a_per_provider_queue(): void
+    {
+        config(['integrations.sync.queues' => ['test' => 'test-sync']]);
+        Queue::fake();
+
+        FinaliseSyncRun::dispatchFor(1, 2, 'test');
+
+        Queue::assertPushedOn('test-sync', FinaliseSyncRun::class);
     }
 
     private function makeIntegration(mixed $cursor = null): Integration
