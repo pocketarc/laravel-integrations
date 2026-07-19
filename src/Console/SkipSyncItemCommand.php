@@ -60,7 +60,7 @@ class SkipSyncItemCommand extends Command
         $this->info("Sync item #{$id} marked as skipped.");
 
         if ($item->sync_log_id !== null) {
-            FinaliseSyncRun::dispatch($item->integration_id, $item->sync_log_id);
+            FinaliseSyncRun::dispatchFor($item->integration_id, $item->sync_log_id, $item->integration?->provider);
             $this->info('Dispatched FinaliseSyncRun; the cursor will advance past this item once the run reconciles.');
         }
 

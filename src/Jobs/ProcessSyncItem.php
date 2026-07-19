@@ -182,7 +182,7 @@ class ProcessSyncItem implements ShouldQueue
             return;
         }
 
-        FinaliseSyncRun::dispatch($item->integration_id, $this->syncLogId);
+        FinaliseSyncRun::dispatchFor($item->integration_id, $this->syncLogId, $item->integration?->provider);
     }
 
     /**

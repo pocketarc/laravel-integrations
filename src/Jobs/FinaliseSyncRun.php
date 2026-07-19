@@ -8,6 +8,7 @@ use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Foundation\Bus\Dispatchable;
+use Illuminate\Foundation\Bus\PendingDispatch;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Integrations\Contracts\HasScheduledSync;
@@ -15,6 +16,7 @@ use Integrations\Events\SyncCompleted;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationSyncItem;
+use Integrations\Support\Config;
 use Integrations\Sync\SyncResult;
 
 /**
@@ -47,6 +49,20 @@ class FinaliseSyncRun implements ShouldQueue
         public readonly int $syncLogId,
     ) {
         $this->tries = 10;
+    }
+
+    /**
+     * Dispatch onto the same queue as the run's ProcessSyncItem jobs.
+     * Reconciliation must never wait behind an unrelated queue's backlog: a
+     * starved default queue once left every run unfinalised for days, parking
+     * cursors while the scheduler re-synced the same window on repeat. Every
+     * dispatch site goes through here so none can drift back to the default
+     * queue.
+     */
+    public static function dispatchFor(int $integrationId, int $syncLogId, ?string $provider = null): PendingDispatch
+    {
+        return static::dispatch($integrationId, $syncLogId)
+            ->onQueue(Config::syncItemQueue($provider));
     }
 
     /**
