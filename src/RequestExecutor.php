@@ -9,6 +9,7 @@ use Closure;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Facades\Log;
 use Integrations\Concerns\ResolvesRetries;
+use Integrations\Contracts\LimitsRequestLogging;
 use Integrations\Contracts\RedactsRequestData;
 use Integrations\Enums\FailureClass;
 use Integrations\Events\RequestCompleted;
@@ -18,6 +19,8 @@ use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
 use Integrations\Support\BinaryGuard;
 use Integrations\Support\CallbackInspector;
+use Integrations\Support\Config;
+use Integrations\Support\EndpointPattern;
 use Integrations\Support\FailureClassifier;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
@@ -352,6 +355,13 @@ final class RequestExecutor
 
         [$responseData, $cacheFor] = BinaryGuard::sanitizeResponseBody($responseData, $cacheFor);
 
+        $responseData = $this->limitStoredResponseBody(
+            $responseData,
+            $endpoint,
+            $method,
+            $cacheFor,
+        );
+
         $request = $this->integration->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
@@ -374,6 +384,47 @@ final class RequestExecutor
         $this->integration->trackSyncRequestId($request->id);
 
         return $request;
+    }
+
+    /**
+     * Drop or truncate a stored response body per the provider's opt-out and
+     * the configured size cap. Both only govern what is kept for debugging:
+     * a body the package reads back is returned untouched, because a cached
+     * response is the cache's payload and an idempotent write's response
+     * backs `IdempotencyConflict` recovery. Storing a stub in either place
+     * would turn a logging setting into a correctness bug.
+     */
+    private function limitStoredResponseBody(
+        ?string $responseData,
+        string $endpoint,
+        string $method,
+        ?CarbonInterface $cacheFor,
+    ): ?string {
+        if ($responseData === null || $responseData === '') {
+            return $responseData;
+        }
+
+        if ($cacheFor !== null || $this->context?->idempotencyKey !== null) {
+            return $responseData;
+        }
+
+        $provider = $this->integration->provider();
+
+        if ($provider instanceof LimitsRequestLogging
+            && EndpointPattern::matchesAny($provider->unloggedResponseEndpoints(), $endpoint, $method)) {
+            return sprintf('[response body not stored: %s bytes]', number_format(mb_strlen($responseData, '8bit')));
+        }
+
+        $maxBytes = Config::loggingMaxResponseBytes();
+
+        if ($maxBytes !== null && mb_strlen($responseData, '8bit') > $maxBytes) {
+            return mb_strcut($responseData, 0, $maxBytes).sprintf(
+                '... [truncated from %s bytes]',
+                number_format(mb_strlen($responseData, '8bit')),
+            );
+        }
+
+        return $responseData;
     }
 
     /**

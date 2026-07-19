@@ -99,6 +99,14 @@ Failure-anomaly evaluation and the incident audit. See [the anomaly signal](/adv
 | `health.degraded_backoff` | `int` | `2` | Sync interval multiplier when degraded |
 | `health.failing_backoff` | `int` | `10` | Sync interval multiplier when failing |
 
+## Logging
+
+| Key | Type | Default | Description |
+|-----|------|---------|-------------|
+| `logging.max_response_bytes` | `?int` | `null` | Cap on a stored response body (null = store whole; values under 1024 are ignored) |
+
+Cached and idempotent-write responses are stored whole regardless, since the package reads those back. See [Request logging](/core-concepts/logging#request-logging).
+
 ## Pruning
 
 | Key | Type | Default | Description |

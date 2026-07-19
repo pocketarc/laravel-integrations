@@ -229,6 +229,21 @@ return [
         'disabled_after' => 50,
     ],
 
+    'logging' => [
+        // Cap on stored response bodies, in bytes; null keeps them whole.
+        // Request bodies are already cut at 64KB, and an oversized response is
+        // the main reason integration_requests outgrows every other table.
+        // Truncation keeps the head, where the useful part of a debugging read
+        // usually is.
+        //
+        // Bodies the package reads back are exempt whatever this is set to: a
+        // cached response is the cache's payload, and an idempotent write's
+        // response backs IdempotencyConflict recovery. A provider can also opt
+        // individual endpoints out of body storage entirely with the
+        // LimitsRequestLogging contract.
+        'max_response_bytes' => null,
+    ],
+
     'pruning' => [
         // Delete integration_requests older than this many days when running integrations:prune.
         'requests_days' => 90,

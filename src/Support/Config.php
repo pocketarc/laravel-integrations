@@ -355,6 +355,18 @@ final class Config
         return self::boundedInt(config('integrations.webhook.processing_timeout', 1800), 1800, 60);
     }
 
+    /**
+     * Byte cap on a stored response body, or null to store it whole. A value
+     * below 1KB is treated as unset: a body cut that short is not worth the
+     * storage it still costs.
+     */
+    public static function loggingMaxResponseBytes(): ?int
+    {
+        $value = config('integrations.logging.max_response_bytes');
+
+        return is_int($value) && $value >= 1024 ? $value : null;
+    }
+
     public static function pruningRequestsDays(): int
     {
         return self::boundedInt(config('integrations.pruning.requests_days', 90), 90, 1);

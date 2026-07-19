@@ -6,10 +6,9 @@ namespace Integrations\Testing;
 
 use Closure;
 use Integrations\Models\Integration;
+use Integrations\Support\EndpointPattern;
 use PHPUnit\Framework\Assert;
 use Throwable;
-
-use function Safe\preg_match;
 
 class IntegrationRequestFake
 {
@@ -360,26 +359,12 @@ class IntegrationRequestFake
         return [$priority, $specificity];
     }
 
-    private const HTTP_METHODS = ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'HEAD', 'OPTIONS'];
-
     /**
      * @return array{string|null, string}
      */
     private static function parseKey(string $key): array
     {
-        $colonPos = mb_strpos($key, ':');
-
-        if ($colonPos === false) {
-            return [null, $key];
-        }
-
-        $prefix = mb_strtoupper(mb_substr($key, 0, $colonPos));
-
-        if (in_array($prefix, self::HTTP_METHODS, true)) {
-            return [$prefix, mb_substr($key, $colonPos + 1)];
-        }
-
-        return [null, $key];
+        return EndpointPattern::parse($key);
     }
 
     /**
@@ -407,9 +392,7 @@ class IntegrationRequestFake
      */
     private static function matchesPattern(string $pattern, string $endpoint): bool
     {
-        $regex = '#^'.str_replace('\*', '[^/]*', preg_quote($pattern, '#')).'$#u';
-
-        return preg_match($regex, $endpoint) === 1;
+        return EndpointPattern::matches($pattern, $endpoint);
     }
 
     /**

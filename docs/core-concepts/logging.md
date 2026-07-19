@@ -16,6 +16,32 @@ Every API call made through `request()` or `requestAs()` is automatically logged
 
 No configuration needed -- this happens automatically for every request through the integration.
 
+### Limiting what a body costs
+
+Request bodies are cut at just under 64KB. Response bodies are stored whole by default, which is usually what makes `integration_requests` the largest table in a busy installation. Two things bring that down:
+
+```php
+// config/integrations.php
+'logging' => [
+    'max_response_bytes' => 65_530, // null keeps bodies whole
+],
+```
+
+```php
+class OpenRouterProvider implements IntegrationProvider, LimitsRequestLogging
+{
+    public function unloggedResponseEndpoints(): array
+    {
+        // Already stored, in a better shape, by the consumer.
+        return ['POST:chat/completions'];
+    }
+}
+```
+
+The cap truncates and records the original size; the [contract](/reference/contracts#limitsrequestlogging) drops the body entirely for the endpoints it names. Either way the row itself stays, so health tracking, failure rates and the stats commands see no change.
+
+Two kinds of response are exempt from both, because the package reads them back rather than just storing them: a response being cached is the cache's payload, and a response to an [idempotent](/core-concepts/idempotency) write backs `IdempotencyConflict` recovery.
+
 ## Operation logging
 
 Log business-level operations (syncs, imports, webhooks) separately from individual API requests:
