@@ -55,13 +55,20 @@ class EndpointPattern
     /**
      * Whether an endpoint and method match any of the given patterns.
      *
-     * @param  list<string>  $patterns
+     * @param  array<mixed>  $patterns
      */
     public static function matchesAny(array $patterns, string $endpoint, string $method): bool
     {
         $method = mb_strtoupper($method);
 
         foreach ($patterns as $key) {
+            // A provider hands this list back from its own code, so a stray
+            // non-string entry is a provider bug: skip it rather than fail the
+            // live request it was gating.
+            if (! is_string($key)) {
+                continue;
+            }
+
             [$patternMethod, $pattern] = self::parse($key);
 
             if ($patternMethod !== null && $patternMethod !== $method) {

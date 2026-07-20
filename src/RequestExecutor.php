@@ -418,10 +418,15 @@ final class RequestExecutor
         $maxBytes = Config::loggingMaxResponseBytes();
 
         if ($maxBytes !== null && mb_strlen($responseData, '8bit') > $maxBytes) {
-            return mb_strcut($responseData, 0, $maxBytes).sprintf(
+            // Reserve the marker's own length so the stored value stays within
+            // the cap rather than the cap plus a marker. The 1KB config floor
+            // leaves ample room for it.
+            $marker = sprintf(
                 '... [truncated from %s bytes; over logging.max_response_bytes]',
                 number_format(mb_strlen($responseData, '8bit')),
             );
+
+            return mb_strcut($responseData, 0, $maxBytes - mb_strlen($marker, '8bit')).$marker;
         }
 
         return $responseData;

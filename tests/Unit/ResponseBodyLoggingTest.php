@@ -37,7 +37,8 @@ class ResponseBodyLoggingTest extends TestCase
         $stored = $this->latestRequest()->response_data;
 
         $this->assertNotNull($stored);
-        $this->assertLessThan(5000, mb_strlen($stored, '8bit'));
+        // The marker counts against the cap, so the whole stored value fits.
+        $this->assertLessThanOrEqual(1024, mb_strlen($stored, '8bit'));
         $this->assertStringContainsString('truncated from', $stored);
     }
 
