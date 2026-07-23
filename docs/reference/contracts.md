@@ -181,6 +181,23 @@ interface RedactsRequestData
 | `sensitiveRequestFields()` | `array` | Dot-notation field paths in request data |
 | `sensitiveResponseFields()` | `array` | Dot-notation field paths in response data |
 
+## LimitsRequestLogging
+
+Opts a provider's noisiest endpoints out of storing their response body.
+
+```php
+interface LimitsRequestLogging
+{
+    public function unloggedResponseEndpoints(): array;
+}
+```
+
+| Method | Returns | Description |
+|--------|---------|-------------|
+| `unloggedResponseEndpoints()` | `array` | Endpoint patterns whose response bodies are not stored |
+
+Patterns use `*` as a wildcard within a path segment, with an optional HTTP-verb prefix: `['chat/*', 'POST:embeddings']`. The request row is still written, so health, failure rates and request counts are unaffected; only the body is replaced with a note of its size. See [Request logging](/core-concepts/logging#request-logging).
+
 ## SupportsIdempotency
 
 Marker interface declaring that the upstream API natively dedupes requests by idempotency key. No methods.

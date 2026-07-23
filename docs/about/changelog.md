@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 5.5.0
+
+- New: two ways to stop response bodies dominating `integration_requests`, which in a busy installation is reliably the largest table the package owns. Request bodies were already cut at just under 64KB; response bodies were stored whole, so one verbose endpoint could account for most of the table. [`logging.max_response_bytes`](/reference/configuration#logging) caps a stored body and records the size it was cut from, and the new [`LimitsRequestLogging`](/reference/contracts#limitsrequestlogging) contract lets a provider name endpoint patterns whose bodies are not stored at all, for payloads that are enormous or already persisted better elsewhere. Both leave the request row itself intact, so health, failure rates and the stats commands are unchanged. Defaults keep current behaviour: no cap, nothing opted out.
+- Bodies the package reads back are exempt from both the cap and the contract. A response being cached is the cache's payload, and a response to an idempotent write backs [`IdempotencyConflict`](/core-concepts/idempotency#recovering-on-conflict) recovery, so truncating or dropping either would turn a logging setting into a correctness bug.
+- Endpoint patterns now come from one implementation, `Support\EndpointPattern`, shared by the testing fake's expectations and the new contract. A pattern written against a fake keeps its meaning in provider configuration.
+
 ## 5.4.0
 
 - Fix: `FinaliseSyncRun` now dispatches onto the same queue as the run's `ProcessSyncItem` jobs instead of the default queue. Reconciliation is the bookkeeping the cursor depends on, and on the default queue it competed with whatever else a consumer runs there; a backed-up default queue could leave runs unfinalised indefinitely while their items succeeded. On the item queue, finalisation drains with the batch it belongs to and honours per-provider [`sync.queues`](/reference/configuration#sync) routing. The new `FinaliseSyncRun::dispatchFor()` is the single dispatch path used by the batch's `finally` callback, the retry catch-up in `ProcessSyncItem`, [`integrations:skip-sync-item`](/reference/artisan-commands#integrations-skip-sync-item), and [`integrations:advance-cursor`](/reference/artisan-commands#integrations-advance-cursor).
