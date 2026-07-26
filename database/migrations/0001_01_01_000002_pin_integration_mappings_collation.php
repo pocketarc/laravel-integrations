@@ -7,19 +7,7 @@ use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Integrations\Support\Config;
 
-/**
- * Applies `integrations.mappings.collation` to an existing mapping table.
- *
- * The create migration pins the collation for fresh installs, but consumers who
- * published before 6.0 already have the table, so they need this to catch up. A
- * no-op when the setting is null (the default) or on any driver without MySQL's
- * per-column collation, which means it is safe to run everywhere.
- *
- * Worth setting when your own tables use a different collation from the one
- * Laravel gave this package's: comparing `internal_id` against your primary keys
- * otherwise fails with "Illegal mix of collations", and that comparison is how
- * you find rows that lost their mapping.
- */
+/** Applies `integrations.mappings.collation` to an already-created mapping table. */
 return new class extends Migration
 {
     public function up(): void
@@ -39,11 +27,8 @@ return new class extends Migration
 
     public function down(): void
     {
-        // Deliberately not reversed: the prior collation isn't recorded
-        // anywhere, so "undoing" this would mean guessing at one and could
-        // leave the columns further from the connection default than they
-        // started. Set the config back to null and re-create the table if you
-        // genuinely need the old collation.
+        // Not reversible: the prior collation isn't recorded anywhere, so
+        // undoing this would mean guessing at one.
     }
 
     private function driverSupportsColumnCollation(): bool

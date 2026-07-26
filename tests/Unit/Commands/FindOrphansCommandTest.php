@@ -7,10 +7,6 @@ namespace Integrations\Tests\Unit\Commands;
 use Integrations\Models\Integration;
 use Integrations\Tests\TestCase;
 
-/**
- * Uses Integration as the mapped model, the way the mapping tests do: any
- * Eloquent model works, and this keeps the fixture to one table.
- */
 class FindOrphansCommandTest extends TestCase
 {
     private Integration $integration;
@@ -55,8 +51,6 @@ class FindOrphansCommandTest extends TestCase
         $mapped = Integration::create(['provider' => 'a', 'name' => 'Mapped elsewhere']);
         $other->mapExternalId('EXT-1', $mapped);
 
-        // Mapped, but not by $this->integration, so scoping to it must surface
-        // the row rather than treating any mapping as good enough.
         $this->artisan('integrations:find-orphans', [
             'model' => Integration::class,
             '--integration' => (string) $this->integration->id,

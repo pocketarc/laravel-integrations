@@ -115,11 +115,8 @@ return new class extends Migration
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
 
-            // Collation is pinnable because internal_id gets compared against
-            // the consumer's own primary keys when hunting rows that lost their
-            // mapping, and a mismatch makes MySQL reject the comparison outright
-            // with "Illegal mix of collations". Null leaves the connection
-            // default, which is right unless the consumer's tables differ.
+            // Pinnable so internal_id can be compared against the consumer's own
+            // primary keys; MySQL rejects a cross-collation comparison outright.
             $externalId = $table->string('external_id', 500);
             $internalType = $table->string('internal_type');
             $internalId = $table->string('internal_id');

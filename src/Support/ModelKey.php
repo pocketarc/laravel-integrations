@@ -6,14 +6,7 @@ namespace Integrations\Support;
 
 use InvalidArgumentException;
 
-/**
- * Normalises an Eloquent primary key for storage in `internal_id`.
- *
- * That column is a VARCHAR because the mapping table is polymorphic and has to
- * hold auto-increment ints, UUIDs and ULIDs alike. Comparisons against it are
- * therefore string comparisons, and a key that silently stringified differently
- * on write and read would simply stop resolving.
- */
+/** Normalises an Eloquent primary key for storage in `internal_id`. */
 class ModelKey
 {
     public static function toString(mixed $key): string

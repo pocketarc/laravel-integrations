@@ -35,10 +35,6 @@ class IntegrationMappingTest extends TestCase
 
     public function test_map_external_id_refuses_to_steal_a_claimed_mapping(): void
     {
-        // Until 6.0 this silently re-pointed, which is what made a lost race
-        // invisible: $model1 kept every column it had and still satisfied
-        // ordinary queries, but findExternalId() returned null for it and
-        // nothing could reach it upstream again.
         $model1 = Integration::create(['provider' => 'a', 'name' => 'A']);
         $model2 = Integration::create(['provider' => 'b', 'name' => 'B']);
 
@@ -71,8 +67,6 @@ class IntegrationMappingTest extends TestCase
 
     public function test_map_external_id_allows_the_same_external_id_for_a_different_type(): void
     {
-        // The unique key includes internal_type, so two model types can each
-        // claim "123" from the same upstream without colliding.
         $target = Integration::create(['provider' => 'a', 'name' => 'A']);
         $mapping = $this->integration->mapExternalId('EXT-123', $target);
 
@@ -98,8 +92,6 @@ class IntegrationMappingTest extends TestCase
         $this->assertCount(1, $this->integration->mappings()->get());
         $this->assertSame((string) $model2->id, $this->integration->mappings()->first()?->internal_id);
 
-        // The displaced model keeps its row and loses its external ID. Saying so
-        // here because callers have to reconcile it themselves.
         $this->assertNull($this->integration->findExternalId($model1));
     }
 
@@ -114,10 +106,8 @@ class IntegrationMappingTest extends TestCase
 
     public function test_upsert_by_external_id_converges_when_the_claim_is_lost(): void
     {
-        // Stands in for the race the lock normally prevents: by the time we try
-        // to claim, another worker has already created its row and taken the
-        // mapping. The loser must adopt the winner's row rather than leave its
-        // own behind unmapped.
+        // Stands in for the race the lock normally prevents: the mapping is
+        // already taken by the time this caller tries to claim it.
         $winner = Integration::create(['provider' => 'winner', 'name' => 'Winner']);
         $this->integration->mapExternalId('EXT-RACE', $winner);
 

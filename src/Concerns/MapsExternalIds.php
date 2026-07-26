@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
 use Illuminate\Support\Facades\Cache;
 use Illuminate\Support\Facades\DB;
+use Integrations\Console\FindOrphansCommand;
 use Integrations\Exceptions\MappingAlreadyClaimed;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationMapping;
@@ -18,28 +19,17 @@ use Integrations\Support\ModelKey;
  * Translation between an upstream system's IDs and local model rows, backed by
  * the `integration_mappings` table.
  *
- * Extracted from the Integration model because it's a self-contained concern
- * with its own invariant: one external ID maps to exactly one local row per
- * (integration, model type), and nothing may take that mapping away from the
- * row that holds it without saying so.
+ * One external ID maps to exactly one local row per (integration, model type).
+ * A row that loses its mapping is unreachable but otherwise intact, so it keeps
+ * satisfying ordinary queries: nothing detects it except
+ * {@see FindOrphansCommand}.
  *
  * @phpstan-require-extends Integration
  */
 trait MapsExternalIds
 {
     /**
-     * Claim an external ID for a local model.
-     *
-     * Atomic: the insert leans on the unique index over
-     * `(integration_id, external_id, internal_type)` rather than a
-     * read-then-write, so two callers racing the same external ID both end up
-     * looking at one row instead of both inserting one.
-     *
-     * Refuses to move a mapping another model already holds. Silently
-     * re-pointing (the behaviour before 6.0) orphaned the previous model: it
-     * kept every column it had, so it still satisfied ordinary queries, but
-     * {@see findExternalId()} returned null for it and nothing could address it
-     * upstream again. Call {@see remapExternalId()} when moving it is the point.
+     * Claim an external ID for a local model. Idempotent for the same model.
      *
      * @throws MappingAlreadyClaimed when a different model already holds it
      */
@@ -73,12 +63,10 @@ trait MapsExternalIds
 
     /**
      * Move an external ID's mapping to a different local model, or create it if
-     * absent. The deliberate counterpart to {@see mapExternalId()}: same write,
-     * but named so a re-point is something a caller asked for rather than
-     * something a lost race did quietly.
+     * absent.
      *
-     * The model that held the mapping keeps its row and loses its external ID.
-     * Reconciling or deleting it is the caller's job; this method won't.
+     * The displaced model keeps its row and loses its external ID. Reconciling
+     * or deleting it is the caller's job; this method won't.
      */
     public function remapExternalId(string $externalId, Model $internalModel): IntegrationMapping
     {
@@ -132,11 +120,6 @@ trait MapsExternalIds
     /**
      * Create or update the local model an external ID maps to.
      *
-     * Serialised per (integration, model type, external ID) so two workers
-     * syncing the same upstream record don't each insert a row. Only one of
-     * those rows could hold the mapping, and the other was left behind
-     * unreachable.
-     *
      * @template TModel of Model
      *
      * @param  class-string<TModel>  $modelClass
@@ -160,14 +143,9 @@ trait MapsExternalIds
     }
 
     /**
-     * The body of {@see upsertByExternalId()}, minus the lock.
-     *
-     * The lock is what normally keeps two workers off the same external ID, but
-     * it can only do that when the cache driver is shared: on the `array`
-     * driver it's per-process and buys nothing. So the collision is still
-     * handled rather than assumed away. Losing the claim means another worker
-     * created the model first and its row is the one the mapping points at, so
-     * roll our duplicate back and carry on with theirs.
+     * The caller's lock only serialises across processes on a shared cache
+     * driver; on `array` it is per-process. The MappingAlreadyClaimed branch is
+     * what makes this correct without one.
      *
      * @template TModel of Model
      *
@@ -222,9 +200,6 @@ trait MapsExternalIds
         $winner = $this->resolveMapping($externalId, $modelClass);
 
         if ($winner === null) {
-            // The mapping was claimed and then vanished, or it points at a row
-            // of another type. Either way there's nothing to converge on, so
-            // surface the claim rather than silently retrying.
             throw $claim;
         }
 

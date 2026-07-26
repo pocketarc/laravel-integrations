@@ -14,16 +14,9 @@ use Integrations\Support\ModelKey;
 /**
  * Finds local rows of a mapped model that have no external ID.
  *
- * Before 6.0 a lost race could leave one: two workers upserting the same
- * external ID each inserted a row, the second took the mapping, and the first
- * was abandoned with every column intact. It kept satisfying ordinary queries,
- * so the only symptom was that nothing could address it upstream. Consumers hit
- * this as work that was selected, attempted, and failed on every cycle.
- *
- * The comparison runs in chunks over IDs rather than as a SQL join, because
- * `internal_id` is a VARCHAR holding keys of any type and joining it to an
- * integer primary key needs a cast, which on MySQL can fail outright on a
- * collation mismatch.
+ * Compares keys in PHP rather than joining: `internal_id` is a VARCHAR holding
+ * keys of any type, so joining it to an integer primary key needs a cast, and
+ * on MySQL that fails outright when the two columns' collations differ.
  */
 class FindOrphansCommand extends Command
 {
@@ -34,7 +27,6 @@ class FindOrphansCommand extends Command
 
     protected $description = 'List rows of a mapped model that have no external ID mapping.';
 
-    /** Rows read per pass. Keeps the id set that goes into the mapping lookup bounded. */
     private const CHUNK = 1000;
 
     public function handle(): int
