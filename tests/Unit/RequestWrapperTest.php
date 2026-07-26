@@ -8,6 +8,7 @@ use Illuminate\Http\Client\ConnectionException;
 use Illuminate\Support\Facades\Event;
 use Integrations\Events\RequestCompleted;
 use Integrations\Events\RequestFailed;
+use Integrations\Exceptions\RetryableException;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
@@ -137,6 +138,30 @@ class RequestWrapperTest extends TestCase
         $this->assertNotNull($retry);
         $this->assertSame($originalRequest->id, $retry->retry_of);
         $this->assertSame($originalRequest->id, $retry->originalRequest?->id);
+    }
+
+    public function test_in_loop_retries_all_link_back_to_the_first_attempt(): void
+    {
+        $attempt = 0;
+
+        $this->integration->at('/api/charge')
+            ->withAttempts(3)
+            ->post(function () use (&$attempt): array {
+                $attempt++;
+
+                if ($attempt < 3) {
+                    throw new RetryableException('boom');
+                }
+
+                return ['ok' => true];
+            });
+
+        $rows = IntegrationRequest::query()->orderBy('id')->get();
+
+        $this->assertCount(3, $rows);
+        $this->assertNull($rows[0]->retry_of);
+        $this->assertSame($rows[0]->id, $rows[1]->retry_of);
+        $this->assertSame($rows[0]->id, $rows[2]->retry_of);
     }
 
     public function test_health_updated_on_failure(): void

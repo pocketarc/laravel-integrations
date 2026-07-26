@@ -151,3 +151,15 @@ parameters:
             identifier: shipmonk.checkedExceptionInCallable
             count: 1
             path: src/PendingRequest.php
+
+        # False positive on PHPStan 2.2's bleeding edge: PHPStan narrows
+        # $lastCreatedRequestId to the null assigned before the retry loop and never widens
+        # it again across the executeRequest() call, which assigns it. On the retry path the
+        # property holds the failed attempt's row id, and this coalesce carries that id into
+        # the next attempt's retry_of. Deleting it breaks
+        # RequestWrapperTest::test_in_loop_retries_all_link_back_to_the_first_attempt.
+        -
+            rawMessage: 'Coalesce operator ??= is unnecessary because the left side is always set and the right side is null.'
+            identifier: nullCoalesce.unnecessary
+            count: 1
+            path: src/RequestExecutor.php

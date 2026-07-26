@@ -134,15 +134,11 @@ final class RequestExecutor
                 $this->circuitBreaker->enforce();
                 $this->rateLimiter->enforce();
 
-                $result = $this->executeRequest(
+                return $this->executeRequest(
                     $endpoint, $method, $responseClass, $callback, $callbackAcceptsContext, $relatedTo,
                     $encodedRequestData, $cacheFor, $allowStale,
                     retryOfId: $firstRequestId,
                 );
-
-                $firstRequestId ??= $this->lastCreatedRequestId;
-
-                return $result;
             } catch (Throwable $e) {
                 $firstRequestId ??= $this->lastCreatedRequestId;
 
