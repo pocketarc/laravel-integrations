@@ -5,6 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit\Commands;
 
 use Integrations\Models\Integration;
+use Integrations\Tests\Fixtures\AbstractTestModel;
 use Integrations\Tests\TestCase;
 
 class FindOrphansCommandTest extends TestCase
@@ -78,6 +79,13 @@ class FindOrphansCommandTest extends TestCase
         $this->artisan('integrations:find-orphans', ['model' => 'App\\Nope'])
             ->assertFailed()
             ->expectsOutputToContain('fully-qualified Eloquent model class');
+    }
+
+    public function test_it_rejects_an_abstract_model_class(): void
+    {
+        $this->artisan('integrations:find-orphans', ['model' => AbstractTestModel::class])
+            ->assertFailed()
+            ->expectsOutputToContain('is abstract');
     }
 
     public function test_it_rejects_an_unknown_integration_id(): void

@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Event;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\IntegrationCreated;
@@ -110,5 +111,28 @@ class IntegrationTest extends TestCase
         Integration::create(['provider' => 'test', 'name' => 'New']);
 
         Event::assertDispatched(IntegrationCreated::class);
+    }
+
+    public function test_holds_the_created_event_until_the_transaction_commits(): void
+    {
+        // Event::fake() records on dispatch, so assertDispatched() would pass
+        // even while the after-commit hold is in effect.
+        $seen = [];
+        Event::listen(IntegrationCreated::class, function (IntegrationCreated $event) use (&$seen): void {
+            $seen[] = $event->integration->name;
+        });
+
+        DB::beginTransaction();
+        Integration::create(['provider' => 'test', 'name' => 'Rolled back']);
+        $this->assertSame([], $seen);
+        DB::rollBack();
+
+        $this->assertSame([], $seen);
+
+        DB::transaction(function (): void {
+            Integration::create(['provider' => 'test', 'name' => 'Committed']);
+        });
+
+        $this->assertSame(['Committed'], $seen);
     }
 }

@@ -109,8 +109,10 @@ final class Config
     }
 
     /**
-     * Collation for the mapping table's string columns, or null to leave them
-     * to the connection default. MySQL/MariaDB only.
+     * The configured collation for the mapping table's string columns, or null
+     * to leave them to the connection default. Migrations read it through
+     * {@see MappingCollation::forConnection()}, which drops it on drivers
+     * without per-column collations.
      */
     public static function mappingCollation(): ?string
     {

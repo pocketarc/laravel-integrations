@@ -6,6 +6,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Integrations\Support\Config;
+use Integrations\Support\MappingCollation;
 
 return new class extends Migration
 {
@@ -109,7 +110,7 @@ return new class extends Migration
             $table->index('parent_id');
         });
 
-        $mappingCollation = Config::mappingCollation();
+        $mappingCollation = MappingCollation::forConnection();
 
         Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix, $mappingCollation): void {
             $table->id();

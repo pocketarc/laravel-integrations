@@ -29,6 +29,13 @@ use Integrations\Support\ModelKey;
 trait MapsExternalIds
 {
     /**
+     * How many IDs one batch query may bind. Old SQLite builds cap a statement
+     * at 999 parameters, and a caller resolving a whole upstream page can pass
+     * more than that in a single array.
+     */
+    private const MAPPING_QUERY_CHUNK = 500;
+
+    /**
      * Claim an external ID for a local model. Idempotent for the same model.
      *
      * @throws MappingAlreadyClaimed when a different model already holds it
@@ -226,25 +233,63 @@ trait MapsExternalIds
 
         $morphClass = (new $internalType)->getMorphClass();
 
-        $mappings = $this->mappings()
-            ->whereIn('external_id', $externalIds)
-            ->where('internal_type', $morphClass)
-            ->get();
-
-        $internalIds = $mappings->pluck('internal_id')->unique()->values()->all();
-
-        $instance = new $internalType;
-        $modelsByKey = $instance->newQuery()
-            ->whereIn($instance->getKeyName(), $internalIds)
-            ->get()
-            ->keyBy(fn (Model $model): string => ModelKey::toString($model->getKey()));
+        $internalIdsByExternalId = $this->mappedInternalIds($externalIds, $morphClass);
+        $modelsByKey = $this->loadModelsByKey($internalType, array_values(array_unique($internalIdsByExternalId)));
 
         foreach ($externalIds as $externalId) {
-            $mapping = $mappings->firstWhere('external_id', $externalId);
-            $model = $mapping !== null ? $modelsByKey->get($mapping->internal_id) : null;
-            $result[$externalId] = $model instanceof $internalType ? $model : null;
+            $internalId = $internalIdsByExternalId[$externalId] ?? null;
+            $result[$externalId] = $internalId === null ? null : ($modelsByKey[$internalId] ?? null);
         }
 
         return collect($result);
+    }
+
+    /**
+     * @param  list<string>  $externalIds
+     * @return array<string, string>
+     */
+    private function mappedInternalIds(array $externalIds, string $morphClass): array
+    {
+        $internalIds = [];
+
+        foreach (array_chunk($externalIds, self::MAPPING_QUERY_CHUNK) as $chunk) {
+            $mappings = $this->mappings()
+                ->whereIn('external_id', $chunk)
+                ->where('internal_type', $morphClass)
+                ->get();
+
+            foreach ($mappings as $mapping) {
+                $internalIds[$mapping->external_id] = $mapping->internal_id;
+            }
+        }
+
+        return $internalIds;
+    }
+
+    /**
+     * @template TModel of Model
+     *
+     * @param  class-string<TModel>  $internalType
+     * @param  list<string>  $keys
+     * @return array<string, TModel>
+     */
+    private function loadModelsByKey(string $internalType, array $keys): array
+    {
+        $modelsByKey = [];
+        $keyName = (new $internalType)->getKeyName();
+
+        foreach (array_chunk($keys, self::MAPPING_QUERY_CHUNK) as $chunk) {
+            $models = $internalType::query()
+                ->whereIn($keyName, $chunk)
+                ->get();
+
+            foreach ($models as $model) {
+                if ($model instanceof $internalType) {
+                    $modelsByKey[ModelKey::toString($model->getKey())] = $model;
+                }
+            }
+        }
+
+        return $modelsByKey;
     }
 }

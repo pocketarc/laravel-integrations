@@ -67,9 +67,6 @@ class IntegrationMappingTest extends TestCase
 
     public function test_map_external_id_allows_the_same_external_id_for_a_different_type(): void
     {
-        $target = Integration::create(['provider' => 'a', 'name' => 'A']);
-        $mapping = $this->integration->mapExternalId('EXT-123', $target);
-
         $other = IntegrationMapping::create([
             'integration_id' => $this->integration->id,
             'external_id' => 'EXT-123',
@@ -77,7 +74,11 @@ class IntegrationMappingTest extends TestCase
             'internal_id' => '999',
         ]);
 
+        $target = Integration::create(['provider' => 'a', 'name' => 'A']);
+        $mapping = $this->integration->mapExternalId('EXT-123', $target);
+
         $this->assertNotSame($mapping->id, $other->id);
+        $this->assertSame((string) $target->id, $mapping->internal_id);
         $this->assertCount(2, $this->integration->mappings()->get());
     }
 
@@ -228,6 +229,50 @@ class IntegrationMappingTest extends TestCase
         $this->assertCount(2, $result);
         $this->assertSame($a->id, $result->get('EXT-A')?->getKey());
         $this->assertNull($result->get('EXT-MISSING'));
+    }
+
+    public function test_resolve_mappings_spans_more_than_one_query_chunk(): void
+    {
+        $count = 501;
+        $now = now();
+
+        $rows = [];
+        for ($i = 0; $i < $count; $i++) {
+            $rows[] = ['provider' => 'bulk', 'name' => "Bulk {$i}", 'created_at' => $now, 'updated_at' => $now];
+        }
+
+        foreach (array_chunk($rows, 100) as $chunk) {
+            Integration::insert($chunk);
+        }
+
+        $targets = Integration::query()->where('provider', 'bulk')->orderBy('id')->get();
+
+        $externalIds = [];
+        $mappings = [];
+
+        foreach ($targets as $index => $target) {
+            $externalId = "EXT-BULK-{$index}";
+            $externalIds[] = $externalId;
+            $mappings[] = [
+                'integration_id' => $this->integration->id,
+                'external_id' => $externalId,
+                'internal_type' => $target->getMorphClass(),
+                'internal_id' => (string) $target->getKey(),
+                'created_at' => $now,
+                'updated_at' => $now,
+            ];
+        }
+
+        foreach (array_chunk($mappings, 100) as $chunk) {
+            IntegrationMapping::insert($chunk);
+        }
+
+        $result = $this->integration->resolveMappings($externalIds, Integration::class);
+
+        $this->assertCount($count, $result);
+        $this->assertSame($targets->first()?->getKey(), $result->get('EXT-BULK-0')?->getKey());
+        $this->assertSame($targets->last()?->getKey(), $result->get('EXT-BULK-500')?->getKey());
+        $this->assertSame($targets->get(499)?->getKey(), $result->get('EXT-BULK-499')?->getKey());
     }
 
     public function test_resolve_mappings_with_empty_input(): void

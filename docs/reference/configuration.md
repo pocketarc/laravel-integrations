@@ -41,7 +41,7 @@ php artisan vendor:publish --tag=integrations-config
 |-----|------|---------|-------------|
 | `mappings.lock_ttl` | `int` | `10` | Cache lock TTL in seconds while `upsertByExternalId()` creates a model and claims its external ID |
 | `mappings.lock_wait` | `int` | `10` | Max wait for that lock in seconds |
-| `mappings.collation` | `?string` | `null` | Collation for `integration_mappings`' string columns. MySQL/MariaDB only; `null` inherits the connection default. Set it to match your own tables when comparing `internal_id` against your primary keys fails with `Illegal mix of collations`. |
+| `mappings.collation` | `?string` | `null` | Collation for `integration_mappings`' string columns. Applied on MySQL and MariaDB, ignored on every other driver; `null` inherits the connection default. Set it to match your own tables when comparing `internal_id` against your primary keys fails with `Illegal mix of collations`. |
 
 The lock only serialises across processes on a shared cache driver. See [ID mapping](/features/id-mapping#concurrency).
 

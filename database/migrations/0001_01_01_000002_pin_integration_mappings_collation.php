@@ -6,15 +6,16 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Integrations\Support\Config;
+use Integrations\Support\MappingCollation;
 
 /** Applies `integrations.mappings.collation` to an already-created mapping table. */
 return new class extends Migration
 {
     public function up(): void
     {
-        $collation = Config::mappingCollation();
+        $collation = MappingCollation::forConnection();
 
-        if ($collation === null || ! $this->driverSupportsColumnCollation()) {
+        if ($collation === null) {
             return;
         }
 
@@ -29,10 +30,5 @@ return new class extends Migration
     {
         // Not reversible: the prior collation isn't recorded anywhere, so
         // undoing this would mean guessing at one.
-    }
-
-    private function driverSupportsColumnCollation(): bool
-    {
-        return in_array(Schema::getConnection()->getDriverName(), ['mysql', 'mariadb'], true);
     }
 };

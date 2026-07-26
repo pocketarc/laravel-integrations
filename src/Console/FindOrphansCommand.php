@@ -5,11 +5,12 @@ declare(strict_types=1);
 namespace Integrations\Console;
 
 use Illuminate\Console\Command;
-use Illuminate\Database\Eloquent\Collection;
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Support\Collection;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationMapping;
 use Integrations\Support\ModelKey;
+use ReflectionClass;
 
 /**
  * Finds local rows of a mapped model that have no external ID.
@@ -35,6 +36,14 @@ class FindOrphansCommand extends Command
 
         if (! is_string($modelClass) || ! class_exists($modelClass) || ! is_subclass_of($modelClass, Model::class)) {
             $this->error('The model argument must be a fully-qualified Eloquent model class.');
+
+            return self::FAILURE;
+        }
+
+        // is_subclass_of() accepts an abstract base, which collectOrphans()
+        // then can't instantiate.
+        if ((new ReflectionClass($modelClass))->isAbstract()) {
+            $this->error("{$modelClass} is abstract. Pass the concrete model whose rows you want to check.");
 
             return self::FAILURE;
         }
@@ -79,8 +88,7 @@ class FindOrphansCommand extends Command
 
         $modelClass::query()
             ->orderBy($keyName)
-            ->chunkById(self::CHUNK, function (mixed $rows) use (&$orphans, $morphClass, $integrationId, $limit): bool {
-                /** @var Collection<int, Model> $rows */
+            ->chunkById(self::CHUNK, function (Collection $rows) use (&$orphans, $morphClass, $integrationId, $limit): bool {
                 $keys = $rows->map(fn (Model $row): string => ModelKey::toString($row->getKey()))->all();
 
                 $mapped = $this->mappedKeys($morphClass, array_values($keys), $integrationId);

@@ -48,7 +48,7 @@ if ($existing) {
 
 ## Batch resolution
 
-When syncing many items, `resolveMapping()` does one query per call. Use `resolveMappings()` to resolve multiple external IDs in two queries (one for mappings, one for models):
+When syncing many items, `resolveMapping()` does one query per call. `resolveMappings()` resolves a whole batch in one query for the mappings and one for the models. It splits batches over 500 IDs into further chunks, to stay inside the driver's bind-parameter limit:
 
 ```php
 $tickets = $integration->resolveMappings(
@@ -62,11 +62,11 @@ $ticket123 = $tickets->get('123'); // Ticket instance or null
 
 ## Scoping
 
-Mappings are scoped to the integration, so the same external ID can map to different internal models across integrations. The unique constraint is on `(integration_id, external_id, internal_type)`. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. attachment URLs) need a downstream migration to widen further.
+Mappings are scoped to the integration and the model type: the unique constraint is on `(integration_id, external_id, internal_type)`. The same external ID can therefore map to one `Ticket` and one `Contact`, and to a different pair on another integration. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. attachment URLs) need a downstream migration to widen further.
 
 ## Claiming and re-pointing
 
-`mapExternalId()` claims an external ID for one model. Calling it again with the same model is a no-op. Calling it with a different model throws `MappingAlreadyClaimed`:
+`mapExternalId()` claims an external ID for one model, within the `(integration, model type)` scope above. Calling it again with the same model is a no-op. Calling it with a different model of that type throws `MappingAlreadyClaimed`:
 
 ```php
 $integration->mapExternalId('ticket-4521', $ticketA);

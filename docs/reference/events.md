@@ -6,7 +6,7 @@ All events live in the `Integrations\Events` namespace and use Laravel's `Dispat
 
 ### IntegrationCreated
 
-Dispatched when a new integration is created.
+Dispatched when a new integration is created. Implements `ShouldDispatchAfterCommit`, so inside a transaction Laravel holds the dispatch until the commit and discards it on a rollback.
 
 | Property | Type | Description |
 |----------|------|-------------|

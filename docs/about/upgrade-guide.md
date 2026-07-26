@@ -4,7 +4,7 @@ This project follows [Semantic Versioning](https://semver.org/). Minor and patch
 
 ## 5.x to 6.0
 
-In 6.0, `mapExternalId()` throws instead of re-pointing a mapping that another model holds. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for rows that lost their mapping before the upgrade.
+In 6.0, `mapExternalId()` throws instead of re-pointing a mapping that another model of the same type holds on the same integration. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for rows that lost their mapping before the upgrade.
 
 ### Why
 
