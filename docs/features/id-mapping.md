@@ -31,6 +31,8 @@ $ticket = $integration->upsertByExternalId(
 
 The method resolves the mapping, updates the existing model if found, or creates a new model and registers the mapping if not. The create + map step is wrapped in a database transaction for atomicity.
 
+Calls are serialised per `(integration, model type, external ID)` with a cache lock, so two workers syncing the same upstream record don't each create a row. See [Concurrency](#concurrency) for what happens when the cache driver isn't shared.
+
 This replaces the manual pattern:
 
 ```php
@@ -46,7 +48,7 @@ if ($existing) {
 
 ## Batch resolution
 
-When syncing many items, `resolveMapping()` does one query per call. Use `resolveMappings()` to resolve multiple external IDs in two queries (one for mappings, one for models):
+When syncing many items, `resolveMapping()` does one query per call. `resolveMappings()` resolves a whole batch in one query for the mappings and one for the models. It splits batches over 500 IDs into further chunks, to stay inside the driver's bind-parameter limit:
 
 ```php
 $tickets = $integration->resolveMappings(
@@ -60,11 +62,56 @@ $ticket123 = $tickets->get('123'); // Ticket instance or null
 
 ## Scoping
 
-Mappings are scoped to the integration, so the same external ID can map to different internal models across integrations. The unique constraint is on `(integration_id, external_id, internal_type)`. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. attachment URLs) need a downstream migration to widen further.
+Mappings are scoped to the integration and the model type: the unique constraint is on `(integration_id, external_id, internal_type)`. The same external ID can therefore map to one `Ticket` and one `Contact`, and to a different pair on another integration. `external_id` is capped at 500 characters; consumers with longer external IDs (e.g. attachment URLs) need a downstream migration to widen further.
 
-## Upsert behavior
+## Claiming and re-pointing
 
-`mapExternalId()` uses `updateOrCreate`, so calling it again with the same external ID and type updates the mapping rather than creating a duplicate.
+`mapExternalId()` claims an external ID for one model, within the `(integration, model type)` scope above. Calling it again with the same model is a no-op. Calling it with a different model of that type throws `MappingAlreadyClaimed`:
+
+```php
+$integration->mapExternalId('ticket-4521', $ticketA);
+$integration->mapExternalId('ticket-4521', $ticketB); // MappingAlreadyClaimed
+```
+
+Use `remapExternalId()` when moving the mapping is what you want:
+
+```php
+$integration->remapExternalId('ticket-4521', $ticketB);
+```
+
+The model that held the mapping keeps its row and loses its external ID, so reconcile or delete it yourself.
+
+::: warning Changed in 6.0
+`mapExternalId()` used to re-point silently. See the [upgrade guide](/about/upgrade-guide) if you relied on that.
+:::
+
+## Concurrency
+
+One external ID maps to exactly one local row per `(integration, model type)`. When two workers race to create that row, only one can hold the mapping, and before 6.0 the other was left behind with no mapping at all: intact in every column, still returned by ordinary queries, but null from `findExternalId()` and unaddressable upstream. The [upgrade guide](/about/upgrade-guide) has what that cost one consumer.
+
+Three things guard against it now:
+
+- `upsertByExternalId()` holds a lock scoped to the external ID across the create-and-claim.
+- `mapExternalId()` claims through the unique index rather than a read-then-write, so a caller that loses the race gets an exception instead of silently overwriting the mapping.
+- `upsertByExternalId()` catches that and converges on the winner's row, applying its attributes there.
+
+The lock only serialises across processes on a shared cache driver. On `array` it is per-process, so you fall back to the claim collision. Tune it with `integrations.mappings.lock_ttl` and `integrations.mappings.lock_wait`.
+
+To find rows that lost a mapping before you upgraded, use [`integrations:find-orphans`](/reference/artisan-commands).
+
+## Collation
+
+`internal_id` is a VARCHAR, because the table is polymorphic and has to hold auto-increment integers, UUIDs and ULIDs alike. On MySQL and MariaDB that means comparing it against your own primary keys fails with `Illegal mix of collations` whenever your tables use a different collation from the one Laravel gave this package's. That comparison is exactly the query you want when hunting rows that lost their mapping.
+
+Set `integrations.mappings.collation` to match your domain tables, then publish and run the migrations:
+
+```php
+'mappings' => [
+    'collation' => 'utf8mb4_general_ci',
+],
+```
+
+The setting is ignored on drivers without per-column collation. `integrations:find-orphans` compares keys in PHP rather than joining, so you don't need this just to run it.
 
 ## Storage
 

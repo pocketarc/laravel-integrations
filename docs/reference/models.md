@@ -29,10 +29,11 @@ The central model. Represents a configured connection to an external service.
 | `logOperation()` | Create an operation log entry |
 | `failureSummary($since)` | Failure report (per-operation counts, rate, last error, per-status / per-`FailureClass` breakdowns) over a window. See [Failure summary](/core-concepts/health-monitoring#failure-summary). |
 | `incidents()` | The integration's [incident history](/core-concepts/health-monitoring#incident-history) relation. The `current_incident` (`?IntegrationIncident`) and `has_open_incident` (`bool`) accessors read the loaded collection. |
-| `mapExternalId()` | Map an external ID to an internal model |
-| `resolveMapping()` | Resolve external ID to internal model (returns typed `TModel`) |
-| `resolveMappings()` | Batch-resolve multiple external IDs in two queries |
-| `upsertByExternalId()` | Resolve, create-or-update, and map in one call |
+| `mapExternalId()` | Claim an external ID for an internal model. Throws `MappingAlreadyClaimed` when another model of the same type already holds it on this integration. See [Claiming and re-pointing](/features/id-mapping#claiming-and-re-pointing). |
+| `remapExternalId()` | Move a mapping to a different internal model deliberately. Same `(integration, model type, external ID)` scope as `mapExternalId()`. |
+| `resolveMapping()` | Resolve external ID to internal model (returns typed `?TModel`, null when nothing is mapped) |
+| `resolveMappings()` | Batch-resolve multiple external IDs in chunks of 500 |
+| `upsertByExternalId()` | Resolve, create-or-update, and map in one call. Serialised per external ID; see [Concurrency](/features/id-mapping#concurrency). |
 | `findExternalId()` | Find external ID for an internal model |
 | `getAccessToken()` | Get OAuth access token (auto-refreshes) |
 | `tokenExpiresSoon()` | Check if token needs refresh |

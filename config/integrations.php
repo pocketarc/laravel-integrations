@@ -60,6 +60,22 @@ return [
         'refresh_lock_wait' => 15,
     ],
 
+    'mappings' => [
+        // Lock TTL (seconds) held while upsertByExternalId() creates a model and
+        // claims its external ID. Only serialises across processes on a shared
+        // cache driver; on `array` it is per-process.
+        'lock_ttl' => 10,
+
+        // Maximum seconds to wait for that lock before throwing LockTimeoutException.
+        'lock_wait' => 10,
+
+        // Collation for integration_mappings' string columns. MySQL/MariaDB
+        // only; null inherits the connection default. Set it to match your
+        // domain tables (e.g. 'utf8mb4_general_ci') so comparing internal_id
+        // against your primary keys doesn't fail on "Illegal mix of collations".
+        'collation' => null,
+    ],
+
     'sync' => [
         // Default queue name for dispatched sync jobs.
         'queue' => 'default',

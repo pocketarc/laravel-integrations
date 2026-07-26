@@ -6,6 +6,7 @@ use Illuminate\Database\Migrations\Migration;
 use Illuminate\Database\Schema\Blueprint;
 use Illuminate\Support\Facades\Schema;
 use Integrations\Support\Config;
+use Integrations\Support\MappingCollation;
 
 return new class extends Migration
 {
@@ -109,12 +110,24 @@ return new class extends Migration
             $table->index('parent_id');
         });
 
-        Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix): void {
+        $mappingCollation = MappingCollation::forConnection();
+
+        Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix, $mappingCollation): void {
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
-            $table->string('external_id', 500);
-            $table->string('internal_type');
-            $table->string('internal_id');
+
+            // Pinnable so internal_id can be compared against the consumer's own
+            // primary keys; MySQL rejects a cross-collation comparison outright.
+            $externalId = $table->string('external_id', 500);
+            $internalType = $table->string('internal_type');
+            $internalId = $table->string('internal_id');
+
+            if ($mappingCollation !== null) {
+                $externalId->collation($mappingCollation);
+                $internalType->collation($mappingCollation);
+                $internalId->collation($mappingCollation);
+            }
+
             $table->json('metadata')->nullable();
             $table->timestamps();
 
