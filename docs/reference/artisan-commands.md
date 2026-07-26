@@ -87,7 +87,7 @@ php artisan integrations:find-orphans "App\Models\Ticket" --integration=7 --limi
 
 An orphan is a local row nothing can address upstream: `findExternalId()` returns null for it, but it still has every other column, so it keeps satisfying ordinary queries. Before 6.0 a lost race between two workers could produce one (see [ID mapping](/features/id-mapping)). Expect zero rows.
 
-Each one needs its `integration_mappings` row restored, or merging into the row that kept the mapping. The command reads in chunks and compares keys in PHP rather than joining, so it works regardless of the collation on `internal_id`.
+Each one needs its `integration_mappings` row restored, or merged into the row that kept the mapping. The command reads in chunks and compares keys in PHP rather than joining, so it works regardless of the collation on `internal_id`.
 
 `--integration` narrows to mappings owned by one integration, which is what you want when a model is mapped by several. `--limit` defaults to 50.
 

@@ -96,7 +96,7 @@ final class Config
     /**
      * Lock TTL (seconds) held while upserting a model by external ID. Short,
      * because the work inside is a couple of local writes, but long enough that
-     * a loaded database can't drop the lock mid-flight.
+     * the lock doesn't expire mid-write on a loaded database.
      */
     public static function mappingLockTtl(): int
     {

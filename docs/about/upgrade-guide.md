@@ -4,7 +4,7 @@ This project follows [Semantic Versioning](https://semver.org/). Minor and patch
 
 ## 5.x to 6.0
 
-6.0 stops `mapExternalId()` re-pointing a mapping that another model holds. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for damage the old behaviour already did.
+In 6.0, `mapExternalId()` throws instead of re-pointing a mapping that another model holds. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for rows that lost their mapping before the upgrade.
 
 ### Why
 
@@ -20,7 +20,7 @@ Damage done before the upgrade is still there. For each model you map:
 php artisan integrations:find-orphans "App\Models\Ticket"
 ```
 
-Expect zero rows. Each one that turns up needs its `integration_mappings` row restored, or merging into the row that kept the mapping, whichever matches what the two rows contain.
+Expect zero rows. Each one that turns up needs its `integration_mappings` row restored, or merged into the row that kept the mapping, depending on what the two rows hold.
 
 ### 2. If you call `mapExternalId()` on an already-mapped ID
 

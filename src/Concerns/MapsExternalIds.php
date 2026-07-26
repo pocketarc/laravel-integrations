@@ -66,7 +66,7 @@ trait MapsExternalIds
      * absent.
      *
      * The displaced model keeps its row and loses its external ID. Reconciling
-     * or deleting it is the caller's job; this method won't.
+     * or deleting it is the caller's job.
      */
     public function remapExternalId(string $externalId, Model $internalModel): IntegrationMapping
     {

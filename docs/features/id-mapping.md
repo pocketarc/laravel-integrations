@@ -31,7 +31,7 @@ $ticket = $integration->upsertByExternalId(
 
 The method resolves the mapping, updates the existing model if found, or creates a new model and registers the mapping if not. The create + map step is wrapped in a database transaction for atomicity.
 
-Calls are serialised per `(integration, model type, external ID)` with a cache lock, so two workers syncing the same upstream record can't each create a row. Only one of those rows could hold the mapping; see [Concurrency](#concurrency).
+Calls are serialised per `(integration, model type, external ID)` with a cache lock, so two workers syncing the same upstream record don't each create a row. See [Concurrency](#concurrency) for what happens when the cache driver isn't shared.
 
 This replaces the manual pattern:
 
@@ -79,7 +79,7 @@ Use `remapExternalId()` when moving the mapping is what you want:
 $integration->remapExternalId('ticket-4521', $ticketB);
 ```
 
-The model that held the mapping keeps its row and loses its external ID, so reconcile or delete it yourself. `remapExternalId()` won't.
+The model that held the mapping keeps its row and loses its external ID, so reconcile or delete it yourself.
 
 ::: warning Changed in 6.0
 `mapExternalId()` used to re-point silently. See the [upgrade guide](/about/upgrade-guide) if you relied on that.
@@ -87,15 +87,15 @@ The model that held the mapping keeps its row and loses its external ID, so reco
 
 ## Concurrency
 
-One external ID maps to exactly one local row per `(integration, model type)`. When two workers race to create that row, only one can hold the mapping, and before 6.0 the other was left behind with no mapping at all. It kept every column it had, so it still satisfied ordinary queries, but `findExternalId()` returned null for it and nothing could address it upstream again. One consumer hit this as a ticket that was selected for work, attempted, and failed on every cycle for three days.
+One external ID maps to exactly one local row per `(integration, model type)`. When two workers race to create that row, only one can hold the mapping, and before 6.0 the other was left behind with no mapping at all: intact in every column, still returned by ordinary queries, but null from `findExternalId()` and unaddressable upstream. The [upgrade guide](/about/upgrade-guide) has what that cost one consumer.
 
 Three things guard against it now:
 
 - `upsertByExternalId()` holds a lock scoped to the external ID across the create-and-claim.
-- `mapExternalId()` claims through the unique index rather than a read-then-write, so a caller that loses the race is told instead of silently overwriting.
+- `mapExternalId()` claims through the unique index rather than a read-then-write, so a caller that loses the race gets an exception instead of silently overwriting the mapping.
 - `upsertByExternalId()` catches that and converges on the winner's row, applying its attributes there.
 
-The lock needs a shared cache driver to do anything. On `array` it is per-process, and the claim collision is what saves you. Tune it with `integrations.mappings.lock_ttl` and `integrations.mappings.lock_wait`.
+The lock only serialises across processes on a shared cache driver. On `array` it is per-process, so you fall back to the claim collision. Tune it with `integrations.mappings.lock_ttl` and `integrations.mappings.lock_wait`.
 
 To find rows that lost a mapping before you upgraded, use [`integrations:find-orphans`](/reference/artisan-commands).
 
@@ -111,7 +111,7 @@ Set `integrations.mappings.collation` to match your domain tables, then publish 
 ],
 ```
 
-Ignored on drivers without per-column collation. `integrations:find-orphans` sidesteps the problem entirely by comparing in PHP, so you don't need this just to run it.
+The setting is ignored on drivers without per-column collation. `integrations:find-orphans` compares keys in PHP rather than joining, so you don't need this just to run it.
 
 ## Storage
 
