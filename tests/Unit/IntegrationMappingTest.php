@@ -4,7 +4,9 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Integrations\Exceptions\MappingAlreadyClaimed;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationMapping;
 use Integrations\Tests\TestCase;
 
 class IntegrationMappingTest extends TestCase
@@ -31,17 +33,105 @@ class IntegrationMappingTest extends TestCase
         $this->assertSame((string) $target->id, $mapping->internal_id);
     }
 
-    public function test_map_external_id_upserts_same_type(): void
+    public function test_map_external_id_refuses_to_steal_a_claimed_mapping(): void
+    {
+        // Until 6.0 this silently re-pointed, which is what made a lost race
+        // invisible: $model1 kept every column it had and still satisfied
+        // ordinary queries, but findExternalId() returned null for it and
+        // nothing could reach it upstream again.
+        $model1 = Integration::create(['provider' => 'a', 'name' => 'A']);
+        $model2 = Integration::create(['provider' => 'b', 'name' => 'B']);
+
+        $this->integration->mapExternalId('EXT-123', $model1);
+
+        try {
+            $this->integration->mapExternalId('EXT-123', $model2);
+            $this->fail('Expected MappingAlreadyClaimed.');
+        } catch (MappingAlreadyClaimed $e) {
+            $this->assertSame('EXT-123', $e->externalId);
+            $this->assertSame((string) $model1->id, $e->claimedBy);
+            $this->assertSame((string) $model2->id, $e->requestedBy);
+        }
+
+        $this->assertCount(1, $this->integration->mappings()->get());
+        $this->assertSame((string) $model1->id, $this->integration->mappings()->first()?->internal_id);
+        $this->assertSame('EXT-123', $this->integration->findExternalId($model1));
+    }
+
+    public function test_map_external_id_is_idempotent_for_the_same_model(): void
+    {
+        $target = Integration::create(['provider' => 'a', 'name' => 'A']);
+
+        $first = $this->integration->mapExternalId('EXT-123', $target);
+        $second = $this->integration->mapExternalId('EXT-123', $target);
+
+        $this->assertSame($first->id, $second->id);
+        $this->assertCount(1, $this->integration->mappings()->get());
+    }
+
+    public function test_map_external_id_allows_the_same_external_id_for_a_different_type(): void
+    {
+        // The unique key includes internal_type, so two model types can each
+        // claim "123" from the same upstream without colliding.
+        $target = Integration::create(['provider' => 'a', 'name' => 'A']);
+        $mapping = $this->integration->mapExternalId('EXT-123', $target);
+
+        $other = IntegrationMapping::create([
+            'integration_id' => $this->integration->id,
+            'external_id' => 'EXT-123',
+            'internal_type' => 'App\\Models\\SomethingElse',
+            'internal_id' => '999',
+        ]);
+
+        $this->assertNotSame($mapping->id, $other->id);
+        $this->assertCount(2, $this->integration->mappings()->get());
+    }
+
+    public function test_remap_external_id_moves_a_claimed_mapping(): void
     {
         $model1 = Integration::create(['provider' => 'a', 'name' => 'A']);
         $model2 = Integration::create(['provider' => 'b', 'name' => 'B']);
 
         $this->integration->mapExternalId('EXT-123', $model1);
-        $this->integration->mapExternalId('EXT-123', $model2);
+        $this->integration->remapExternalId('EXT-123', $model2);
 
-        // Same external_id + same internal_type = upsert, so internal_id gets updated
         $this->assertCount(1, $this->integration->mappings()->get());
         $this->assertSame((string) $model2->id, $this->integration->mappings()->first()?->internal_id);
+
+        // The displaced model keeps its row and loses its external ID. Saying so
+        // here because callers have to reconcile it themselves.
+        $this->assertNull($this->integration->findExternalId($model1));
+    }
+
+    public function test_remap_external_id_creates_the_mapping_when_absent(): void
+    {
+        $target = Integration::create(['provider' => 'a', 'name' => 'A']);
+
+        $this->integration->remapExternalId('EXT-NEW', $target);
+
+        $this->assertSame('EXT-NEW', $this->integration->findExternalId($target));
+    }
+
+    public function test_upsert_by_external_id_converges_when_the_claim_is_lost(): void
+    {
+        // Stands in for the race the lock normally prevents: by the time we try
+        // to claim, another worker has already created its row and taken the
+        // mapping. The loser must adopt the winner's row rather than leave its
+        // own behind unmapped.
+        $winner = Integration::create(['provider' => 'winner', 'name' => 'Winner']);
+        $this->integration->mapExternalId('EXT-RACE', $winner);
+
+        $before = Integration::query()->count();
+
+        $result = $this->integration->upsertByExternalId('EXT-RACE', Integration::class, [
+            'provider' => 'loser',
+            'name' => 'Loser',
+        ]);
+
+        $this->assertSame($winner->id, $result->getKey(), 'should converge on the row that holds the mapping');
+        $this->assertSame('Loser', $result->name, 'the attributes still land');
+        $this->assertSame($before, Integration::query()->count(), 'no duplicate row left behind');
+        $this->assertCount(1, $this->integration->mappings()->get());
     }
 
     public function test_find_external_id(): void

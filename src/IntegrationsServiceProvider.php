@@ -11,6 +11,7 @@ use Illuminate\Support\ServiceProvider;
 use Integrations\Console\AdvanceCursorCommand;
 use Integrations\Console\CircuitCommand;
 use Integrations\Console\EvaluateFailuresCommand;
+use Integrations\Console\FindOrphansCommand;
 use Integrations\Console\HealthCommand;
 use Integrations\Console\InstallCommand;
 use Integrations\Console\ListCommand;
@@ -88,6 +89,7 @@ class IntegrationsServiceProvider extends ServiceProvider
                 SkipSyncItemCommand::class,
                 AdvanceCursorCommand::class,
                 ListFailedItemsCommand::class,
+                FindOrphansCommand::class,
                 CircuitCommand::class,
                 RateLimitCommand::class,
                 EvaluateFailuresCommand::class,

@@ -14,11 +14,11 @@ use Illuminate\Database\Eloquent\Relations\MorphTo;
 use Illuminate\Database\Query\Builder;
 use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Cache;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Integrations\Casts\IntegrationCredentialCast;
 use Integrations\Casts\IntegrationMetadataCast;
 use Integrations\Concerns\ManagesResilienceOverrides;
+use Integrations\Concerns\MapsExternalIds;
 use Integrations\Concerns\TracksHealth;
 use Integrations\Contracts\HasOAuth2;
 use Integrations\Contracts\IdentifiesAuthenticatedUser;
@@ -104,6 +104,7 @@ use function Safe\json_encode;
 class Integration extends Model
 {
     use ManagesResilienceOverrides;
+    use MapsExternalIds;
     use TracksHealth;
 
     /** @var array<string> */
@@ -325,15 +326,6 @@ class Integration extends Model
     public function provider(): IntegrationProvider
     {
         return app(IntegrationManager::class)->provider($this->provider);
-    }
-
-    private static function keyToString(mixed $key): string
-    {
-        if (is_int($key) || is_string($key)) {
-            return (string) $key;
-        }
-
-        throw new InvalidArgumentException('Model key must be a string or integer.');
     }
 
     /**
@@ -705,128 +697,6 @@ class Integration extends Model
     public function failureSummary(CarbonInterface $since): FailureSummary
     {
         return (new FailureReporter($this))->summary($since);
-    }
-
-    public function mapExternalId(string $externalId, Model $internalModel): IntegrationMapping
-    {
-        return $this->mappings()->updateOrCreate(
-            [
-                'external_id' => $externalId,
-                'internal_type' => $internalModel->getMorphClass(),
-            ],
-            [
-                'internal_id' => self::keyToString($internalModel->getKey()),
-            ],
-        );
-    }
-
-    /**
-     * @template TModel of Model
-     *
-     * @param  class-string<TModel>  $internalType
-     * @return TModel|null
-     */
-    public function resolveMapping(string $externalId, string $internalType): ?Model
-    {
-        $mapping = $this->mappings()
-            ->where('external_id', $externalId)
-            ->where('internal_type', (new $internalType)->getMorphClass())
-            ->first();
-
-        if ($mapping === null) {
-            return null;
-        }
-
-        $model = (new $internalType)->newQuery()->find($mapping->internal_id);
-
-        if (! $model instanceof $internalType) {
-            return null;
-        }
-
-        return $model;
-    }
-
-    public function findExternalId(Model $internalModel): ?string
-    {
-        $mapping = $this->mappings()
-            ->where('internal_type', $internalModel->getMorphClass())
-            ->where('internal_id', self::keyToString($internalModel->getKey()))
-            ->first();
-
-        return $mapping?->external_id;
-    }
-
-    /**
-     * @template TModel of Model
-     *
-     * @param  class-string<TModel>  $modelClass
-     * @param  array<string, mixed>  $attributes
-     * @return TModel
-     */
-    public function upsertByExternalId(string $externalId, string $modelClass, array $attributes): Model
-    {
-        $existing = $this->resolveMapping($externalId, $modelClass);
-
-        if ($existing !== null) {
-            $existing->update($attributes);
-
-            return $existing->refresh();
-        }
-
-        DB::beginTransaction();
-
-        try {
-            $model = new $modelClass($attributes);
-            $model->save();
-            $this->mapExternalId($externalId, $model);
-            DB::commit();
-        } catch (\Throwable $e) {
-            DB::rollBack();
-
-            throw $e;
-        }
-
-        return $model;
-    }
-
-    /**
-     * @template TModel of Model
-     *
-     * @param  list<string>  $externalIds
-     * @param  class-string<TModel>  $internalType
-     * @return \Illuminate\Support\Collection<string, TModel|null>
-     */
-    public function resolveMappings(array $externalIds, string $internalType): \Illuminate\Support\Collection
-    {
-        /** @var array<string, TModel|null> $result */
-        $result = [];
-
-        if ($externalIds === []) {
-            return collect($result);
-        }
-
-        $morphClass = (new $internalType)->getMorphClass();
-
-        $mappings = $this->mappings()
-            ->whereIn('external_id', $externalIds)
-            ->where('internal_type', $morphClass)
-            ->get();
-
-        $internalIds = $mappings->pluck('internal_id')->unique()->values()->all();
-
-        $instance = new $internalType;
-        $modelsByKey = $instance->newQuery()
-            ->whereIn($instance->getKeyName(), $internalIds)
-            ->get()
-            ->keyBy(fn (Model $model): string => self::keyToString($model->getKey()));
-
-        foreach ($externalIds as $externalId) {
-            $mapping = $mappings->firstWhere('external_id', $externalId);
-            $model = $mapping !== null ? $modelsByKey->get($mapping->internal_id) : null;
-            $result[$externalId] = $model instanceof $internalType ? $model : null;
-        }
-
-        return collect($result);
     }
 
     /**

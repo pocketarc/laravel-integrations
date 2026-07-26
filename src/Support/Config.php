@@ -93,6 +93,32 @@ final class Config
         return self::boundedInt(config('integrations.oauth.refresh_lock_wait', 15), 15, 1);
     }
 
+    /**
+     * Lock TTL (seconds) held while upserting a model by external ID. Short,
+     * because the work inside is a couple of local writes, but long enough that
+     * a loaded database can't drop the lock mid-flight.
+     */
+    public static function mappingLockTtl(): int
+    {
+        return self::boundedInt(config('integrations.mappings.lock_ttl', 10), 10, 1);
+    }
+
+    public static function mappingLockWait(): int
+    {
+        return self::boundedInt(config('integrations.mappings.lock_wait', 10), 10, 1);
+    }
+
+    /**
+     * Collation for the mapping table's string columns, or null to leave them
+     * to the connection default. MySQL/MariaDB only.
+     */
+    public static function mappingCollation(): ?string
+    {
+        $value = config('integrations.mappings.collation');
+
+        return is_string($value) && $value !== '' ? $value : null;
+    }
+
     public static function syncQueue(?string $provider = null): string
     {
         if ($provider !== null) {

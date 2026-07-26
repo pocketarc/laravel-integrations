@@ -2,6 +2,69 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 5.x to 6.0
+
+6.0 stops `mapExternalId()` re-pointing a mapping that another model holds. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for damage the old behaviour already did.
+
+### Why
+
+`mapExternalId()` was an `updateOrCreate` keyed on `(external_id, internal_type)` with `internal_id` in the update payload, and `upsertByExternalId()` read then wrote with no lock. Two workers syncing the same upstream record both found no mapping, both inserted a local row, and the second one's call moved the mapping onto its own row.
+
+Nothing threw. The result was two rows and one mapping, and the row that lost it was unreachable: it had every column it started with, so it still came back from ordinary queries, but `findExternalId()` returned null for it and no upstream call could address it. A consumer running ten queue workers produced two such rows in three days, and one of them cost about $72/day in wasted AI calls before anyone noticed, because it was selected for work, attempted, and failed on every cycle.
+
+### 1. Check for existing orphans
+
+Damage done before the upgrade is still there. For each model you map:
+
+```bash
+php artisan integrations:find-orphans "App\Models\Ticket"
+```
+
+Expect zero rows. Each one that turns up needs its `integration_mappings` row restored, or merging into the row that kept the mapping, whichever matches what the two rows contain.
+
+### 2. If you call `mapExternalId()` on an already-mapped ID
+
+It now throws `MappingAlreadyClaimed`. Calling it twice with the *same* model is still fine, so this only affects deliberate re-points.
+
+**Before (5.x):**
+
+```php
+$integration->mapExternalId('ticket-4521', $newTicket); // silently moved it
+```
+
+**After (6.0):**
+
+```php
+$integration->remapExternalId('ticket-4521', $newTicket);
+```
+
+If you were guarding the call yourself, you can drop the guard. This pattern:
+
+```php
+$existing = $integration->resolveMapping($externalId, Ticket::class);
+
+if ($existing === null || $existing->id === $ticket->id) {
+    $integration->mapExternalId($externalId, $ticket);
+}
+```
+
+becomes a `try`/`catch` on `MappingAlreadyClaimed`, or nothing at all if reaching that state is a bug you'd rather hear about.
+
+### 3. Optional: pin the mapping table's collation
+
+Only on MySQL and MariaDB, and only if your own tables use a different collation from the one Laravel gave `integration_mappings`. The symptom is `Illegal mix of collations` when you compare `internal_id` against your primary keys.
+
+```php
+// config/integrations.php
+'mappings' => [
+    'collation' => 'utf8mb4_general_ci', // match your domain tables
+],
+```
+
+Then publish and run the migrations. `0001_01_01_000002_pin_integration_mappings_collation.php` applies it to an existing table and no-ops when the setting is null or the driver has no per-column collation.
+
+`integrations:find-orphans` compares in PHP, so you don't need this just to run it.
+
 ## 4.x to 5.0
 
 5.0 makes the circuit breaker an availability detector driven by a single failure classifier, switches its default strategy, and adds runtime overrides. Most apps need no code changes; the work is in custom providers and any direct callers of `Integration::recordFailure()`.

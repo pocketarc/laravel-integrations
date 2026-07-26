@@ -109,12 +109,27 @@ return new class extends Migration
             $table->index('parent_id');
         });
 
-        Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix): void {
+        $mappingCollation = Config::mappingCollation();
+
+        Schema::create("{$prefix}_mappings", function (Blueprint $table) use ($prefix, $mappingCollation): void {
             $table->id();
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
-            $table->string('external_id', 500);
-            $table->string('internal_type');
-            $table->string('internal_id');
+
+            // Collation is pinnable because internal_id gets compared against
+            // the consumer's own primary keys when hunting rows that lost their
+            // mapping, and a mismatch makes MySQL reject the comparison outright
+            // with "Illegal mix of collations". Null leaves the connection
+            // default, which is right unless the consumer's tables differ.
+            $externalId = $table->string('external_id', 500);
+            $internalType = $table->string('internal_type');
+            $internalId = $table->string('internal_id');
+
+            if ($mappingCollation !== null) {
+                $externalId->collation($mappingCollation);
+                $internalType->collation($mappingCollation);
+                $internalId->collation($mappingCollation);
+            }
+
             $table->json('metadata')->nullable();
             $table->timestamps();
 

@@ -76,6 +76,21 @@ php artisan integrations:list-failed-items --integration=7 --since="2026-01-01"
 
 Prints a table from `integration_sync_items` (id, integration, event, external id, error, attempts, created). A failed item holds the cursor at it until it's resolved: retry the underlying job with `php artisan queue:retry <uuid>`, or skip it (below).
 
+## integrations:find-orphans
+
+List rows of a mapped model that have no external ID.
+
+```bash
+php artisan integrations:find-orphans "App\Models\Ticket"
+php artisan integrations:find-orphans "App\Models\Ticket" --integration=7 --limit=200
+```
+
+An orphan is a local row nothing can address upstream: `findExternalId()` returns null for it, but it still has every other column, so it keeps satisfying ordinary queries. Before 6.0 a lost race between two workers could produce one (see [ID mapping](/features/id-mapping)). Expect zero rows.
+
+Each one needs its `integration_mappings` row restored, or merging into the row that kept the mapping. The command reads in chunks and compares keys in PHP rather than joining, so it works regardless of the collation on `internal_id`.
+
+`--integration` narrows to mappings owned by one integration, which is what you want when a model is mapped by several. `--limit` defaults to 50.
+
 ## integrations:skip-sync-item
 
 Mark a permanently-failed sync item as skipped so the cursor can advance past it.

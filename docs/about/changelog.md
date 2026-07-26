@@ -2,6 +2,17 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 6.0.0
+
+One external ID maps to exactly one local row, and the package now enforces that rather than assuming it. See the [upgrade guide](/about/upgrade-guide) for the migration.
+
+- Breaking: [`mapExternalId()`](/features/id-mapping#claiming-and-re-pointing) throws `MappingAlreadyClaimed` when a different model already holds the external ID, instead of silently re-pointing the mapping at the new one. The silent version made a lost race unobservable: two workers upserting the same external ID each inserted a local row, the second took the mapping, and the first was abandoned with every column intact. It kept satisfying ordinary queries, but `findExternalId()` returned null for it and nothing could address it upstream again. One consumer found this as a ticket that was selected for work, attempted, and failed roughly once every two minutes for three days. Calling it twice with the same model is still a no-op.
+- New: `remapExternalId()` moves a mapping deliberately, which is what `mapExternalId()` used to do by accident. The displaced model keeps its row and loses its external ID; reconciling it is the caller's job.
+- Fix: [`upsertByExternalId()`](/features/id-mapping#upsert-by-external-id) is serialised per `(integration, model type, external ID)` with a cache lock, and converges on the winner's row if a claim collides anyway. The lock only serialises across processes on a shared cache driver, so the collision path is handled rather than assumed away. TTL and wait are configurable under [`mappings`](/reference/configuration).
+- New: [`integrations:find-orphans`](/reference/artisan-commands#integrations-find-orphans) lists rows of a mapped model that have no external ID, for finding damage a pre-6.0 race already did. It compares keys in PHP rather than joining, so a collation mismatch on `internal_id` can't break it.
+- New: `integrations.mappings.collation` pins the mapping table's string columns on MySQL and MariaDB. `internal_id` is a VARCHAR holding keys of every type, so comparing it against your own primary keys fails with `Illegal mix of collations` when your tables use a different collation. Null (the default) leaves the connection default. A second migration applies it to existing installs.
+- The ID-mapping methods moved from `Integration` onto an `Integrations\Concerns\MapsExternalIds` trait, and key stringification onto `Integrations\Support\ModelKey`. The public API on `Integration` is unchanged.
+
 ## 5.5.0
 
 - New: two ways to stop response bodies dominating `integration_requests`, which in a busy installation is reliably the largest table the package owns. Request bodies were already cut at just under 64KB; response bodies were stored whole, so one verbose endpoint could account for most of the table. [`logging.max_response_bytes`](/reference/configuration#logging) caps a stored body and records the size it was cut from, and the new [`LimitsRequestLogging`](/reference/contracts#limitsrequestlogging) contract lets a provider name endpoint patterns whose bodies are not stored at all, for payloads that are enormous or already persisted better elsewhere. Both leave the request row itself intact, so health, failure rates and the stats commands are unchanged. Defaults keep current behaviour: no cap, nothing opted out.

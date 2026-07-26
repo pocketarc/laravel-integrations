@@ -60,6 +60,29 @@ return [
         'refresh_lock_wait' => 15,
     ],
 
+    'mappings' => [
+        // Lock TTL (seconds) held while upsertByExternalId() creates a model and
+        // claims its external ID. Two workers syncing the same external record
+        // would otherwise each insert a row, and only one could hold the
+        // mapping; the other was left unreachable. The lock needs a shared cache
+        // driver to do anything: on the `array` driver it is per-process, and
+        // the collision is caught and converged on instead.
+        'lock_ttl' => 10,
+
+        // Maximum seconds to wait for that lock before throwing LockTimeoutException.
+        'lock_wait' => 10,
+
+        // Collation for integration_mappings' string columns. MySQL/MariaDB
+        // only, ignored elsewhere. Leave null to inherit the connection default.
+        //
+        // Set this when your own tables use a different collation from the one
+        // Laravel gives this package's, because comparing internal_id against
+        // your primary keys then fails with "Illegal mix of collations" — which
+        // is exactly the query you want when hunting rows that lost a mapping.
+        // Match whatever your domain tables use, e.g. 'utf8mb4_general_ci'.
+        'collation' => null,
+    ],
+
     'sync' => [
         // Default queue name for dispatched sync jobs.
         'queue' => 'default',
