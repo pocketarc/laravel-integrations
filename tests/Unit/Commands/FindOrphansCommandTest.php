@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit\Commands;
 
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Integrations\Models\Integration;
 use Integrations\Tests\Fixtures\AbstractTestModel;
 use Integrations\Tests\TestCase;
@@ -72,6 +74,61 @@ class FindOrphansCommandTest extends TestCase
         ])
             ->assertSuccessful()
             ->expectsOutputToContain('2 row(s) with no external ID');
+    }
+
+    public function test_it_reads_only_the_columns_it_prints(): void
+    {
+        // A mapped model can store payloads inline (file contents, raw API
+        // responses). Selecting `*` loads every byte of every chunk to print an
+        // id and a date, which exhausts memory on exactly the model most likely
+        // to need this command. Integration stands in here: its credentials and
+        // metadata columns must not appear in the scan.
+        Integration::create(['provider' => 'orphan', 'name' => 'Orphan']);
+
+        $scans = [];
+        DB::listen(function (QueryExecuted $query) use (&$scans): void {
+            if (str_contains($query->sql, 'from "integrations"')) {
+                $scans[] = $query->sql;
+            }
+        });
+
+        $this->artisan('integrations:find-orphans', ['model' => Integration::class])->assertSuccessful();
+
+        $this->assertNotEmpty($scans, 'expected the model scan to run');
+
+        foreach ($scans as $sql) {
+            $this->assertStringNotContainsString('select *', $sql, "scanned whole rows: {$sql}");
+            $this->assertStringNotContainsString('credentials', $sql, "pulled a payload column: {$sql}");
+        }
+    }
+
+    public function test_it_says_so_when_it_stopped_at_the_limit(): void
+    {
+        // A silent cap reads as a complete answer: "2 row(s)" when there are
+        // five sends someone away thinking they've seen the whole problem.
+        for ($i = 0; $i < 5; $i++) {
+            Integration::create(['provider' => 'orphan', 'name' => "Orphan {$i}"]);
+        }
+
+        $this->artisan('integrations:find-orphans', [
+            'model' => Integration::class,
+            '--limit' => '2',
+        ])
+            ->assertSuccessful()
+            ->expectsOutputToContain('2 row(s) with no external ID')
+            ->expectsOutputToContain('Stopped at the --limit of 2');
+    }
+
+    public function test_it_stays_quiet_about_the_limit_when_it_found_everything(): void
+    {
+        Integration::create(['provider' => 'orphan', 'name' => 'Orphan']);
+
+        $this->artisan('integrations:find-orphans', [
+            'model' => Integration::class,
+            '--limit' => '50',
+        ])
+            ->assertSuccessful()
+            ->doesntExpectOutputToContain('Stopped at the --limit');
     }
 
     public function test_it_rejects_a_class_that_is_not_a_model(): void

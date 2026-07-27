@@ -2,6 +2,12 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 6.1.0
+
+- Fix: [`integrations:find-orphans`](/reference/artisan-commands#integrations-find-orphans) selects only the id and created-at columns instead of whole rows. It read whole rows before, so on a model that stores payloads inline the command loaded every byte of every 1000-row chunk. One consumer exhausted a 512MB memory limit on a table of file attachments before the command printed anything.
+- Fix: three more commands select only the columns they use. [`integrations:recover-webhooks`](/reference/artisan-commands#integrations-recover-webhooks) loaded every stale webhook's `payload` and `headers` to reset a status by id. That command runs when the queue is backed up, so its scan covers the largest payloads. [`integrations:advance-cursor`](/reference/artisan-commands#integrations-advance-cursor) loaded each sync log's `metadata`, `result_data` and `error` to dispatch a job by id. [`integrations:list-failed-items`](/reference/artisan-commands#integrations-list-failed-items) loaded `checkpoint_value`, which its table never shows.
+- New: `--limit` on [`integrations:list-failed-items`](/reference/artisan-commands#integrations-list-failed-items) (default 50) and [`integrations:advance-cursor`](/reference/artisan-commands#integrations-advance-cursor) (no default). Both read every matching row before. The listing commands print a notice when they stop at the limit, so a truncated list is not mistaken for the whole set. `integrations:advance-cursor` has no default limit, because a silent cap there would leave sync runs unreconciled.
+
 ## 6.0.0
 
 One external ID maps to exactly one local row per integration and model type, and the package now enforces that rather than assuming it. See the [upgrade guide](/about/upgrade-guide) for the migration.
