@@ -20,7 +20,12 @@ class ListFailedItemsCommand extends Command
 
     public function handle(): int
     {
-        $query = IntegrationSyncItem::query()->failed()->orderByDesc('id');
+        // Just the columns the table below prints: checkpoint_value holds a
+        // provider cursor payload that nothing here reads.
+        $query = IntegrationSyncItem::query()
+            ->failed()
+            ->select(['id', 'integration_id', 'event_class', 'external_id', 'error', 'attempts', 'created_at'])
+            ->orderByDesc('id');
 
         $integrationOption = $this->option('integration');
         if (is_string($integrationOption) && $integrationOption !== '') {

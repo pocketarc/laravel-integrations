@@ -37,9 +37,12 @@ class AdvanceCursorCommand extends Command
         // A sync run whose log is still "processing" hasn't been reconciled.
         // FinaliseSyncRun bails on its own if the run's items aren't all
         // terminal yet, so re-dispatching it is always safe.
+        // Ids only: integration_logs carries metadata, result_data and error,
+        // none of which the dispatch below reads.
         $processingLogs = $integration->logs()
             ->forOperation('sync')
             ->where('status', 'processing')
+            ->select('id')
             ->get();
 
         if ($processingLogs->isEmpty()) {

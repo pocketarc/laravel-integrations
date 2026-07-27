@@ -5,6 +5,7 @@ All notable changes to this project are documented here. This project follows [S
 ## 6.0.1
 
 - Fix: [`integrations:find-orphans`](/reference/artisan-commands#integrations-find-orphans) selects only the id and created-at columns instead of whole rows. A model that stores payloads inline — file contents, raw API responses — loaded every byte of every 1000-row chunk to print an id and a date, and exhausted a 512MB limit before reporting anything. The model most likely to have orphans is also the one most likely to be too heavy to scan that way.
+- Fix: the same treatment for three commands that read rows to use one column of them. [`integrations:recover-webhooks`](/reference/artisan-commands#integrations-recover-webhooks) loaded every stale webhook's `payload` and `headers` to reset a status by id, on the command whose whole purpose is a backed-up queue. [`integrations:advance-cursor`](/reference/artisan-commands#integrations-advance-cursor) loaded each sync log's `metadata`, `result_data` and `error` to dispatch by id. [`integrations:list-failed-items`](/reference/artisan-commands#integrations-list-failed-items) pulled `checkpoint_value` for a table that never shows it.
 
 ## 6.0.0
 
