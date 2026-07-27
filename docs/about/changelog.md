@@ -2,6 +2,10 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 6.0.1
+
+- Fix: [`integrations:find-orphans`](/reference/artisan-commands#integrations-find-orphans) selects only the id and created-at columns instead of whole rows. A model that stores payloads inline — file contents, raw API responses — loaded every byte of every 1000-row chunk to print an id and a date, and exhausted a 512MB limit before reporting anything. The model most likely to have orphans is also the one most likely to be too heavy to scan that way.
+
 ## 6.0.0
 
 One external ID maps to exactly one local row per integration and model type, and the package now enforces that rather than assuming it. See the [upgrade guide](/about/upgrade-guide) for the migration.

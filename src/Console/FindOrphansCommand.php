@@ -83,12 +83,22 @@ class FindOrphansCommand extends Command
         $model = new $modelClass;
         $morphClass = $model->getMorphClass();
         $keyName = $model->getKeyName();
+        $createdAtColumn = $model->usesTimestamps() ? $model->getCreatedAtColumn() : null;
+
+        // Only the columns the listing prints. Selecting `*` scans a mapped
+        // model's whole row, and a model that stores payloads inline — file
+        // contents, raw API responses — then loads every byte of every chunk
+        // for a report that shows an id and a date. That is a memory limit,
+        // not a slow query: the model most likely to have orphans is also the
+        // one most likely to be too heavy to look at.
+        $columns = $createdAtColumn === null ? [$keyName] : [$keyName, $createdAtColumn];
 
         $orphans = [];
 
         $modelClass::query()
+            ->select($columns)
             ->orderBy($keyName)
-            ->chunkById(self::CHUNK, function (Collection $rows) use (&$orphans, $morphClass, $integrationId, $limit): bool {
+            ->chunkById(self::CHUNK, function (Collection $rows) use (&$orphans, $morphClass, $integrationId, $limit, $createdAtColumn): bool {
                 $keys = $rows->map(fn (Model $row): string => ModelKey::toString($row->getKey()))->all();
 
                 $mapped = $this->mappedKeys($morphClass, array_values($keys), $integrationId);
@@ -100,7 +110,7 @@ class FindOrphansCommand extends Command
                         continue;
                     }
 
-                    $createdAt = $row->getAttribute('created_at');
+                    $createdAt = $createdAtColumn === null ? null : $row->getAttribute($createdAtColumn);
                     $orphans[] = [
                         $key,
                         $createdAt instanceof \DateTimeInterface ? $createdAt->format('Y-m-d H:i:s') : '-',
