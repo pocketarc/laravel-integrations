@@ -7,6 +7,7 @@ namespace Integrations\Console;
 use Illuminate\Console\Command;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Support\Collection;
+use Integrations\Console\Concerns\ParsesLimitOption;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationMapping;
 use Integrations\Support\ModelKey;
@@ -21,6 +22,8 @@ use ReflectionClass;
  */
 class FindOrphansCommand extends Command
 {
+    use ParsesLimitOption;
+
     protected $signature = 'integrations:find-orphans
                             {model : Fully-qualified model class, e.g. "App\\Models\\ZendeskTicket"}
                             {--integration= : Only check mappings for this integration id}
@@ -29,6 +32,8 @@ class FindOrphansCommand extends Command
     protected $description = 'List rows of a mapped model that have no external ID mapping.';
 
     private const CHUNK = 1000;
+
+    private const DEFAULT_LIMIT = 50;
 
     public function handle(): int
     {
@@ -53,12 +58,12 @@ class FindOrphansCommand extends Command
             return self::FAILURE;
         }
 
-        $limit = $this->resolveLimit();
+        $limit = $this->parseLimit(self::DEFAULT_LIMIT);
         if ($limit === false) {
             return self::FAILURE;
         }
 
-        $orphans = $this->collectOrphans($modelClass, $integrationId, $limit);
+        $orphans = $this->collectOrphans($modelClass, $integrationId, $limit ?? self::DEFAULT_LIMIT);
 
         if ($orphans === []) {
             $this->info('No orphaned '.class_basename($modelClass).' rows: every one has a mapping.');
@@ -70,6 +75,7 @@ class FindOrphansCommand extends Command
         $this->newLine();
         $this->line(count($orphans).' row(s) with no external ID.');
         $this->line('Each is unreachable upstream. Restore its integration_mappings row, or merge it into the row that kept the mapping.');
+        $this->warnIfLimitReached(count($orphans), $limit ?? self::DEFAULT_LIMIT, 'orphaned rows');
 
         return self::SUCCESS;
     }
@@ -174,19 +180,6 @@ class FindOrphansCommand extends Command
 
         if (Integration::query()->whereKey((int) $option)->doesntExist()) {
             $this->error("No integration with id {$option}.");
-
-            return false;
-        }
-
-        return (int) $option;
-    }
-
-    private function resolveLimit(): int|false
-    {
-        $option = $this->option('limit');
-
-        if (! is_string($option) || ! ctype_digit($option) || (int) $option <= 0) {
-            $this->error('The --limit option must be a positive integer.');
 
             return false;
         }

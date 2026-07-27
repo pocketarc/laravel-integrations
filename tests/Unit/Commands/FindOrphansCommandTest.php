@@ -102,6 +102,35 @@ class FindOrphansCommandTest extends TestCase
         }
     }
 
+    public function test_it_says_so_when_it_stopped_at_the_limit(): void
+    {
+        // A silent cap reads as a complete answer: "2 row(s)" when there are
+        // five sends someone away thinking they've seen the whole problem.
+        for ($i = 0; $i < 5; $i++) {
+            Integration::create(['provider' => 'orphan', 'name' => "Orphan {$i}"]);
+        }
+
+        $this->artisan('integrations:find-orphans', [
+            'model' => Integration::class,
+            '--limit' => '2',
+        ])
+            ->assertSuccessful()
+            ->expectsOutputToContain('2 row(s) with no external ID')
+            ->expectsOutputToContain('Stopped at the --limit of 2');
+    }
+
+    public function test_it_stays_quiet_about_the_limit_when_it_found_everything(): void
+    {
+        Integration::create(['provider' => 'orphan', 'name' => 'Orphan']);
+
+        $this->artisan('integrations:find-orphans', [
+            'model' => Integration::class,
+            '--limit' => '50',
+        ])
+            ->assertSuccessful()
+            ->doesntExpectOutputToContain('Stopped at the --limit');
+    }
+
     public function test_it_rejects_a_class_that_is_not_a_model(): void
     {
         $this->artisan('integrations:find-orphans', ['model' => 'App\\Nope'])
