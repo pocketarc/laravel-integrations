@@ -91,12 +91,12 @@ class FindOrphansCommand extends Command
         $keyName = $model->getKeyName();
         $createdAtColumn = $model->usesTimestamps() ? $model->getCreatedAtColumn() : null;
 
-        // Only the columns the listing prints. Selecting `*` scans a mapped
-        // model's whole row, and a model that stores payloads inline — file
-        // contents, raw API responses — then loads every byte of every chunk
-        // for a report that shows an id and a date. That is a memory limit,
-        // not a slow query: the model most likely to have orphans is also the
-        // one most likely to be too heavy to look at.
+        // Only the columns the listing prints. Selecting `*` reads whole rows,
+        // so on a model that stores payloads inline (file contents, raw API
+        // responses) this loads every byte of every chunk for a report that
+        // shows an id and a date. That exhausts memory rather than running
+        // slowly, and the model most likely to have orphans is also the one
+        // most likely to be too heavy to read that way.
         $columns = $createdAtColumn === null ? [$keyName] : [$keyName, $createdAtColumn];
 
         $orphans = [];

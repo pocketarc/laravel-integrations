@@ -20,8 +20,8 @@ class RecoverWebhooksCommand extends Command
         $timeout = Config::webhookProcessingTimeout();
 
         // Ids only. resetToPending() re-checks status in its own WHERE and the
-        // job is dispatched by id, so nothing here reads the payload or headers
-        // — and this command exists for when those are backed up in bulk.
+        // job is dispatched by id, so nothing here reads the payload or
+        // headers. This command runs when those are backed up in bulk.
         $stale = IntegrationWebhook::query()
             ->staleProcessing($timeout)
             ->select('id')

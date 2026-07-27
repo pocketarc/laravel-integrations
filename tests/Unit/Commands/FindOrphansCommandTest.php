@@ -78,11 +78,11 @@ class FindOrphansCommandTest extends TestCase
 
     public function test_it_reads_only_the_columns_it_prints(): void
     {
-        // A mapped model can store payloads inline — file contents, raw API
-        // responses. Selecting `*` loads every byte of every chunk to print an
+        // A mapped model can store payloads inline (file contents, raw API
+        // responses). Selecting `*` loads every byte of every chunk to print an
         // id and a date, which exhausts memory on exactly the model most likely
-        // to need this command. Integration stands in: its credentials and
-        // metadata columns must not be in the scan.
+        // to need this command. Integration stands in here: its credentials and
+        // metadata columns must not appear in the scan.
         Integration::create(['provider' => 'orphan', 'name' => 'Orphan']);
 
         $scans = [];

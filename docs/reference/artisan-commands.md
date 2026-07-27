@@ -77,7 +77,7 @@ php artisan integrations:list-failed-items --limit=500
 
 Prints a table from `integration_sync_items` (id, integration, event, external id, error, attempts, created). A failed item holds the cursor at it until it's resolved: retry the underlying job with `php artisan queue:retry <uuid>`, or skip it (below).
 
-`--limit` defaults to 50, and the command says when it stopped there rather than letting a truncated list read as the whole picture.
+`--limit` defaults to 50. When the command stops at the limit it prints a notice, so a truncated list is not mistaken for the whole set.
 
 ## integrations:find-orphans
 
@@ -115,7 +115,7 @@ php artisan integrations:advance-cursor 7 --limit=100
 
 Dispatches `FinaliseSyncRun` for each unreconciled run. `FinaliseSyncRun` bails on its own if a run's items aren't all terminal yet, so this is always safe to run. Useful as a manual nudge if a `finally` callback was lost (e.g. a queue outage).
 
-`--limit` bounds how many runs are dispatched at once, for a backlog large enough that you'd rather not queue all of it in one go. Unlike the listing commands it has no default: capping this one silently would leave runs unreconciled, which is the problem it exists to fix.
+Use `--limit` to bound how many runs are dispatched at once, for a backlog you would rather not queue in one go. There is no default limit, unlike the listing commands. A silent cap here would leave sync runs unreconciled, which is the condition this command clears.
 
 ## integrations:list
 
