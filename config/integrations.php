@@ -127,6 +127,26 @@ return [
         // SyncIntegration logs a warning so you can narrow the sync window or
         // page the provider more aggressively.
         'max_items_per_batch' => 10000,
+
+        // How long (seconds) an item may sit in flight before its queue job is
+        // presumed gone and the item is marked failed, so the run can finalise and
+        // the integration can sync again. Clamped to at least item_retry_window
+        // plus an hour, because a rate-limited item stays in flight that long by
+        // design.
+        'item_reclaim_after' => 43200, // 12 hours
+
+        // Ceiling on the multiplier applied to a failing integration's sync
+        // interval. Each further run that finalises with failures doubles the
+        // multiplier up to this ceiling; the first clean run clears it.
+        'failure_backoff_max_multiplier' => 16,
+
+        // Consecutive failed runs for one external ID before SyncItemStuck fires.
+        'stuck_item_after_runs' => 5,
+
+        // Missed sync intervals before an integration counts as stale. Counted
+        // against sync_interval_minutes rather than the backed-off next_sync_at,
+        // so the signal stays independent of failure_backoff_max_multiplier.
+        'stale_after_intervals' => 10,
     ],
 
     'retry' => [

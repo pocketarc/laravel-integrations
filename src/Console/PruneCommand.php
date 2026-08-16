@@ -72,9 +72,34 @@ class PruneCommand extends Command
     {
         $cutoff = now()->subDays($days);
 
+        // Narrow to the integrations that actually have an incident old enough
+        // to close before loading any of them: staleness is a computed value,
+        // so those rows have to be read, and there are far fewer incidents past
+        // the threshold than there are healthy integrations.
+        $candidateIds = IntegrationIncident::query()
+            ->open()
+            ->where('opened_at', '<', $cutoff)
+            ->distinct()
+            ->pluck('integration_id');
+
+        if ($candidateIds->isEmpty()) {
+            return 0;
+        }
+
+        // A sync-stale integration is Healthy by health_status, so the sweep
+        // would close the incident that records the staleness. Staleness can
+        // also outlast the threshold, so age alone proves nothing here.
         $healthyIds = Integration::query()
+            ->whereIn('id', $candidateIds)
             ->where('health_status', HealthStatus::Healthy->value)
-            ->select('id');
+            ->get(['id', 'is_active', 'sync_interval_minutes', 'last_synced_at', 'created_at'])
+            ->reject(static fn (Integration $integration): bool => $integration->isSyncStale())
+            ->pluck('id')
+            ->all();
+
+        if ($healthyIds === []) {
+            return 0;
+        }
 
         return IntegrationIncident::query()
             ->open()

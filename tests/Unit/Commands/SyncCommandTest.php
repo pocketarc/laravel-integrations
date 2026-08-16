@@ -4,7 +4,10 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit\Commands;
 
+use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
+use Integrations\Events\SyncBecameStale;
+use Integrations\Events\SyncStalenessRecovered;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\SyncIntegration;
 use Integrations\Models\Integration;
@@ -88,5 +91,59 @@ class SyncCommandTest extends TestCase
         $this->artisan('integrations:sync')->assertSuccessful();
 
         Queue::assertPushed(SyncIntegration::class, fn (SyncIntegration $job) => $job->timeout === 1234);
+    }
+
+    public function test_announces_a_stale_integration_exactly_once(): void
+    {
+        Queue::fake();
+        Event::fake([SyncBecameStale::class]);
+
+        $stale = $this->staleIntegration();
+
+        $this->artisan('integrations:sync')->assertSuccessful();
+        $this->artisan('integrations:sync')->assertSuccessful();
+
+        Event::assertDispatchedTimes(SyncBecameStale::class, 1);
+        $this->assertNotNull($stale->refresh()->sync_stale_alerted_at);
+    }
+
+    public function test_announces_recovery_once_and_re_arms(): void
+    {
+        Queue::fake();
+        Event::fake([SyncBecameStale::class, SyncStalenessRecovered::class]);
+
+        $stale = $this->staleIntegration();
+        $this->artisan('integrations:sync')->assertSuccessful();
+
+        $stale->markSynced(now());
+        $this->artisan('integrations:sync')->assertSuccessful();
+        $this->artisan('integrations:sync')->assertSuccessful();
+
+        Event::assertDispatchedTimes(SyncStalenessRecovered::class, 1);
+        $this->assertNull($stale->refresh()->sync_stale_alerted_at);
+    }
+
+    public function test_evaluates_staleness_for_an_integration_that_is_not_due(): void
+    {
+        Queue::fake();
+        Event::fake([SyncBecameStale::class]);
+
+        $stale = $this->staleIntegration();
+        $stale->update(['next_sync_at' => now()->addDay()]);
+
+        $this->artisan('integrations:sync')->assertSuccessful();
+
+        Event::assertDispatched(SyncBecameStale::class);
+    }
+
+    private function staleIntegration(): Integration
+    {
+        return Integration::create([
+            'provider' => 'test',
+            'name' => 'Stale',
+            'sync_interval_minutes' => 15,
+            'last_synced_at' => now()->subDays(12),
+            'next_sync_at' => now()->subMinute(),
+        ]);
     }
 }

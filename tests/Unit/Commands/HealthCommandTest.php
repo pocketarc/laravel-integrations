@@ -65,6 +65,49 @@ class HealthCommandTest extends TestCase
             ->expectsOutputToContain('Acme <fg=red>Corp</>');
     }
 
+    public function test_flags_a_stale_integration_while_health_stays_green(): void
+    {
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Wedged',
+            'health_status' => HealthStatus::Healthy,
+            'sync_interval_minutes' => 15,
+            'last_synced_at' => now()->subDays(12),
+        ]);
+
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('STALE');
+    }
+
+    public function test_shows_a_scheduled_integration_as_on_schedule(): void
+    {
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Fine',
+            'health_status' => HealthStatus::Healthy,
+            'sync_interval_minutes' => 15,
+            'last_synced_at' => now()->subMinutes(5),
+        ]);
+
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('on schedule');
+    }
+
+    public function test_shows_an_unscheduled_integration_as_not_scheduled(): void
+    {
+        Integration::create([
+            'provider' => 'test',
+            'name' => 'Manual',
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        $this->artisan('integrations:health')
+            ->assertSuccessful()
+            ->expectsOutputToContain('not scheduled');
+    }
+
     public function test_empty_state(): void
     {
         $this->artisan('integrations:health')

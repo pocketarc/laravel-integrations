@@ -8,6 +8,7 @@ use Illuminate\Console\Command;
 use Integrations\Console\Concerns\ParsesLimitOption;
 use Integrations\Jobs\FinaliseSyncRun;
 use Integrations\Models\Integration;
+use Integrations\Sync\StaleItemReclaimer;
 
 class AdvanceCursorCommand extends Command
 {
@@ -20,7 +21,8 @@ class AdvanceCursorCommand extends Command
      */
     protected $signature = 'integrations:advance-cursor
                             {integration : The integration id}
-                            {--limit= : Maximum sync runs to re-finalise (default: all)}';
+                            {--limit= : Maximum sync runs to re-finalise (default: all)}
+                            {--reclaim-stale : Mark abandoned in-flight items as failed first, so their runs can finalise}';
 
     protected $description = 'Re-finalise any unreconciled sync runs for an integration, advancing the cursor past resolved items.';
 
@@ -42,6 +44,10 @@ class AdvanceCursorCommand extends Command
             $this->error("Integration #{$integrationId} not found.");
 
             return self::FAILURE;
+        }
+
+        if ($this->option('reclaim-stale') === true) {
+            $this->reclaimStale($integration);
         }
 
         // A sync run whose log is still "processing" hasn't been reconciled.
@@ -79,5 +85,14 @@ class AdvanceCursorCommand extends Command
         $this->warnIfLimitReached($processingLogs->count(), $limit, 'unreconciled runs');
 
         return self::SUCCESS;
+    }
+
+    private function reclaimStale(Integration $integration): void
+    {
+        $reclaimed = (new StaleItemReclaimer)->reclaim($integration);
+
+        $this->info($reclaimed === []
+            ? 'No abandoned sync items to reclaim.'
+            : sprintf('Reclaimed abandoned items across %d sync run(s).', count($reclaimed)));
     }
 }

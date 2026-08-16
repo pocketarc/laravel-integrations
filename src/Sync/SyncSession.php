@@ -26,6 +26,11 @@ class SyncSession
     /** @var list<PendingSyncItem> */
     private array $items = [];
 
+    /** @var array<string, true> */
+    private array $seen = [];
+
+    private int $duplicatesDropped = 0;
+
     public function __construct(
         private readonly Integration $integration,
         private readonly ?int $syncLogId = null,
@@ -58,12 +63,37 @@ class SyncSession
      * Hand an item to the framework for syncing. `$checkpointValue` is the
      * cursor token this item represents (e.g. its `updated_at`); the
      * framework reduces the run's completed checkpoints into the next
-     * `sync_cursor` via the provider's `reduceCheckpoints()`. `$externalId`
-     * is optional and only used for ops/debugging visibility.
+     * `sync_cursor` via the provider's `reduceCheckpoints()`.
+     *
+     * Passing `$externalId` also deduplicates: a second item with the same
+     * external ID and event class is dropped, so a provider paging an
+     * inclusive cursor cannot put two jobs for one record into the same batch.
+     *
+     * The event class is part of the identity, so different work for one record
+     * (a created and an updated event, say) still produces two items. An item
+     * with no external ID is never deduplicated.
      */
     public function dispatch(SyncItemEvent $event, mixed $checkpointValue = null, ?string $externalId = null): void
     {
+        if ($externalId !== null) {
+            $key = $event::class."\0".$externalId;
+
+            if (array_key_exists($key, $this->seen)) {
+                $this->duplicatesDropped++;
+
+                return;
+            }
+
+            $this->seen[$key] = true;
+        }
+
         $this->items[] = new PendingSyncItem($event, $checkpointValue, $externalId);
+    }
+
+    /** How many duplicate items this run's provider emitted. */
+    public function duplicatesDropped(): int
+    {
+        return $this->duplicatesDropped;
     }
 
     public function isEmpty(): bool

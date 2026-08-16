@@ -12,7 +12,23 @@ This publishes the notification class to your app, where you can customize the c
 
 ## How it works
 
-The `SendHealthNotification` listener is automatically registered and listens for `IntegrationHealthChanged` events. When triggered, it sends the `IntegrationHealthStatusNotification` to the configured notifiable.
+`SendHealthNotification` listens for `IntegrationHealthChanged` and sends `IntegrationHealthStatusNotification` to the notifiables you pass it. Register it yourself after publishing, with the recipients you want. The package publishes the stub without registering it, because the recipients are specific to your application.
+
+```php
+Event::listen(new SendHealthNotification([$opsTeam]));
+```
+
+## Notifying on sync staleness
+
+`IntegrationHealthChanged` covers the provider's API failing. It does not cover an integration that has stopped syncing while its API calls still succeed, because its health stays `healthy` throughout. For that, listen for [`SyncBecameStale`](/reference/events#syncbecamestale) and its counterpart [`SyncStalenessRecovered`](/reference/events#syncstalenessrecovered):
+
+```php
+Event::listen(function (SyncBecameStale $event): void {
+    Notification::send($opsTeam, new SyncStaleNotification($event->integration));
+});
+```
+
+Each fires once per episode rather than on every scheduler tick, so one alert is raised and one resolution follows it. See [sync staleness](/core-concepts/health-monitoring#sync-staleness).
 
 ## Customization
 

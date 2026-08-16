@@ -162,6 +162,33 @@ Dispatched when a sync item exhausts its retries.
 | `item` | `IntegrationSyncItem` | The failed item |
 | `exception` | `Throwable` | The failure cause |
 
+### SyncItemStuck
+
+Dispatched when one external ID has failed `sync.stuck_item_after_runs` consecutive runs with no success in between. It carries the record that blocks the cursor, while `SyncItemFailed` reports one failed attempt. See [stuck items](/features/scheduled-syncs#stuck-items).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `item` | `IntegrationSyncItem` | This run's failed row for the stuck record |
+| `consecutiveFailedRuns` | `int` | Number of consecutive runs the external ID has failed |
+
+### SyncBecameStale
+
+Dispatched by `integrations:sync` when an integration passes the staleness threshold. One event per episode. See [sync staleness](/core-concepts/health-monitoring#sync-staleness).
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+| `secondsSinceLastCleanSync` | `int` | Seconds since the last clean sync, or since the integration was created if it has never synced |
+
+### SyncStalenessRecovered
+
+Dispatched when a stale integration syncs cleanly again. It closes the episode that `SyncBecameStale` opened.
+
+| Property | Type | Description |
+|----------|------|-------------|
+| `integration` | `Integration` | The integration |
+
 ## Webhooks
 
 ### WebhookReceived

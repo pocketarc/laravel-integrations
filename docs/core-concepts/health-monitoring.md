@@ -54,11 +54,26 @@ $summary->operations['sync'];     // OperationFailureBreakdown: total / successf
 
 The headline `failureRate()` counts every failed request; use `byFailureClass` to derive an upstream-only rate, since only `FailureClass::Upstream` degrades health. The breakdown draws from `integration_requests` (HTTP-level failures) and `integration_logs` (operation-level outcomes). `failure_class` is persisted on each request row, so the per-class breakdown is queryable without re-classifying.
 
+## Sync staleness {#sync-staleness}
+
+`health_status` reflects whether the provider's API is answering, which is not the same as whether syncing is happening. An integration can fetch successfully and then fail while processing what it fetched. Every pass calls `recordSuccess()`, so `consecutive_failures` sits at zero and `health_status` stays `healthy` while nothing syncs. Health alone never reports that condition, however long it lasts.
+
+Staleness is the separate signal for that. An active integration is stale when its last clean sync is older than `sync_interval_minutes` multiplied by [`sync.stale_after_intervals`](/reference/configuration#sync). For an integration that has never synced, the age is measured from when it was created, so a newly connected one is not stale before its first run.
+
+```php
+$integration->isSyncStale();    // bool
+$integration->syncStaleness();  // ?int, seconds since the last clean sync
+```
+
+`integrations:health` and `integrations:list` both flag it, and `integrations:sync` emits [`SyncBecameStale`](/reference/events#syncbecamestale) once per episode, with [`SyncStalenessRecovered`](/reference/events#syncstalenessrecovered) when a clean sync resolves it. The open/closed state is stored in a `sync_stale_alerted_at` column rather than a cache entry, so nothing expires or is flushed between the two events.
+
+Staleness deliberately stays out of the `HealthStatus` enum. `recordSuccess()` sets `health_status` to `Healthy` on every successful request, so a staleness degradation written there would be overwritten within seconds. Folding the two together would also blur two failures that need different responses: the provider is failing, or your own code is failing on data the provider returned correctly.
+
 ## Incident history {#incident-history}
 
-Health transitions and circuit trips are events; nothing persisted them, and circuit state is cache-only and lost on `cache:clear`. The package now records a durable `integration_incidents` audit from its own `IntegrationHealthChanged`, `CircuitOpened`, `CircuitClosed`, and `IntegrationDisabled` events.
+Health transitions and circuit trips are events, and circuit state is cache-only and lost on `cache:clear`. The package records a durable `integration_incidents` audit from its own `IntegrationHealthChanged`, `CircuitOpened`, `CircuitClosed`, `IntegrationDisabled`, `SyncBecameStale`, and `SyncStalenessRecovered` events.
 
-There's **one open incident per integration**: health degradation and circuit trips fold into the same row, which tracks the worst severity reached (`peak_severity`). It closes when health returns to `Healthy` (a circuit-close only closes it once health agrees). Operator overrides (`forced_open` / `forced_closed`) are deliberate actions, not detected failures, so they neither open nor close an incident.
+There's **one open incident per integration**: health degradation, circuit trips, and sync staleness fold into the same row. The row tracks the worst severity reached (`peak_severity`) and records which signal opened it in `source` (`health`, `circuit`, or `sync`). It closes only when every signal is clear: health back to `Healthy` and the sync no longer stale. Health alone is not enough, because a stuck integration keeps making successful requests. Operator overrides (`forced_open` / `forced_closed`) are deliberate actions, not detected failures, so they neither open nor close an incident.
 
 ```php
 $integration->has_open_incident;       // bool (accessor; reads the loaded incidents relation)
@@ -66,7 +81,7 @@ $integration->current_incident;        // ?IntegrationIncident
 $integration->incidents()->since(now()->subWeek())->get();
 ```
 
-`integrations:prune` sweeps closed incidents (`pruning.incidents_days`, default 365) and, as a safety net, auto-closes incidents left open past `pruning.incidents_stale_after_days` for an integration that's currently healthy. Turn the whole audit off with `observability.incidents_enabled`.
+`integrations:prune` sweeps closed incidents (`pruning.incidents_days`, default 365) and, as a safety net, auto-closes incidents left open past `pruning.incidents_stale_after_days` for an integration that's currently healthy. A sync-stale integration is exempt from that sweep: it counts as healthy by `health_status`, and staleness can outlast the threshold, so closing its incident on age would hide a condition that is still current. Turn the whole audit off with `observability.incidents_enabled`.
 
 ## Health checks
 

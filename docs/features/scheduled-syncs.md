@@ -190,7 +190,26 @@ $integration->update([
 
 If `sync_interval_minutes` is null, the provider's `defaultSyncInterval()` is used. If neither is set, the integration is not scheduled for sync.
 
-After a run reconciles, `markSynced()` sets `last_synced_at` to now and computes the next `next_sync_at`.
+Once a run is reconciled, the two sync timestamps move independently:
+
+- `next_sync_at` advances on every finalised run, clean or not. `dueForSync()` matches `next_sync_at <= now()`, so a run that leaves it where it was makes the integration due on every scheduler tick.
+- `last_synced_at` advances only on a run where every item succeeded, so it records the last time the integration synced cleanly. [Sync staleness](/core-concepts/health-monitoring#sync-staleness) is measured from it.
+
+## When runs keep failing {#failure-backoff}
+
+`consecutive_sync_failures` counts runs that finalised with at least one failed item, and resets to zero on the first clean run. While it is above zero, `next_sync_at` is pushed out by doubling:
+
+| Consecutive failed runs | Interval multiplier | Example (15-min base) |
+|-------------------------|---------------------|-----------------------|
+| 0 (clean)               | 1x                  | Every 15 minutes      |
+| 1                       | 1x                  | Every 15 minutes      |
+| 2                       | 2x                  | Every 30 minutes      |
+| 3                       | 4x                  | Every hour            |
+| 5+                      | Capped at 16x       | Every 4 hours         |
+
+The cap comes from [`sync.failure_backoff_max_multiplier`](/reference/configuration#sync). The first failure gets the plain interval, so an isolated bad run costs nothing.
+
+The cursor cannot advance past an unresolved item, so each further run re-enumerates a window that keeps growing. Without the backoff, one permanently-failing item leaves the integration due on every scheduler tick, and the same failing sync repeats against the provider's API until the item is resolved.
 
 ## Health-aware backoff {#health-aware-backoff}
 
@@ -202,6 +221,8 @@ The sync scheduler respects health status. Degraded integrations sync at a reduc
 | Degraded      | 2x (configurable)   | Every 10 minutes          |
 | Failing       | 10x (configurable)  | Every 50 minutes          |
 | Disabled      | Not synced           | Requires manual re-enable |
+
+This backoff is independent of the failure backoff above. A run starts only once both intervals have elapsed, so the later of the two applies, and the two never compound. Health-aware backoff is measured from `last_synced_at`, which a failing run does not move, so it has no effect while runs keep failing. The `next_sync_at` backoff covers that case.
 
 ## Recovering failed items
 
@@ -226,7 +247,41 @@ php artisan integrations:skip-sync-item <id>
 
 A retried item that succeeds, or an item that's skipped, lets the run reconcile and the cursor catch up automatically. `php artisan integrations:advance-cursor <integration>` re-runs the reconciliation for any sync run still stuck in `processing`, if you need to nudge it manually.
 
-Items stuck at `processing` usually clear themselves once the queue's visibility timeout reclaims the job and a retry runs. If they don't, check `failed_jobs` with `queue:failed` and `queue:retry`; for an abandoned row, update its status to `failed` directly so `skip-sync-item` can take over.
+`integrations:list-failed-items` shows the sync-item rows. `php artisan queue:failed` shows the underlying jobs, with the exception and stack trace behind each failure. Use `queue:failed` to find the UUID for `queue:retry` and to read the exception.
+
+A row at `processing` is not necessarily failed. It may be a rate-limited item that the queue deferred, or one whose job is still behind a backlog. Both clear on their own. For a row whose job no longer exists, see [abandoned items](#abandoned-items) below.
+
+## When one item keeps failing {#stuck-items}
+
+An item that fails in run after run blocks everything behind it, because the cursor cannot advance past it. [`SyncItemStuck`](/reference/events#syncitemstuck) fires once an external ID has failed [`sync.stuck_item_after_runs`](/reference/configuration#sync) runs in a row with no success in between. It carries the item, so an alert can name the record to fix.
+
+Use `SyncItemFailed` for a single failed attempt, and `SyncItemStuck` for the record that blocks the cursor. The streak is counted across runs rather than from the row's `attempts` column: each run inserts fresh rows, so `attempts` never accumulates. A later success or skip resets the streak, and the event can fire again after that.
+
+An item with no external ID never contributes to a streak, because nothing identifies it across runs.
+
+## Abandoned items {#abandoned-items}
+
+An item is abandoned when its row is still marked as in flight but no queue job remains to run it. A queue worker restarted mid-batch leaves rows in that state. The preflight check finds such a row on every later run, so the integration stops syncing until the row reaches a terminal state.
+
+The next run reclaims abandoned rows. Rows still in flight past [`sync.item_reclaim_after`](/reference/configuration#sync) are marked `failed`, with an error message that records the reclaim, and their run is re-finalised. That closes the run log and lets the schedule move on. The cursor stays put, so the following run re-enumerates the same window and redoes the work.
+
+::: warning Do not skip a reclaimed item
+A reclaimed row never ran, so `integrations:skip-sync-item` would advance the cursor past work that has not happened. The row's `error` column records the reclaim. Leave the row alone and let the next run re-enumerate it.
+:::
+
+The threshold is long, and never applies below `item_retry_window` plus an hour, because a rate-limited item is released back onto the queue and sits in flight for hours by design. To reclaim the rows now rather than waiting the threshold out:
+
+```bash
+php artisan integrations:advance-cursor <integration> --reclaim-stale
+```
+
+## Duplicate items in one run {#duplicate-items}
+
+A provider that pages an inclusive cursor (one page's end time becomes the next page's start time) re-emits the record on that boundary. `SyncSession::dispatch()` keeps the first copy and drops the repeat, so one record produces one job.
+
+Deduplication keys on the external ID and the event class together, so a provider that emits genuinely different work for one record still produces both items. Deduplication needs an `$externalId`. An item dispatched without one is never deduplicated.
+
+The count of dropped repeats is recorded on the run's log as `metadata['duplicates_dropped']` and logged as a warning. Both are diagnostics, not a fix: the duplicate fetch still happened upstream, and correcting that belongs in the provider's paging.
 
 ## Sync timeline
 
@@ -254,6 +309,10 @@ Its `metadata` also carries `success_count` and `failure_count` once the run rec
     'item_backoff' => [10, 30, 120, 300, 900], // seconds between item retries
     'item_retry_window' => 21600,   // absolute retry window per item, incl. rate-limit deferrals (6h)
     'max_items_per_batch' => 10000, // soft cap; a larger run logs a warning
+    'item_reclaim_after' => 43200,  // in-flight time before an item is presumed abandoned (12h)
+    'failure_backoff_max_multiplier' => 16, // ceiling on the next_sync_at backoff
+    'stuck_item_after_runs' => 5,   // consecutive failed runs before SyncItemStuck fires
+    'stale_after_intervals' => 10,  // missed intervals before an integration counts as stale
 ],
 ```
 

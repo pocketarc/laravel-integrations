@@ -10,7 +10,6 @@ use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Queue\Middleware\WithoutOverlapping;
 use Illuminate\Support\Facades\Bus;
-use Illuminate\Support\Facades\DB;
 use Illuminate\Support\Facades\Log;
 use Integrations\Contracts\HasIncrementalSync;
 use Integrations\Contracts\HasScheduledSync;
@@ -20,6 +19,7 @@ use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationSyncItem;
 use Integrations\Support\Config;
 use Integrations\Support\IntegrationContext;
+use Integrations\Sync\StaleItemReclaimer;
 use Integrations\Sync\SyncResult;
 use Integrations\Sync\SyncSession;
 use RuntimeException;
@@ -75,17 +75,23 @@ class SyncIntegration implements ShouldQueue
             return;
         }
 
-        $this->cleanupOrphanedItems($integration);
+        if ($this->reclaimStaleItems($integration)) {
+            return;
+        }
 
         // A previous run's batch may still be processing items. Don't pile a
         // second batch on top of it; the next scheduled tick will try again.
-        $inFlight = IntegrationSyncItem::query()
+        $inFlightSince = IntegrationSyncItem::query()
             ->forIntegration($integration->id)
             ->inFlight()
-            ->exists();
+            ->min('created_at');
 
-        if ($inFlight) {
-            Log::info("Sync for integration '{$integration->name}' skipped: a previous batch is still in flight.");
+        if ($inFlightSince !== null) {
+            Log::warning(sprintf(
+                "Sync for integration '%s' skipped: a previous batch has been in flight since %s.",
+                $integration->name,
+                is_string($inFlightSince) ? $inFlightSince : 'an unknown time',
+            ));
 
             return;
         }
@@ -127,7 +133,12 @@ class SyncIntegration implements ShouldQueue
         }
 
         $requestIds = $integration->clearSyncContext();
-        $log->update(['metadata' => ['request_ids' => $requestIds]]);
+        $log->update(['metadata' => [
+            'request_ids' => $requestIds,
+            'duplicates_dropped' => $session->duplicatesDropped(),
+        ]]);
+
+        $this->warnAboutDuplicates($integration, $session);
 
         if ($session->isEmpty()) {
             $this->finaliseEmptyRun($integration, $log, $requestIds);
@@ -136,6 +147,23 @@ class SyncIntegration implements ShouldQueue
         }
 
         $this->dispatchBatch($integration, $log, $session);
+    }
+
+    private function warnAboutDuplicates(Integration $integration, SyncSession $session): void
+    {
+        $dropped = $session->duplicatesDropped();
+
+        if ($dropped === 0) {
+            return;
+        }
+
+        Log::warning(sprintf(
+            "Sync for integration '%s' enumerated %d duplicate item(s), which were dropped. "
+            .'The provider emitted the same external ID more than once in this run. A cursor '
+            .'paged on an inclusive boundary is the usual cause.',
+            $integration->name,
+            $dropped,
+        ));
     }
 
     /**
@@ -254,82 +282,16 @@ class SyncIntegration implements ShouldQueue
     }
 
     /**
-     * Remove sync-item rows whose batch was never dispatched.
-     *
-     * A null `batch_id` is ambiguous: the run may have crashed between
-     * inserting the rows and dispatching the batch (truly orphaned, nothing
-     * will ever process these), or after dispatch but before stamping
-     * `batch_id` back onto the rows (the `ProcessSyncItem` jobs and the
-     * `finally` callback still exist, so the run reconciles on its own).
-     * Deleting the second kind would drop items whose jobs are only waiting
-     * on a backed-up queue.
-     *
-     * Tell them apart by looking each run's batch up in `job_batches`: if
-     * it's there, the batch was dispatched and the rows are not orphans.
+     * @return bool whether anything was reclaimed
      */
-    private function cleanupOrphanedItems(Integration $integration): void
+    private function reclaimStaleItems(Integration $integration): bool
     {
-        $candidates = IntegrationSyncItem::query()
-            ->forIntegration($integration->id)
-            ->inFlight()
-            ->whereNull('batch_id')
-            ->where('created_at', '<', now()->subSeconds(Config::syncJobTimeout()))
-            ->get(['id', 'sync_log_id']);
+        $logIds = (new StaleItemReclaimer)->reclaim($integration);
 
-        if ($candidates->isEmpty()) {
-            return;
+        foreach ($logIds as $logId) {
+            FinaliseSyncRun::dispatchFor($integration->id, $logId, $integration->provider);
         }
 
-        $dispatchedLogIds = $this->syncLogIdsWithABatch(
-            $integration->id,
-            $candidates->pluck('sync_log_id')->unique()->values()->all(),
-        );
-
-        $orphanIds = $candidates
-            ->whereNotIn('sync_log_id', $dispatchedLogIds)
-            ->pluck('id')
-            ->all();
-
-        if ($orphanIds !== []) {
-            IntegrationSyncItem::query()->whereIn('id', $orphanIds)->delete();
-        }
-    }
-
-    /**
-     * Of the given sync-run log ids, the ones whose batch made it into
-     * `job_batches` (so the batch was dispatched and its jobs exist).
-     *
-     * @param  array<int, mixed>  $syncLogIds
-     * @return list<int>
-     */
-    private function syncLogIdsWithABatch(int $integrationId, array $syncLogIds): array
-    {
-        $logIdByName = [];
-        foreach ($syncLogIds as $syncLogId) {
-            if (is_int($syncLogId)) {
-                $logIdByName["integration-sync-{$integrationId}-{$syncLogId}"] = $syncLogId;
-            }
-        }
-
-        if ($logIdByName === []) {
-            return [];
-        }
-
-        $connection = config('queue.batching.database');
-        $table = config('queue.batching.table', 'job_batches');
-
-        $names = DB::connection(is_string($connection) ? $connection : null)
-            ->table(is_string($table) ? $table : 'job_batches')
-            ->whereIn('name', array_keys($logIdByName))
-            ->pluck('name');
-
-        $dispatched = [];
-        foreach ($names as $name) {
-            if (is_string($name) && array_key_exists($name, $logIdByName)) {
-                $dispatched[] = $logIdByName[$name];
-            }
-        }
-
-        return $dispatched;
+        return $logIds !== [];
     }
 }

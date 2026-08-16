@@ -206,6 +206,44 @@ final class Config
         return self::boundedInt(config('integrations.sync.max_items_per_batch', 10_000), 10_000, 1);
     }
 
+    /**
+     * How long (seconds) an item may sit in flight before its queue job is
+     * presumed gone and the item is marked failed. Never less than
+     * syncItemRetryWindow() plus an hour.
+     */
+    public static function syncItemReclaimAfter(): int
+    {
+        $configured = self::boundedInt(config('integrations.sync.item_reclaim_after', 43_200), 43_200, 1);
+
+        return max($configured, self::syncItemRetryWindow() + 3600);
+    }
+
+    /**
+     * Ceiling on the multiplier applied to sync_interval_minutes while runs
+     * keep finalising with failures.
+     */
+    public static function syncFailureBackoffMaxMultiplier(): int
+    {
+        return self::boundedInt(config('integrations.sync.failure_backoff_max_multiplier', 16), 16, 1);
+    }
+
+    /**
+     * Consecutive failed runs for one external ID before SyncItemStuck fires.
+     */
+    public static function syncStuckItemAfterRuns(): int
+    {
+        return self::boundedInt(config('integrations.sync.stuck_item_after_runs', 5), 5, 1);
+    }
+
+    /**
+     * How many sync intervals an integration may go without a clean run before
+     * it counts as stale.
+     */
+    public static function syncStaleAfterIntervals(): int
+    {
+        return self::boundedInt(config('integrations.sync.stale_after_intervals', 10), 10, 1);
+    }
+
     public static function rateLimitMaxWaitSeconds(): int
     {
         return self::boundedInt(config('integrations.rate_limiting.max_wait_seconds', 10), 10, 0);

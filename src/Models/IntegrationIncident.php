@@ -54,6 +54,8 @@ class IntegrationIncident extends Model
 
     public const SOURCE_CIRCUIT = 'circuit';
 
+    public const SOURCE_SYNC = 'sync';
+
     /** @var array<string> */
     protected $guarded = [];
 

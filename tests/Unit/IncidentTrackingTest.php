@@ -10,6 +10,8 @@ use Integrations\Events\CircuitClosed;
 use Integrations\Events\CircuitOpened;
 use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
+use Integrations\Events\SyncBecameStale;
+use Integrations\Events\SyncStalenessRecovered;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationIncident;
@@ -189,6 +191,63 @@ class IncidentTrackingTest extends TestCase
         } finally {
             Model::preventLazyLoading(false);
         }
+    }
+
+    public function test_sync_staleness_opens_an_incident(): void
+    {
+        SyncBecameStale::dispatch($this->staleIntegration(), 1_036_800);
+
+        $incident = IntegrationIncident::query()->forIntegration($this->integration->id)->open()->first();
+
+        $this->assertNotNull($incident);
+        $this->assertSame(IntegrationIncident::SOURCE_SYNC, $incident->source);
+        $this->assertSame('sync_stale', $incident->reason);
+    }
+
+    public function test_a_health_recovery_does_not_close_an_incident_while_the_sync_is_stale(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        IntegrationHealthChanged::dispatch($stale, HealthStatus::Degraded, HealthStatus::Healthy);
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    public function test_the_incident_closes_once_the_sync_recovers(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        $stale->markSynced(now());
+        SyncStalenessRecovered::dispatch($stale->refresh());
+
+        $this->assertFalse($this->reloaded()->has_open_incident);
+    }
+
+    public function test_prune_does_not_auto_close_a_stale_integrations_incident(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    private function staleIntegration(): Integration
+    {
+        $this->integration->update([
+            'sync_interval_minutes' => 15,
+            'last_synced_at' => now()->subDays(12),
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        return $this->integration->refresh();
     }
 
     /**
