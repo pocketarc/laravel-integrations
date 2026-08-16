@@ -107,10 +107,20 @@ class PruneCommand extends Command
             return 0;
         }
 
+        // Re-read the marker as part of the UPDATE rather than trusting the
+        // check above. The scheduler runs every minute and can mark one of
+        // these stale in between, and closing an incident whose marker is set
+        // strands it: openStaleness() only fires on a null marker, so nothing
+        // would reopen one for that episode.
+        $stillUnmarked = Integration::query()
+            ->whereIn('id', $healthyIds)
+            ->whereNull('sync_stale_alerted_at')
+            ->select('id');
+
         return IntegrationIncident::query()
             ->open()
             ->where('opened_at', '<', $cutoff)
-            ->whereIn('integration_id', $healthyIds)
+            ->whereIn('integration_id', $stillUnmarked)
             ->update([
                 'status' => IntegrationIncident::STATUS_CLOSED,
                 'closed_at' => now(),

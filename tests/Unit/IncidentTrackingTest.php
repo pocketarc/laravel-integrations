@@ -5,6 +5,8 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\CircuitClosed;
 use Integrations\Events\CircuitOpened;
@@ -256,6 +258,45 @@ class IncidentTrackingTest extends TestCase
 
         $this->artisan('integrations:prune')->assertSuccessful();
 
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    public function test_prune_rechecks_the_marker_before_closing(): void
+    {
+        // The scheduler runs every minute, so it can mark an integration stale
+        // between the sweep selecting candidates and closing their incidents.
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        // Fresh and unmarked, so the sweep selects it.
+        $this->integration->update([
+            'last_synced_at' => now(),
+            'sync_stale_alerted_at' => null,
+        ]);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $integrationId = $this->integration->id;
+        $table = $this->integration->getTable();
+        $marked = false;
+
+        // Write the marker the moment the candidate query has run, standing in
+        // for a concurrent integrations:sync.
+        DB::listen(function (QueryExecuted $query) use (&$marked, $integrationId, $table): void {
+            if ($marked || ! str_contains($query->sql, 'sync_stale_alerted_at')) {
+                return;
+            }
+
+            $marked = true;
+
+            DB::table($table)->where('id', $integrationId)->update(['sync_stale_alerted_at' => now()]);
+        });
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($marked, 'Expected the candidate query to read the staleness marker.');
         $this->assertTrue($this->reloaded()->has_open_incident);
     }
 
