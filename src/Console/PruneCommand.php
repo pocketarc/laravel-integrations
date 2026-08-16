@@ -92,6 +92,12 @@ class PruneCommand extends Command
         $healthyIds = Integration::query()
             ->whereIn('id', $candidateIds)
             ->where('health_status', HealthStatus::Healthy->value)
+            // Two staleness guards, covering different moments. The marker says
+            // the integration was stale as of the last scheduler tick, and an
+            // incident closed while it is still set could never be reopened,
+            // because openStaleness() only fires on a null marker. The accessor
+            // then catches an integration that has gone stale since that tick.
+            ->whereNull('sync_stale_alerted_at')
             ->get(['id', 'is_active', 'sync_interval_minutes', 'last_synced_at', 'created_at'])
             ->reject(static fn (Integration $integration): bool => $integration->isSyncStale())
             ->pluck('id')

@@ -239,6 +239,26 @@ class IncidentTrackingTest extends TestCase
         $this->assertTrue($this->reloaded()->has_open_incident);
     }
 
+    public function test_prune_leaves_an_incident_open_while_the_staleness_marker_is_set(): void
+    {
+        // Closing here would strand the incident: openStaleness() only fires on
+        // a null marker, so nothing would reopen one for the same episode.
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+        $this->integration->update(['sync_stale_alerted_at' => now()]);
+
+        // Fresh again by the accessor, so only the marker holds the sweep off.
+        $this->integration->update(['last_synced_at' => now()]);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
     private function staleIntegration(): Integration
     {
         $this->integration->update([
