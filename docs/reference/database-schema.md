@@ -138,7 +138,7 @@ Durable audit of periods an integration was in trouble. One open row per integra
 | `id` | bigint (PK) | Auto-incrementing ID |
 | `integration_id` | bigint (FK) | Parent integration |
 | `status` | string(16) | `open` or `closed` |
-| `source` | string(16) | What opened it: `health` or `circuit` |
+| `source` | string(16) | What opened it: `health`, `circuit`, or `sync` |
 | `reason` | string | Opening reason (e.g. `health_degraded`, `threshold_reached`) |
 | `peak_severity` | string | Worst `HealthStatus` reached over the incident's life |
 | `opened_at` | timestamp | When the incident opened |

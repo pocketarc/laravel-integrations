@@ -67,6 +67,25 @@ class StuckSyncItemTest extends TestCase
         Event::assertNotDispatched(SyncItemStuck::class);
     }
 
+    public function test_a_later_skip_resets_the_streak(): void
+    {
+        // `integrations:skip-sync-item` is the documented way to clear an item
+        // nobody can fix, so a skip has to end the streak like a success does.
+        Event::fake([SyncItemStuck::class]);
+        config(['integrations.sync.stuck_item_after_runs' => 3]);
+
+        $integration = $this->makeIntegration();
+        $this->failRuns($integration, 'ticket-10717', 2);
+
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_SKIPPED, 'ticket-10717');
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $this->failRuns($integration, 'ticket-10717', 2);
+
+        Event::assertNotDispatched(SyncItemStuck::class);
+    }
+
     public function test_items_without_an_external_id_are_skipped(): void
     {
         Event::fake([SyncItemStuck::class]);

@@ -7,6 +7,7 @@ namespace Integrations\Tests\Unit;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Sync\SyncSession;
+use Integrations\Tests\Fixtures\OtherTestSyncItemEvent;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\Fixtures\TestSyncItemEvent;
 use Integrations\Tests\TestCase;
@@ -50,6 +51,20 @@ class SyncSessionDedupTest extends TestCase
 
         $session->dispatch(new TestSyncItemEvent($integration, 'a'), 'cp-1', 'ticket-1');
         $session->dispatch(new TestSyncItemEvent($integration, 'b'), 'cp-2', 'ticket-2');
+
+        $this->assertSame(2, $session->count());
+        $this->assertSame(0, $session->duplicatesDropped());
+    }
+
+    public function test_a_second_event_class_for_one_record_is_kept(): void
+    {
+        // The event class is half the dedup key, so a provider emitting two
+        // kinds of work for one record keeps both.
+        $integration = $this->makeIntegration();
+        $session = new SyncSession($integration);
+
+        $session->dispatch(new TestSyncItemEvent($integration, 'a'), 'cp-1', 'ticket-1');
+        $session->dispatch(new OtherTestSyncItemEvent($integration, 'a'), 'cp-1', 'ticket-1');
 
         $this->assertSame(2, $session->count());
         $this->assertSame(0, $session->duplicatesDropped());

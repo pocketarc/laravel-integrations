@@ -7,7 +7,6 @@ namespace Integrations\Jobs;
 use Illuminate\Bus\Queueable;
 use Illuminate\Contracts\Queue\ShouldQueue;
 use Illuminate\Database\Eloquent\Collection;
-use Illuminate\Database\Query\Builder as QueryBuilder;
 use Illuminate\Foundation\Bus\Dispatchable;
 use Illuminate\Foundation\Bus\PendingDispatch;
 use Illuminate\Queue\InteractsWithQueue;
@@ -216,23 +215,28 @@ class FinaliseSyncRun implements ShouldQueue
 
         $table = (new IntegrationSyncItem)->getTable();
 
+        // Built as a query rather than a closure: the closure form puts the
+        // builder's checked exceptions inside a callable the analyser cannot
+        // see is invoked immediately.
+        $laterOutcome = IntegrationSyncItem::query()
+            ->toBase()
+            ->selectRaw('1')
+            ->from($table, 's')
+            ->whereColumn('s.integration_id', 'f.integration_id')
+            ->whereColumn('s.external_id', 'f.external_id')
+            ->whereColumn('s.id', '>', 'f.id')
+            ->whereIn('s.status', [
+                IntegrationSyncItem::STATUS_SUCCESS,
+                IntegrationSyncItem::STATUS_SKIPPED,
+            ]);
+
         $rows = IntegrationSyncItem::query()
             ->toBase()
             ->from($table, 'f')
             ->where('f.integration_id', $this->integrationId)
             ->where('f.status', IntegrationSyncItem::STATUS_FAILED)
             ->whereIn('f.external_id', $externalIds)
-            ->whereNotExists(function (QueryBuilder $later) use ($table): void {
-                $later->selectRaw('1')
-                    ->from($table, 's')
-                    ->whereColumn('s.integration_id', 'f.integration_id')
-                    ->whereColumn('s.external_id', 'f.external_id')
-                    ->whereColumn('s.id', '>', 'f.id')
-                    ->whereIn('s.status', [
-                        IntegrationSyncItem::STATUS_SUCCESS,
-                        IntegrationSyncItem::STATUS_SKIPPED,
-                    ]);
-            })
+            ->whereNotExists($laterOutcome)
             ->groupBy('f.external_id')
             ->havingRaw('count(distinct f.sync_log_id) >= ?', [$threshold])
             ->select('f.external_id')
@@ -270,6 +274,14 @@ class FinaliseSyncRun implements ShouldQueue
         }
 
         $current = $integration->sync_cursor;
+
+        // This job re-runs by design, so most repeat reconciles compute the
+        // cursor they already wrote. Writing it again would touch updated_at
+        // and fire model events for no change.
+        if ($current === $candidate) {
+            return;
+        }
+
         if ($current !== null && $provider->reduceCheckpoints([$current, $candidate]) !== $candidate) {
             // The current cursor is already ahead: a later batch advanced
             // past this one. Don't move it backward.

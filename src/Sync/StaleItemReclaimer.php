@@ -114,17 +114,22 @@ final class StaleItemReclaimer
             return [];
         }
 
-        IntegrationSyncItem::query()
-            ->whereIn('id', $ids)
-            ->whereIn('status', [
-                IntegrationSyncItem::STATUS_PENDING,
-                IntegrationSyncItem::STATUS_PROCESSING,
-            ])
-            ->update([
-                'status' => IntegrationSyncItem::STATUS_FAILED,
-                'completed_at' => now(),
-                'error' => $error,
-            ]);
+        // Chunked because the backlog this clears has no upper bound, and one
+        // statement per id would exceed SQLite's variable cap and MySQL's
+        // max_allowed_packet on exactly the large reclaim it exists to handle.
+        foreach (array_chunk($ids, 500) as $chunk) {
+            IntegrationSyncItem::query()
+                ->whereIn('id', $chunk)
+                ->whereIn('status', [
+                    IntegrationSyncItem::STATUS_PENDING,
+                    IntegrationSyncItem::STATUS_PROCESSING,
+                ])
+                ->update([
+                    'status' => IntegrationSyncItem::STATUS_FAILED,
+                    'completed_at' => now(),
+                    'error' => $error,
+                ]);
+        }
 
         $logIds = [];
 
@@ -157,21 +162,46 @@ final class StaleItemReclaimer
             return [];
         }
 
-        $connection = config('queue.batching.database');
-        $table = config('queue.batching.table', 'job_batches');
-
-        $names = DB::connection(is_string($connection) ? $connection : null)
-            ->table(is_string($table) ? $table : 'job_batches')
-            ->whereIn('name', array_keys($logIdByName))
-            ->pluck('name');
-
         $dispatched = [];
-        foreach ($names as $name) {
-            if (is_string($name) && array_key_exists($name, $logIdByName)) {
+
+        foreach ($this->existingBatchNames(array_keys($logIdByName)) as $name) {
+            if (array_key_exists($name, $logIdByName)) {
                 $dispatched[] = $logIdByName[$name];
             }
         }
 
         return $dispatched;
+    }
+
+    /**
+     * Which of the given batch names exist in `job_batches`.
+     *
+     * Chunked for the same reason as the update above: one name per run, and a
+     * long-abandoned integration can carry a lot of them.
+     *
+     * @param  list<string>  $names
+     * @return list<string>
+     */
+    private function existingBatchNames(array $names): array
+    {
+        $connection = config('queue.batching.database');
+        $table = config('queue.batching.table', 'job_batches');
+
+        $found = [];
+
+        foreach (array_chunk($names, 500) as $chunk) {
+            $rows = DB::connection(is_string($connection) ? $connection : null)
+                ->table(is_string($table) ? $table : 'job_batches')
+                ->whereIn('name', $chunk)
+                ->pluck('name');
+
+            foreach ($rows as $row) {
+                if (is_string($row)) {
+                    $found[] = $row;
+                }
+            }
+        }
+
+        return $found;
     }
 }

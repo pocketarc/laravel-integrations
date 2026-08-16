@@ -15,8 +15,12 @@ This publishes the notification class to your app, where you can customize the c
 `SendHealthNotification` listens for `IntegrationHealthChanged` and sends `IntegrationHealthStatusNotification` to the notifiables you pass it. Register it yourself after publishing, with the recipients you want. The package publishes the stub without registering it, because the recipients are specific to your application.
 
 ```php
-Event::listen(new SendHealthNotification([$opsTeam]));
+$listener = new SendHealthNotification([$opsTeam]);
+
+Event::listen(IntegrationHealthChanged::class, $listener->handle(...));
 ```
+
+The listener takes its notifiables as a constructor argument, so it is built first and its `handle` method registered against the event. `Event::listen()` infers the event from a closure's type hint, but not from a listener instance.
 
 ## Notifying on sync staleness
 

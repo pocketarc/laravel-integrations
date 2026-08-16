@@ -83,6 +83,10 @@ class SyncStalenessTest extends TestCase
 
     public function test_sync_staleness_reports_seconds_since_the_last_clean_sync(): void
     {
+        // Frozen: the fixture and syncStaleness() each call now(), so a second
+        // boundary between them would make this 7201.
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
         $integration = $this->makeIntegration(lastSyncedAt: now()->subHours(2));
 
         $this->assertSame(7200, $integration->syncStaleness());

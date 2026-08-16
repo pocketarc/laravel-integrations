@@ -26,6 +26,15 @@ class FinaliseSyncRunTest extends TestCase
         app(IntegrationManager::class)->register('test', TestProvider::class);
     }
 
+    protected function tearDown(): void
+    {
+        // Here rather than at the end of each test: a failing assertion aborts
+        // before the reset, leaking the frozen clock into unrelated tests.
+        Carbon::setTestNow();
+
+        parent::tearDown();
+    }
+
     public function test_advances_cursor_and_finalises_log_when_all_items_succeed(): void
     {
         $integration = $this->makeIntegration();
@@ -181,7 +190,6 @@ class FinaliseSyncRunTest extends TestCase
         $this->assertNull($integration->last_synced_at);
         $this->assertSame(1, $integration->consecutive_sync_failures);
 
-        Carbon::setTestNow();
     }
 
     public function test_next_sync_at_backs_off_as_runs_keep_failing(): void
@@ -202,7 +210,6 @@ class FinaliseSyncRunTest extends TestCase
         $this->assertSame(4, $integration->consecutive_sync_failures);
         $this->assertSame('2026-01-01 14:00:00', $integration->next_sync_at?->toDateTimeString());
 
-        Carbon::setTestNow();
     }
 
     public function test_the_backoff_is_capped(): void
@@ -220,7 +227,6 @@ class FinaliseSyncRunTest extends TestCase
 
         $this->assertSame('2026-01-01 13:00:00', $integration->refresh()->next_sync_at?->toDateTimeString());
 
-        Carbon::setTestNow();
     }
 
     public function test_a_clean_run_clears_the_failure_streak(): void

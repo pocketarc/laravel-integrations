@@ -175,7 +175,7 @@ One row per item dispatched during a sync run. The framework uses these to track
 
 ## IntegrationIncident
 
-A durable record of one period an integration was in trouble, written from health/circuit state-change events. See [Incident history](/core-concepts/health-monitoring#incident-history).
+A durable record of one period an integration was in trouble, written from health, circuit, and sync-staleness state-change events. See [Incident history](/core-concepts/health-monitoring#incident-history).
 
 ### Relationships
 
@@ -199,4 +199,4 @@ A durable record of one period an integration was in trouble, written from healt
 
 ### Constants
 
-`STATUS_OPEN`, `STATUS_CLOSED`, `SOURCE_HEALTH`, `SOURCE_CIRCUIT`.
+`STATUS_OPEN`, `STATUS_CLOSED`, `SOURCE_HEALTH`, `SOURCE_CIRCUIT`, `SOURCE_SYNC`.
