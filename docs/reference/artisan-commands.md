@@ -111,11 +111,14 @@ Re-reconcile any sync runs for an integration that are still stuck in `processin
 ```bash
 php artisan integrations:advance-cursor <integration>
 php artisan integrations:advance-cursor 7 --limit=100
+php artisan integrations:advance-cursor 7 --reclaim-stale
 ```
 
 Dispatches `FinaliseSyncRun` for each unreconciled run. `FinaliseSyncRun` bails on its own if a run's items aren't all terminal yet, so this is always safe to run. Useful as a manual nudge if a `finally` callback was lost (e.g. a queue outage).
 
 Use `--limit` to bound how many runs are dispatched at once, for a backlog you would rather not queue in one go. There is no default limit, unlike the listing commands. A silent cap here would leave sync runs unreconciled, which is the condition this command clears.
+
+`--reclaim-stale` first marks any [abandoned items](/features/scheduled-syncs#abandoned-items) as `failed`, then reconciles their runs. The next scheduled sync reclaims them anyway, once the rows pass `sync.item_reclaim_after`. Use the flag to clear them now rather than waiting the threshold out.
 
 ## integrations:list
 
@@ -128,13 +131,15 @@ php artisan integrations:list
 Example output:
 
 ```
-+----------+----------+---------+---------------------+----------+-----------+
-| Name     | Provider | Health  | Last Synced          | Requests | Error Rate|
-+----------+----------+---------+---------------------+----------+-----------+
-| Prod ZD  | zendesk  | healthy | 2026-03-22 10:15:00 | 1,243    | 0.8%      |
-| GitHub   | github   | degraded| 2026-03-22 10:10:00 | 891      | 12.3%     |
-+----------+----------+---------+---------------------+----------+-----------+
++---------+----------+---------+--------+---------------------+-------+----------------+------------+
+| Name    | Provider | Health  | Active | Last Synced         | Sync  | Requests (24h) | Error Rate |
++---------+----------+---------+--------+---------------------+-------+----------------+------------+
+| Prod ZD | zendesk  | healthy | Yes    | 2026-03-22 10:15:00 | ok    | 1243           | 0.8%       |
+| GitHub  | github   | healthy | Yes    | 2026-03-10 04:02:00 | stale | 891            | 0.4%       |
++---------+----------+---------+--------+---------------------+-------+----------------+------------+
 ```
+
+The `Sync` column reports something different from `Health`. The GitHub row above is healthy because its API calls succeed, and stale because its last clean sync is older than the staleness threshold. See [sync staleness](/core-concepts/health-monitoring#sync-staleness).
 
 ## integrations:health
 

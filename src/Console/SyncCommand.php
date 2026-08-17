@@ -7,6 +7,8 @@ namespace Integrations\Console;
 use Illuminate\Console\Command;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Enums\HealthStatus;
+use Integrations\Events\SyncBecameStale;
+use Integrations\Events\SyncStalenessRecovered;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\SyncIntegration;
 use Integrations\Models\Integration;
@@ -49,6 +51,8 @@ class SyncCommand extends Command
             $this->info("Dispatched {$dispatched} sync job(s).");
         }
 
+        $this->evaluateStaleness();
+
         return self::SUCCESS;
     }
 
@@ -72,8 +76,63 @@ class SyncCommand extends Command
         };
 
         $effectiveInterval = $integration->sync_interval_minutes * $multiplier;
-        $nextAllowedSync = $integration->last_synced_at->addMinutes($effectiveInterval);
+        $nextAllowedSync = $integration->last_synced_at->copy()->addMinutes($effectiveInterval);
 
         return $nextAllowedSync->isFuture();
+    }
+
+    private function evaluateStaleness(): void
+    {
+        $scheduled = Integration::query()
+            ->active()
+            ->whereNotNull('sync_interval_minutes')
+            ->get();
+
+        foreach ($scheduled as $integration) {
+            if ($integration->isSyncStale()) {
+                $this->openStaleness($integration);
+
+                continue;
+            }
+
+            $this->closeStaleness($integration);
+        }
+    }
+
+    private function openStaleness(Integration $integration): void
+    {
+        $opened = Integration::query()
+            ->whereKey($integration->id)
+            ->whereNull('sync_stale_alerted_at')
+            ->update(['sync_stale_alerted_at' => now()]);
+
+        if ($opened !== 1) {
+            return;
+        }
+
+        $staleness = $integration->syncStaleness() ?? 0;
+
+        // The marker was written by a query builder, so the model still carries
+        // the old value. A synchronous listener would otherwise read null.
+        $integration->refresh();
+
+        SyncBecameStale::dispatch($integration, $staleness);
+
+        $this->warn("Sync is stale for {$integration->name}. Last clean sync: ".
+            ($integration->last_synced_at?->diffForHumans() ?? 'never').'.');
+    }
+
+    private function closeStaleness(Integration $integration): void
+    {
+        $closed = Integration::query()
+            ->whereKey($integration->id)
+            ->whereNotNull('sync_stale_alerted_at')
+            ->update(['sync_stale_alerted_at' => null]);
+
+        if ($closed === 1) {
+            $integration->refresh();
+
+            SyncStalenessRecovered::dispatch($integration);
+        }
     }
 }

@@ -39,6 +39,14 @@ return new class extends Migration
             $table->timestamp('last_synced_at')->nullable();
             $table->unsignedInteger('sync_interval_minutes')->nullable();
             $table->timestamp('next_sync_at')->nullable();
+            // Runs that finalised with failures since the last clean one. Sets
+            // the multiplier on the next_sync_at backoff. Separate from
+            // consecutive_failures, which counts API-boundary faults and is
+            // reset by any successful request.
+            $table->unsignedInteger('consecutive_sync_failures')->default(0);
+            // Durable open/closed marker for the staleness signal, mirroring
+            // anomaly_alerted_at above.
+            $table->timestamp('sync_stale_alerted_at')->nullable();
             $table->json('sync_cursor')->nullable();
             $table->nullableMorphs('owner');
             $table->timestamps();

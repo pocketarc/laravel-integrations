@@ -56,6 +56,7 @@ class HealthCommand extends Command
         $this->line("  Consecutive failures: {$integration->consecutive_failures}");
         $this->line('  Last error: '.($integration->last_error_at?->diffForHumans() ?? 'None'));
         $this->line('  Last synced: '.($integration->last_synced_at?->diffForHumans() ?? 'Never'));
+        $this->line('  Sync: '.$this->syncLabel($integration));
 
         $this->renderAuthenticatedUser($integration);
 
@@ -75,6 +76,22 @@ class HealthCommand extends Command
                 $this->line("    [{$topError->count}x] {$truncated}");
             }
         }
+    }
+
+    private function syncLabel(Integration $integration): string
+    {
+        if ($integration->sync_interval_minutes === null) {
+            return 'not scheduled';
+        }
+
+        $failures = $integration->consecutive_sync_failures;
+        $suffix = $failures > 0 ? " ({$failures} failed run(s) in a row)" : '';
+
+        if (! $integration->isSyncStale()) {
+            return "on schedule{$suffix}";
+        }
+
+        return "<fg=red>STALE</> (expected every {$integration->sync_interval_minutes}m)".$suffix;
     }
 
     /**

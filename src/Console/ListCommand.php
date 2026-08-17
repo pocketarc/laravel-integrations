@@ -36,16 +36,26 @@ class ListCommand extends Command
                 $integration->health_status->value,
                 $integration->is_active ? 'Yes' : 'No',
                 $integration->last_synced_at?->format('Y-m-d H:i:s') ?? 'Never',
+                $this->syncLabel($integration),
                 (string) $totalRequests,
                 $errorRate,
             ];
         })->all();
 
         $this->table(
-            ['Name', 'Provider', 'Health', 'Active', 'Last Synced', 'Requests (24h)', 'Error Rate'],
+            ['Name', 'Provider', 'Health', 'Active', 'Last Synced', 'Sync', 'Requests (24h)', 'Error Rate'],
             $rows,
         );
 
         return self::SUCCESS;
+    }
+
+    private function syncLabel(Integration $integration): string
+    {
+        if ($integration->sync_interval_minutes === null) {
+            return '-';
+        }
+
+        return $integration->isSyncStale() ? 'stale' : 'ok';
     }
 }

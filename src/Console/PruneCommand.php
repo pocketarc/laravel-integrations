@@ -72,14 +72,55 @@ class PruneCommand extends Command
     {
         $cutoff = now()->subDays($days);
 
+        // Narrow to the integrations that actually have an incident old enough
+        // to close before loading any of them: staleness is a computed value,
+        // so those rows have to be read, and there are far fewer incidents past
+        // the threshold than there are healthy integrations.
+        $candidateIds = IntegrationIncident::query()
+            ->open()
+            ->where('opened_at', '<', $cutoff)
+            ->distinct()
+            ->pluck('integration_id');
+
+        if ($candidateIds->isEmpty()) {
+            return 0;
+        }
+
+        // A sync-stale integration is Healthy by health_status, so the sweep
+        // would close the incident that records the staleness. Staleness can
+        // also outlast the threshold, so age alone proves nothing here.
         $healthyIds = Integration::query()
+            ->whereIn('id', $candidateIds)
             ->where('health_status', HealthStatus::Healthy->value)
+            // Two staleness guards, covering different moments. The marker says
+            // the integration was stale as of the last scheduler tick, and an
+            // incident closed while it is still set could never be reopened,
+            // because openStaleness() only fires on a null marker. The accessor
+            // then catches an integration that has gone stale since that tick.
+            ->whereNull('sync_stale_alerted_at')
+            ->get(['id', 'is_active', 'sync_interval_minutes', 'last_synced_at', 'created_at'])
+            ->reject(static fn (Integration $integration): bool => $integration->isSyncStale())
+            ->pluck('id')
+            ->all();
+
+        if ($healthyIds === []) {
+            return 0;
+        }
+
+        // Re-read the marker as part of the UPDATE rather than trusting the
+        // check above. The scheduler runs every minute and can mark one of
+        // these stale in between, and closing an incident whose marker is set
+        // strands it: openStaleness() only fires on a null marker, so nothing
+        // would reopen one for that episode.
+        $stillUnmarked = Integration::query()
+            ->whereIn('id', $healthyIds)
+            ->whereNull('sync_stale_alerted_at')
             ->select('id');
 
         return IntegrationIncident::query()
             ->open()
             ->where('opened_at', '<', $cutoff)
-            ->whereIn('integration_id', $healthyIds)
+            ->whereIn('integration_id', $stillUnmarked)
             ->update([
                 'status' => IntegrationIncident::STATUS_CLOSED,
                 'closed_at' => now(),

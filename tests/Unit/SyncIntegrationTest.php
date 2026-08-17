@@ -10,7 +10,9 @@ use Integrations\Events\SyncCompleted;
 use Integrations\IntegrationManager;
 use Integrations\Jobs\SyncIntegration;
 use Integrations\Models\Integration;
+use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationSyncItem;
+use Integrations\Support\Config;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\Fixtures\TestSyncItemEvent;
 use Integrations\Tests\TestCase;
@@ -158,7 +160,7 @@ class SyncIntegrationTest extends TestCase
         $this->assertNotSame('success', $log->status);
     }
 
-    public function test_cleans_up_orphaned_items_but_keeps_items_whose_batch_was_dispatched(): void
+    public function test_fails_orphaned_items_but_keeps_items_whose_batch_was_dispatched(): void
     {
         $integration = $this->makeIntegration();
 
@@ -177,7 +179,7 @@ class SyncIntegrationTest extends TestCase
 
         // Run B: the batch was dispatched, but the job crashed before
         // stamping batch_id back onto the rows. The job_batches row proves
-        // the ProcessSyncItem jobs exist, so the row must not be deleted.
+        // the ProcessSyncItem jobs exist, so the row must be left alone.
         $logB = $integration->logOperation(operation: 'sync', direction: 'inbound', status: 'processing');
         $dispatched = IntegrationSyncItem::create([
             'integration_id' => $integration->id,
@@ -204,8 +206,92 @@ class SyncIntegrationTest extends TestCase
 
         (new SyncIntegration($integration->id))->handle();
 
-        $this->assertNull(IntegrationSyncItem::query()->find($orphan->id));
-        $this->assertNotNull(IntegrationSyncItem::query()->find($dispatched->id));
+        $orphan->refresh();
+        $this->assertSame(IntegrationSyncItem::STATUS_FAILED, $orphan->status);
+        $this->assertNotNull($orphan->error);
+        $this->assertNotNull($orphan->completed_at);
+
+        $this->assertSame(
+            IntegrationSyncItem::STATUS_PENDING,
+            $dispatched->refresh()->status,
+        );
+    }
+
+    public function test_reclaims_items_left_in_flight_past_the_reclaim_threshold(): void
+    {
+        $integration = $this->makeIntegration();
+        $log = $integration->logOperation(operation: 'sync', direction: 'inbound', status: 'processing');
+
+        // A live job_batches row: an abandoned item looks the same as one waiting
+        // behind a backlog, so the elapsed time is the only difference.
+        $item = $this->inFlightItem($integration, $log, 'batch-alive');
+        DB::table('job_batches')->insert([
+            'id' => 'batch-alive',
+            'name' => "integration-sync-{$integration->id}-{$log->id}",
+            'total_jobs' => 1,
+            'pending_jobs' => 1,
+            'failed_jobs' => 0,
+            'failed_job_ids' => '[]',
+            'created_at' => now()->getTimestamp(),
+        ]);
+
+        $this->ageItem($item, Config::syncItemReclaimAfter() + 60);
+
+        (new SyncIntegration($integration->id))->handle();
+
+        $this->assertSame(IntegrationSyncItem::STATUS_FAILED, $item->refresh()->status);
+
+        $this->assertFalse(
+            IntegrationSyncItem::query()->forIntegration($integration->id)->inFlight()->exists(),
+        );
+    }
+
+    public function test_does_not_reclaim_an_item_still_inside_the_retry_window(): void
+    {
+        $integration = $this->makeIntegration();
+        $log = $integration->logOperation(operation: 'sync', direction: 'inbound', status: 'processing');
+
+        $item = $this->inFlightItem($integration, $log, 'batch-alive', IntegrationSyncItem::STATUS_PROCESSING);
+        $this->ageItem($item, Config::syncItemRetryWindow() - 60);
+
+        (new SyncIntegration($integration->id))->handle();
+
+        $this->assertSame(IntegrationSyncItem::STATUS_PROCESSING, $item->refresh()->status);
+        $this->assertFalse($this->provider->syncCalled);
+    }
+
+    public function test_the_reclaim_threshold_always_clears_the_configured_retry_window(): void
+    {
+        config([
+            'integrations.sync.item_retry_window' => 86_400,
+            'integrations.sync.item_reclaim_after' => 60,
+        ]);
+
+        $this->assertGreaterThan(86_400, Config::syncItemReclaimAfter());
+    }
+
+    private function inFlightItem(
+        Integration $integration,
+        IntegrationLog $log,
+        ?string $batchId = null,
+        string $status = IntegrationSyncItem::STATUS_PENDING,
+    ): IntegrationSyncItem {
+        return IntegrationSyncItem::create([
+            'integration_id' => $integration->id,
+            'sync_log_id' => $log->id,
+            'batch_id' => $batchId,
+            'event_class' => TestSyncItemEvent::class,
+            'checkpoint_value' => '2026-01-01T00:00:00+00:00',
+            'status' => $status,
+            'attempts' => 0,
+        ]);
+    }
+
+    private function ageItem(IntegrationSyncItem $item, int $seconds): void
+    {
+        IntegrationSyncItem::query()
+            ->whereKey($item->getKey())
+            ->update(['created_at' => now()->subSeconds($seconds)]);
     }
 
     private function makeIntegration(): Integration

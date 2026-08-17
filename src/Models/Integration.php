@@ -69,6 +69,8 @@ use function Safe\json_encode;
  * @property Carbon|null $last_synced_at
  * @property int|null $sync_interval_minutes
  * @property Carbon|null $next_sync_at
+ * @property int $consecutive_sync_failures
+ * @property Carbon|null $sync_stale_alerted_at
  * @property mixed $sync_cursor
  * @property string|null $owner_type
  * @property int|null $owner_id
@@ -167,6 +169,8 @@ class Integration extends Model
             'last_synced_at' => 'datetime',
             'sync_interval_minutes' => 'integer',
             'next_sync_at' => 'datetime',
+            'sync_stale_alerted_at' => 'datetime',
+            'consecutive_sync_failures' => 'integer',
             'sync_cursor' => 'json',
         ];
     }
@@ -607,25 +611,102 @@ class Integration extends Model
         return is_array($credentials) ? $credentials : [];
     }
 
+    /**
+     * Record a clean sync: one where every enumerated item reached a terminal
+     * success.
+     *
+     * This is the only place `last_synced_at` moves, and the staleness check
+     * measures from it, so it must never mean anything looser than a clean run;
+     * a run that finalised with failures goes through `markSyncFailed()`, which
+     * leaves it alone.
+     */
     public function markSynced(?Carbon $syncedAt = null): void
     {
         $syncedAt ??= now();
 
-        $nextSync = $this->sync_interval_minutes !== null
-            ? $syncedAt->copy()->addMinutes($this->sync_interval_minutes)
-            : null;
-
         $this->update([
             'last_synced_at' => $syncedAt,
-            'next_sync_at' => $nextSync,
+            'consecutive_sync_failures' => 0,
+            'next_sync_at' => $this->nextSyncAt($syncedAt, 0),
         ]);
 
         IntegrationSynced::dispatch($this);
     }
 
+    /**
+     * Record a sync run that finalised with failures. `last_synced_at`
+     * deliberately does not move; see `markSynced()`.
+     */
+    public function markSyncFailed(?Carbon $failedAt = null): void
+    {
+        $failedAt ??= now();
+        $failures = $this->consecutive_sync_failures + 1;
+
+        $this->update([
+            'consecutive_sync_failures' => $failures,
+            'next_sync_at' => $this->nextSyncAt($failedAt, $failures),
+        ]);
+    }
+
+    private function nextSyncAt(Carbon $from, int $consecutiveFailures): ?Carbon
+    {
+        $interval = $this->sync_interval_minutes;
+
+        if ($interval === null) {
+            return null;
+        }
+
+        if ($consecutiveFailures < 1) {
+            return $from->copy()->addMinutes($interval);
+        }
+
+        $doublings = min($consecutiveFailures - 1, 16);
+        $multiplier = min(2 ** $doublings, Config::syncFailureBackoffMaxMultiplier());
+
+        return $from->copy()->addMinutes($interval * $multiplier);
+    }
+
     public function syncedSince(): ?Carbon
     {
         return $this->last_synced_at;
+    }
+
+    /**
+     * Seconds since this integration last completed a clean sync, or null when
+     * it isn't on a schedule at all.
+     */
+    public function syncStaleness(): ?int
+    {
+        if ($this->sync_interval_minutes === null) {
+            return null;
+        }
+
+        $origin = $this->last_synced_at ?? $this->created_at;
+
+        if ($origin === null) {
+            return null;
+        }
+
+        return max(0, now()->getTimestamp() - $origin->getTimestamp());
+    }
+
+    /**
+     * Whether this integration has gone too long without a clean sync.
+     */
+    public function isSyncStale(): bool
+    {
+        if ($this->is_active === false) {
+            return false;
+        }
+
+        $interval = $this->sync_interval_minutes;
+        $staleness = $this->syncStaleness();
+
+        if ($interval === null || $staleness === null) {
+            return false;
+        }
+
+        return $staleness > $interval * Config::syncStaleAfterIntervals() * 60;
     }
 
     public function updateSyncCursor(mixed $cursor): void

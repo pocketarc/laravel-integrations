@@ -38,7 +38,10 @@ The central model. Represents a configured connection to an external service.
 | `getAccessToken()` | Get OAuth access token (auto-refreshes) |
 | `tokenExpiresSoon()` | Check if token needs refresh |
 | `refreshTokenIfNeeded()` | Explicitly refresh token |
-| `markSynced()` | Update sync timestamps |
+| `markSynced()` | Record a clean run: moves `last_synced_at` and `next_sync_at`, and clears the failure streak |
+| `markSyncFailed()` | Record a run that finalised with failures: moves `next_sync_at` with backoff, and does not move `last_synced_at` |
+| `isSyncStale()` | Whether the last clean sync is older than the staleness threshold (`sync.stale_after_intervals`) |
+| `syncStaleness()` | Seconds since the last clean sync, or `null` when the integration is not on a sync schedule |
 | `recordSuccess()` | Record a successful request |
 | `recordFailure()` | Record a failed request |
 | `credentialsArray()` | Get raw credentials array |
@@ -172,7 +175,7 @@ One row per item dispatched during a sync run. The framework uses these to track
 
 ## IntegrationIncident
 
-A durable record of one period an integration was in trouble, written from health/circuit state-change events. See [Incident history](/core-concepts/health-monitoring#incident-history).
+A durable record of one period an integration was in trouble, written from health, circuit, and sync-staleness state-change events. See [Incident history](/core-concepts/health-monitoring#incident-history).
 
 ### Relationships
 
@@ -196,4 +199,4 @@ A durable record of one period an integration was in trouble, written from healt
 
 ### Constants
 
-`STATUS_OPEN`, `STATUS_CLOSED`, `SOURCE_HEALTH`, `SOURCE_CIRCUIT`.
+`STATUS_OPEN`, `STATUS_CLOSED`, `SOURCE_HEALTH`, `SOURCE_CIRCUIT`, `SOURCE_SYNC`.

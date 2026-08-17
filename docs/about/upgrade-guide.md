@@ -2,6 +2,40 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 6.1 to 6.2
+
+6.2 adds two columns to the integrations table. There are no breaking changes, and no code change is required.
+
+### Add the new columns
+
+`consecutive_sync_failures` sets the multiplier on the [failure backoff](/features/scheduled-syncs#failure-backoff), and `sync_stale_alerted_at` holds the open/closed state for the [staleness signal](/core-concepts/health-monitoring#sync-staleness).
+
+A fresh install gets them from the published baseline migration. An existing deployment has already run that migration, so add a downstream migration that appends the columns:
+
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Integrations\Support\Config;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table(Config::tablePrefix().'s', function (Blueprint $table): void {
+            $table->unsignedInteger('consecutive_sync_failures')->default(0);
+            $table->timestamp('sync_stale_alerted_at')->nullable();
+        });
+    }
+};
+```
+
+Then run `php artisan migrate`. A default of 0 is correct for every existing row: the first run that finalises with failures sets the multiplier from there, and the first clean run resets it.
+
+### What changes without you doing anything
+
+`next_sync_at` now advances after a run that finalised with failures, where before only a clean run moved it. An integration held due on every scheduler tick by a failing item will start pacing itself instead. `last_synced_at` still moves only on a clean run, so anything reading it for "when did this last work" is unaffected.
+
 ## 5.x to 6.0
 
 In 6.0, `mapExternalId()` throws instead of re-pointing a mapping that another model of the same type holds on the same integration. Most apps need no code changes: the call is normally made once per external ID, and `upsertByExternalId()` handles the collision internally. The work is in direct callers that relied on the overwrite, and in checking for rows that lost their mapping before the upgrade.

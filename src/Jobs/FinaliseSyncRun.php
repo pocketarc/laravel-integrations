@@ -13,6 +13,7 @@ use Illuminate\Queue\InteractsWithQueue;
 use Illuminate\Support\Facades\DB;
 use Integrations\Contracts\HasScheduledSync;
 use Integrations\Events\SyncCompleted;
+use Integrations\Events\SyncItemStuck;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationLog;
 use Integrations\Models\IntegrationSyncItem;
@@ -44,6 +45,9 @@ class FinaliseSyncRun implements ShouldQueue
 
     public readonly int $tries;
 
+    /** @var list<array{0: IntegrationSyncItem, 1: int}> */
+    private array $stuckItems = [];
+
     public function __construct(
         public readonly int $integrationId,
         public readonly int $syncLogId,
@@ -52,12 +56,10 @@ class FinaliseSyncRun implements ShouldQueue
     }
 
     /**
-     * Dispatch onto the same queue as the run's ProcessSyncItem jobs.
-     * Reconciliation must never wait behind an unrelated queue's backlog: a
-     * starved default queue once left every run unfinalised for days, parking
-     * cursors while the scheduler re-synced the same window on repeat. Every
-     * dispatch site goes through here so none can drift back to the default
-     * queue.
+     * Dispatch onto the same queue as the run's ProcessSyncItem jobs, so
+     * reconciliation cannot sit behind an unrelated queue's backlog while the
+     * cursor stays parked. Every dispatch site goes through here, so none can
+     * drift back to the default queue.
      */
     public static function dispatchFor(int $integrationId, int $syncLogId, ?string $provider = null): PendingDispatch
     {
@@ -83,6 +85,10 @@ class FinaliseSyncRun implements ShouldQueue
         });
 
         if ($integration !== null && $result !== null) {
+            foreach ($this->stuckItems as [$item, $failedRuns]) {
+                SyncItemStuck::dispatch($integration, $item, $failedRuns);
+            }
+
             SyncCompleted::dispatch($integration, $result);
         }
     }
@@ -113,12 +119,25 @@ class FinaliseSyncRun implements ShouldQueue
             IntegrationSyncItem::STATUS_SKIPPED,
         ]);
 
+        // Before the once-only guard in `finaliseLog()`: on the retry-catchup
+        // path the cursor must still advance after an earlier pass finalised
+        // the log as `partial`.
         if ($failed->isEmpty()) {
             $this->advanceCursor($integration, $completed);
-            $integration->markSynced(now());
         }
 
         $result = $this->finaliseLog($integration, $completed->count(), $failed->count());
+
+        if ($result === null) {
+            return [$integration, null];
+        }
+
+        if ($failed->isEmpty()) {
+            $integration->markSynced(now());
+        } else {
+            $integration->markSyncFailed(now());
+            $this->collectStuckItems($failed);
+        }
 
         return [$integration, $result];
     }
@@ -155,6 +174,90 @@ class FinaliseSyncRun implements ShouldQueue
     }
 
     /**
+     * @param  Collection<int, IntegrationSyncItem>  $failed
+     */
+    private function collectStuckItems(Collection $failed): void
+    {
+        $externalIds = $failed
+            ->pluck('external_id')
+            ->filter(static fn (mixed $id): bool => is_string($id) && $id !== '')
+            ->unique()
+            ->values()
+            ->all();
+
+        $streaks = $this->failureStreaks($externalIds, Config::syncStuckItemAfterRuns());
+
+        foreach ($failed as $item) {
+            $externalId = $item->external_id;
+
+            if ($externalId === null || ! array_key_exists($externalId, $streaks)) {
+                continue;
+            }
+
+            $this->stuckItems[] = [$item, $streaks[$externalId]];
+
+            unset($streaks[$externalId]);
+        }
+    }
+
+    /**
+     * How many runs in a row each of the given external IDs has failed, for
+     * those at or above the threshold.
+     *
+     * @param  array<int, string>  $externalIds
+     * @return array<string, int>
+     */
+    private function failureStreaks(array $externalIds, int $threshold): array
+    {
+        if ($externalIds === []) {
+            return [];
+        }
+
+        $table = (new IntegrationSyncItem)->getTable();
+
+        // Built as a query rather than a closure: the closure form puts the
+        // builder's checked exceptions inside a callable the analyser cannot
+        // see is invoked immediately.
+        $laterOutcome = IntegrationSyncItem::query()
+            ->toBase()
+            ->selectRaw('1')
+            ->from($table, 's')
+            ->whereColumn('s.integration_id', 'f.integration_id')
+            ->whereColumn('s.external_id', 'f.external_id')
+            ->whereColumn('s.id', '>', 'f.id')
+            ->whereIn('s.status', [
+                IntegrationSyncItem::STATUS_SUCCESS,
+                IntegrationSyncItem::STATUS_SKIPPED,
+            ]);
+
+        $rows = IntegrationSyncItem::query()
+            ->toBase()
+            ->from($table, 'f')
+            ->where('f.integration_id', $this->integrationId)
+            ->where('f.status', IntegrationSyncItem::STATUS_FAILED)
+            ->whereIn('f.external_id', $externalIds)
+            ->whereNotExists($laterOutcome)
+            ->groupBy('f.external_id')
+            ->havingRaw('count(distinct f.sync_log_id) >= ?', [$threshold])
+            ->select('f.external_id')
+            ->selectRaw('count(distinct f.sync_log_id) as failed_runs')
+            ->get();
+
+        $streaks = [];
+
+        foreach ($rows as $row) {
+            $externalId = $row->external_id;
+            $count = $row->failed_runs;
+
+            if (is_string($externalId) && is_numeric($count)) {
+                $streaks[$externalId] = (int) $count;
+            }
+        }
+
+        return $streaks;
+    }
+
+    /**
      * @param  Collection<int, IntegrationSyncItem>  $completed
      */
     private function advanceCursor(Integration $integration, Collection $completed): void
@@ -171,6 +274,14 @@ class FinaliseSyncRun implements ShouldQueue
         }
 
         $current = $integration->sync_cursor;
+
+        // This job re-runs by design, so most repeat reconciles compute the
+        // cursor they already wrote. Writing it again would touch updated_at
+        // and fire model events for no change.
+        if ($current === $candidate) {
+            return;
+        }
+
         if ($current !== null && $provider->reduceCheckpoints([$current, $candidate]) !== $candidate) {
             // The current cursor is already ahead: a later batch advanced
             // past this one. Don't move it backward.

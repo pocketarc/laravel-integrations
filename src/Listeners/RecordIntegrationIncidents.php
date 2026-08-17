@@ -11,6 +11,8 @@ use Integrations\Events\CircuitClosed;
 use Integrations\Events\CircuitOpened;
 use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
+use Integrations\Events\SyncBecameStale;
+use Integrations\Events\SyncStalenessRecovered;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationIncident;
 use Integrations\Support\Config;
@@ -37,7 +39,32 @@ class RecordIntegrationIncidents
             IntegrationDisabled::class => 'onDisabled',
             CircuitOpened::class => 'onCircuitOpened',
             CircuitClosed::class => 'onCircuitClosed',
+            SyncBecameStale::class => 'onSyncBecameStale',
+            SyncStalenessRecovered::class => 'onSyncStalenessRecovered',
         ];
+    }
+
+    public function onSyncBecameStale(SyncBecameStale $event): void
+    {
+        if (! Config::incidentsEnabled()) {
+            return;
+        }
+
+        $this->openOrEscalate(
+            $event->integration->id,
+            IntegrationIncident::SOURCE_SYNC,
+            'sync_stale',
+            HealthStatus::Failing,
+        );
+    }
+
+    public function onSyncStalenessRecovered(SyncStalenessRecovered $event): void
+    {
+        if (! Config::incidentsEnabled()) {
+            return;
+        }
+
+        $this->closeOpen($event->integration->id);
     }
 
     public function onHealthChanged(IntegrationHealthChanged $event): void
@@ -99,14 +126,7 @@ class RecordIntegrationIncidents
             return;
         }
 
-        // Health is the durable source of truth for "recovered". Only let a
-        // circuit-close clear the incident once health itself is back to
-        // Healthy, so a probe success doesn't hide a still-degraded integration.
-        $integration = Integration::query()->find($event->integration->id);
-
-        if ($integration?->health_status === HealthStatus::Healthy) {
-            $this->closeOpen($event->integration->id);
-        }
+        $this->closeOpen($event->integration->id);
     }
 
     private function openOrEscalate(int $integrationId, string $source, string $reason, HealthStatus $severity): void
@@ -158,7 +178,15 @@ class RecordIntegrationIncidents
         DB::transaction(function () use ($integrationId): void {
             // Same integration-row lock as openOrEscalate, so a close can't race
             // a concurrent open/escalate for the same integration.
-            if (Integration::query()->lockForUpdate()->find($integrationId) === null) {
+            $integration = Integration::query()->lockForUpdate()->find($integrationId);
+
+            if ($integration === null) {
+                return;
+            }
+
+            // One open incident covers every signal for an integration, so it
+            // closes only once all of them are clear.
+            if ($integration->health_status !== HealthStatus::Healthy || $integration->isSyncStale()) {
                 return;
             }
 

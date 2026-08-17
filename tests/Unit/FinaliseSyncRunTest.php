@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Tests\Unit;
 
+use Illuminate\Support\Carbon;
 use Illuminate\Support\Facades\Event;
 use Illuminate\Support\Facades\Queue;
 use Integrations\Events\SyncCompleted;
@@ -23,6 +24,15 @@ class FinaliseSyncRunTest extends TestCase
         parent::setUp();
 
         app(IntegrationManager::class)->register('test', TestProvider::class);
+    }
+
+    protected function tearDown(): void
+    {
+        // Here rather than at the end of each test: a failing assertion aborts
+        // before the reset, leaking the frozen clock into unrelated tests.
+        Carbon::setTestNow();
+
+        parent::tearDown();
     }
 
     public function test_advances_cursor_and_finalises_log_when_all_items_succeed(): void
@@ -162,6 +172,111 @@ class FinaliseSyncRunTest extends TestCase
         $this->assertSame('2026-01-01T12:00:00+00:00', $integration->sync_cursor);
 
         $this->assertSame(IntegrationSyncItem::STATUS_SUCCESS, $success->refresh()->status);
+    }
+
+    public function test_a_failed_run_still_advances_next_sync_at(): void
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
+        $integration = $this->makeIntegration();
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_FAILED, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $integration->refresh();
+
+        $this->assertSame('2026-01-01 12:15:00', $integration->next_sync_at?->toDateTimeString());
+        $this->assertNull($integration->last_synced_at);
+        $this->assertSame(1, $integration->consecutive_sync_failures);
+
+    }
+
+    public function test_next_sync_at_backs_off_as_runs_keep_failing(): void
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+
+        $integration = $this->makeIntegration();
+        $integration->update(['consecutive_sync_failures' => 3]);
+
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_FAILED, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $integration->refresh();
+
+        // Fourth consecutive failure: 15 minutes * 2^3.
+        $this->assertSame(4, $integration->consecutive_sync_failures);
+        $this->assertSame('2026-01-01 14:00:00', $integration->next_sync_at?->toDateTimeString());
+
+    }
+
+    public function test_the_backoff_is_capped(): void
+    {
+        Carbon::setTestNow('2026-01-01 12:00:00');
+        config(['integrations.sync.failure_backoff_max_multiplier' => 4]);
+
+        $integration = $this->makeIntegration();
+        $integration->update(['consecutive_sync_failures' => 20]);
+
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_FAILED, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $this->assertSame('2026-01-01 13:00:00', $integration->refresh()->next_sync_at?->toDateTimeString());
+
+    }
+
+    public function test_a_clean_run_clears_the_failure_streak(): void
+    {
+        $integration = $this->makeIntegration();
+        $integration->update(['consecutive_sync_failures' => 7]);
+
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_SUCCESS, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $integration->refresh();
+
+        $this->assertSame(0, $integration->consecutive_sync_failures);
+        $this->assertNotNull($integration->last_synced_at);
+    }
+
+    public function test_counts_a_failed_run_exactly_once_across_repeated_finalisations(): void
+    {
+        $integration = $this->makeIntegration();
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_FAILED, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+        $first = $integration->refresh()->next_sync_at?->toDateTimeString();
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $integration->refresh();
+
+        $this->assertSame(1, $integration->consecutive_sync_failures);
+        $this->assertSame($first, $integration->next_sync_at?->toDateTimeString());
+    }
+
+    public function test_an_integration_with_no_interval_keeps_a_null_next_sync_at(): void
+    {
+        $integration = $this->makeIntegration();
+        $integration->update(['sync_interval_minutes' => null]);
+
+        $log = $this->openSyncLog($integration);
+        $this->makeItem($integration, $log, IntegrationSyncItem::STATUS_FAILED, '2026-01-01T10:00:00+00:00');
+
+        (new FinaliseSyncRun($integration->id, $log->id))->handle();
+
+        $integration->refresh();
+
+        $this->assertNull($integration->next_sync_at);
+        $this->assertSame(1, $integration->consecutive_sync_failures);
     }
 
     public function test_dispatch_for_rides_the_item_queue(): void

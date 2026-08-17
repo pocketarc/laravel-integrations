@@ -58,6 +58,10 @@ The lock only serialises across processes on a shared cache driver. See [ID mapp
 | `sync.item_backoff` | `array` | `[10, 30, 120, 300, 900]` | Seconds between item retries |
 | `sync.item_retry_window` | `int` | `21600` | Absolute seconds an item may keep retrying, including rate-limit deferrals (6h) |
 | `sync.max_items_per_batch` | `int` | `10000` | Soft cap; a run with more items still processes as one batch but logs a warning |
+| `sync.item_reclaim_after` | `int` | `43200` | Seconds an item may sit in flight before it is presumed abandoned (12h). The row is then marked `failed` so its run can finalise. Never applied below `item_retry_window` plus an hour: a rate-limited item stays in flight that long by design. |
+| `sync.failure_backoff_max_multiplier` | `int` | `16` | Ceiling on the interval multiplier applied to `next_sync_at` while runs keep failing |
+| `sync.stuck_item_after_runs` | `int` | `5` | Consecutive failed runs for one external ID before [`SyncItemStuck`](/reference/events#syncitemstuck) fires |
+| `sync.stale_after_intervals` | `int` | `10` | Missed sync intervals before an integration counts as [stale](/core-concepts/health-monitoring#sync-staleness). Measured against the configured interval, not the backed-off one. |
 
 ## Retry
 

@@ -14,7 +14,8 @@ use Integrations\Support\Config;
 
 /**
  * A durable record of one period an integration was in trouble. The package
- * opens an incident from its own health/circuit state-change events and closes
+ * opens an incident from its own health, circuit, and sync-staleness
+ * state-change events and closes
  * it on recovery, collapsing flapping into a single open row per integration
  * and tracking the worst severity reached. Unlike the cache-only circuit state,
  * this survives a cache flush, so "incidents since T" is answerable.
@@ -53,6 +54,8 @@ class IntegrationIncident extends Model
     public const SOURCE_HEALTH = 'health';
 
     public const SOURCE_CIRCUIT = 'circuit';
+
+    public const SOURCE_SYNC = 'sync';
 
     /** @var array<string> */
     protected $guarded = [];

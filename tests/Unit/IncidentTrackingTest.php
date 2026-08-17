@@ -5,11 +5,15 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Illuminate\Database\Eloquent\Model;
+use Illuminate\Database\Events\QueryExecuted;
+use Illuminate\Support\Facades\DB;
 use Integrations\Enums\HealthStatus;
 use Integrations\Events\CircuitClosed;
 use Integrations\Events\CircuitOpened;
 use Integrations\Events\IntegrationDisabled;
 use Integrations\Events\IntegrationHealthChanged;
+use Integrations\Events\SyncBecameStale;
+use Integrations\Events\SyncStalenessRecovered;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationIncident;
@@ -189,6 +193,122 @@ class IncidentTrackingTest extends TestCase
         } finally {
             Model::preventLazyLoading(false);
         }
+    }
+
+    public function test_sync_staleness_opens_an_incident(): void
+    {
+        SyncBecameStale::dispatch($this->staleIntegration(), 1_036_800);
+
+        $incident = IntegrationIncident::query()->forIntegration($this->integration->id)->open()->first();
+
+        $this->assertNotNull($incident);
+        $this->assertSame(IntegrationIncident::SOURCE_SYNC, $incident->source);
+        $this->assertSame('sync_stale', $incident->reason);
+    }
+
+    public function test_a_health_recovery_does_not_close_an_incident_while_the_sync_is_stale(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        IntegrationHealthChanged::dispatch($stale, HealthStatus::Degraded, HealthStatus::Healthy);
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    public function test_the_incident_closes_once_the_sync_recovers(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        $stale->markSynced(now());
+        SyncStalenessRecovered::dispatch($stale->refresh());
+
+        $this->assertFalse($this->reloaded()->has_open_incident);
+    }
+
+    public function test_prune_does_not_auto_close_a_stale_integrations_incident(): void
+    {
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    public function test_prune_leaves_an_incident_open_while_the_staleness_marker_is_set(): void
+    {
+        // Closing here would strand the incident: openStaleness() only fires on
+        // a null marker, so nothing would reopen one for the same episode.
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+        $this->integration->update(['sync_stale_alerted_at' => now()]);
+
+        // Fresh again by the accessor, so only the marker holds the sweep off.
+        $this->integration->update(['last_synced_at' => now()]);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    public function test_prune_rechecks_the_marker_before_closing(): void
+    {
+        // The scheduler runs every minute, so it can mark an integration stale
+        // between the sweep selecting candidates and closing their incidents.
+        $stale = $this->staleIntegration();
+        SyncBecameStale::dispatch($stale, 1_036_800);
+
+        // Fresh and unmarked, so the sweep selects it.
+        $this->integration->update([
+            'last_synced_at' => now(),
+            'sync_stale_alerted_at' => null,
+        ]);
+
+        IntegrationIncident::query()
+            ->forIntegration($this->integration->id)
+            ->update(['opened_at' => now()->subDays(30)]);
+
+        $integrationId = $this->integration->id;
+        $table = $this->integration->getTable();
+        $marked = false;
+
+        // Write the marker the moment the candidate query has run, standing in
+        // for a concurrent integrations:sync.
+        DB::listen(function (QueryExecuted $query) use (&$marked, $integrationId, $table): void {
+            if ($marked || ! str_contains($query->sql, 'sync_stale_alerted_at')) {
+                return;
+            }
+
+            $marked = true;
+
+            DB::table($table)->where('id', $integrationId)->update(['sync_stale_alerted_at' => now()]);
+        });
+
+        $this->artisan('integrations:prune')->assertSuccessful();
+
+        $this->assertTrue($marked, 'Expected the candidate query to read the staleness marker.');
+        $this->assertTrue($this->reloaded()->has_open_incident);
+    }
+
+    private function staleIntegration(): Integration
+    {
+        $this->integration->update([
+            'sync_interval_minutes' => 15,
+            'last_synced_at' => now()->subDays(12),
+            'health_status' => HealthStatus::Healthy,
+        ]);
+
+        return $this->integration->refresh();
     }
 
     /**

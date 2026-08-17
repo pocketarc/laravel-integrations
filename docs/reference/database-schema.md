@@ -25,8 +25,10 @@ The main table storing integration records.
 | `consecutive_failures` | int | Running failure counter |
 | `last_error_at` | timestamp (nullable) | When the last error occurred |
 | `anomaly_alerted_at` | timestamp (nullable) | Set while the anomaly evaluator considers the failure rate elevated; the durable open/closed marker for the anomaly signal |
-| `last_synced_at` | timestamp (nullable) | When the last sync completed |
-| `next_sync_at` | timestamp (nullable) | When the next sync should run |
+| `last_synced_at` | timestamp (nullable) | When the last sync completed with no failed items. A run with failures does not move it, so it records the last time syncing worked end to end. Staleness is measured from it. |
+| `next_sync_at` | timestamp (nullable) | When the next sync should run. Advances on every finalised run, clean or not. |
+| `consecutive_sync_failures` | int | Runs that finalised with failures since the last clean one. Sets the multiplier for the `next_sync_at` backoff. Distinct from `consecutive_failures`, which counts API-boundary faults and resets on any successful request. |
+| `sync_stale_alerted_at` | timestamp (nullable) | Set while the integration counts as stale; the durable open/closed marker for the staleness signal |
 | `sync_interval_minutes` | int (nullable) | Override for provider's default interval |
 | `sync_cursor` | json (nullable) | Incremental sync cursor |
 | `timestamps` | | `created_at`, `updated_at` |
@@ -136,7 +138,7 @@ Durable audit of periods an integration was in trouble. One open row per integra
 | `id` | bigint (PK) | Auto-incrementing ID |
 | `integration_id` | bigint (FK) | Parent integration |
 | `status` | string(16) | `open` or `closed` |
-| `source` | string(16) | What opened it: `health` or `circuit` |
+| `source` | string(16) | What opened it: `health`, `circuit`, or `sync` |
 | `reason` | string | Opening reason (e.g. `health_degraded`, `threshold_reached`) |
 | `peak_severity` | string | Worst `HealthStatus` reached over the incident's life |
 | `opened_at` | timestamp | When the incident opened |
