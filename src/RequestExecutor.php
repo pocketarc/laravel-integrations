@@ -22,6 +22,7 @@ use Integrations\Support\CallbackInspector;
 use Integrations\Support\Config;
 use Integrations\Support\EndpointPattern;
 use Integrations\Support\FailureClassifier;
+use Integrations\Support\JsonBody;
 use Integrations\Support\Redactor;
 use Integrations\Support\ResponseHelper;
 use InvalidArgumentException;
@@ -350,6 +351,10 @@ final class RequestExecutor
             : null;
 
         [$responseData, $cacheFor] = BinaryGuard::sanitizeResponseBody($responseData, $cacheFor);
+
+        if (JsonBody::isUnencodable($responseData)) {
+            $cacheFor = null;
+        }
 
         $responseData = $this->limitStoredResponseBody(
             $responseData,

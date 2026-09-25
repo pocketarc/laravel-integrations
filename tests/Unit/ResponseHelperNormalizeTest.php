@@ -145,4 +145,38 @@ class ResponseHelperNormalizeTest extends TestCase
 
         $this->assertSame([], $parsed);
     }
+
+    public function test_an_array_holding_inf_gets_a_marker_body_and_passes_through(): void
+    {
+        $array = ['score' => INF];
+
+        [$status, $body, $parsed] = ResponseHelper::normalize($array);
+
+        $this->assertNull($status);
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $body);
+        $this->assertSame($array, $parsed);
+    }
+
+    public function test_a_typed_object_holding_inf_gets_a_marker_body_and_passes_through(): void
+    {
+        $response = new class
+        {
+            public float $score = -INF;
+        };
+
+        [, $body, $parsed] = ResponseHelper::normalize($response);
+
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $body);
+        $this->assertSame($response, $parsed);
+    }
+
+    public function test_a_stdclass_holding_nan_still_converts_to_an_array(): void
+    {
+        [, $body, $parsed] = ResponseHelper::normalize((object) ['nested' => (object) ['score' => NAN]]);
+
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $body);
+        $this->assertIsArray($parsed);
+        $this->assertIsArray($parsed['nested']);
+        $this->assertNan($parsed['nested']['score']);
+    }
 }

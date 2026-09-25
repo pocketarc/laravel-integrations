@@ -76,4 +76,38 @@ class RedactionTest extends TestCase
         $this->assertSame('[REDACTED]', $responseData['token']);
         $this->assertSame('admin', $responseData['user']);
     }
+
+    public function test_a_body_that_decodes_to_inf_is_replaced_without_leaking_the_redacted_field(): void
+    {
+        $result = Redactor::redact('{"token":"secret-jwt-token","score":1e999}', ['token']);
+
+        $this->assertStringStartsWith('[UNENCODABLE', $result);
+        $this->assertStringNotContainsString('secret-jwt-token', $result);
+    }
+
+    public function test_a_redacted_response_that_decodes_to_inf_is_stored_as_a_marker_and_not_cached(): void
+    {
+        app(IntegrationManager::class)->register('redacting', RedactingProvider::class);
+
+        $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
+        $integration->refresh();
+
+        $body = '{"token":"secret-jwt-token","score":1e999}';
+
+        $result = $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): string => $body,
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame($body, $result);
+
+        $request = $integration->requests()->latest()->first();
+        $this->assertNotNull($request);
+        $this->assertTrue($request->response_success);
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $request->response_data);
+        $this->assertStringNotContainsString('secret-jwt-token', (string) $request->response_data);
+        $this->assertNull($request->expires_at);
+    }
 }
