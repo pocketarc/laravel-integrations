@@ -588,12 +588,14 @@ class Integration extends Model
         }
 
         $key = Config::cachePrefix().":auth-user:{$this->id}";
+        $cached = $refresh ? null : Cache::get($key);
 
-        if ($refresh) {
-            Cache::forget($key);
+        if (! is_array($cached)) {
+            $cached = $provider->authenticatedUser($this)->toArray();
+            Cache::put($key, $cached, $cacheFor);
         }
 
-        return Cache::remember($key, $cacheFor, fn (): AuthenticatedUser => $provider->authenticatedUser($this));
+        return AuthenticatedUser::from($cached);
     }
 
     /**

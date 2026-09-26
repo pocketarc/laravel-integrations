@@ -9,6 +9,7 @@ use Integrations\Data\AuthenticatedUser;
 use Integrations\Exceptions\UnsupportedByProvider;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Support\Config;
 use Integrations\Tests\Fixtures\IdentifyingProvider;
 use Integrations\Tests\Fixtures\PlainProvider;
 use Integrations\Tests\TestCase;
@@ -81,6 +82,46 @@ class AuthenticatedUserTest extends TestCase
 
         $this->assertSame(1, $provider->calls);
         $this->assertEquals($first, $second);
+    }
+
+    public function test_cache_for_works_when_the_cache_cannot_unserialize_objects(): void
+    {
+        config([
+            'cache.stores.serialized' => ['driver' => 'array', 'serialize' => true],
+            'cache.default' => 'serialized',
+            'cache.serializable_classes' => false,
+        ]);
+
+        $provider = new IdentifyingProvider;
+        $this->app->instance(IdentifyingProvider::class, $provider);
+        $integration = $this->integration('identifying', IdentifyingProvider::class);
+
+        $first = $integration->authenticatedUser(cacheFor: now()->addHour());
+        $second = $integration->authenticatedUser(cacheFor: now()->addHour());
+
+        $this->assertSame(1, $provider->calls);
+        $this->assertEquals($first, $second);
+    }
+
+    public function test_an_identity_cached_as_an_object_is_refetched(): void
+    {
+        config([
+            'cache.stores.serialized' => ['driver' => 'array', 'serialize' => true],
+            'cache.default' => 'serialized',
+            'cache.serializable_classes' => false,
+        ]);
+
+        $provider = new IdentifyingProvider;
+        $this->app->instance(IdentifyingProvider::class, $provider);
+        $integration = $this->integration('identifying', IdentifyingProvider::class);
+
+        Cache::put(Config::cachePrefix().":auth-user:{$integration->id}", new AuthenticatedUser(id: 'stale'), now()->addHour());
+
+        $user = $integration->authenticatedUser(cacheFor: now()->addHour());
+        $integration->authenticatedUser(cacheFor: now()->addHour());
+
+        $this->assertSame('u-1', $user->id);
+        $this->assertSame(1, $provider->calls);
     }
 
     public function test_refresh_forces_a_fresh_provider_call(): void
