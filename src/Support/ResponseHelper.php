@@ -13,7 +13,6 @@ use Psr\Http\Message\ResponseInterface;
 use Symfony\Component\HttpKernel\Exception\HttpExceptionInterface;
 
 use function Safe\json_decode;
-use function Safe\json_encode;
 
 final class ResponseHelper
 {
@@ -159,7 +158,7 @@ final class ResponseHelper
         if (is_array($response)) {
             return [
                 null,
-                json_encode($response, JSON_THROW_ON_ERROR),
+                JsonBody::encode($response),
                 $response,
             ];
         }
@@ -185,12 +184,30 @@ final class ResponseHelper
      */
     private static function normalizeObject(object $response): array
     {
-        $encoded = json_encode($response, JSON_THROW_ON_ERROR);
+        $encoded = JsonBody::encode($response);
 
         if ($response instanceof \stdClass) {
-            return [null, $encoded, json_decode($encoded, true)];
+            $parsed = JsonBody::isUnencodable($encoded)
+                ? self::stdClassToArray($response)
+                : json_decode($encoded, true);
+
+            return [null, $encoded, $parsed];
         }
 
         return [null, $encoded, $response];
+    }
+
+    /**
+     * @param  \stdClass|array<array-key, mixed>  $value
+     * @return array<array-key, mixed>
+     */
+    private static function stdClassToArray(\stdClass|array $value): array
+    {
+        $items = $value instanceof \stdClass ? get_object_vars($value) : $value;
+
+        return array_map(
+            fn (mixed $item): mixed => $item instanceof \stdClass || is_array($item) ? self::stdClassToArray($item) : $item,
+            $items,
+        );
     }
 }

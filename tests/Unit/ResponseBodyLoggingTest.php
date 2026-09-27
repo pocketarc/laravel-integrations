@@ -139,6 +139,24 @@ class ResponseBodyLoggingTest extends TestCase
         $this->assertStringContainsString('not stored', (string) $this->latestRequest()->response_data);
     }
 
+    public function test_a_response_holding_inf_succeeds_and_never_becomes_a_cache_source(): void
+    {
+        $result = $this->integration->request(
+            endpoint: '/api/data',
+            method: 'GET',
+            callback: fn (): array => ['score' => INF],
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['score' => INF], $result);
+
+        $request = $this->latestRequest();
+        $this->assertTrue($request->response_success);
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $request->response_data);
+        $this->assertNull($request->expires_at);
+        $this->assertSame(0, $this->integration->refresh()->consecutive_failures);
+    }
+
     private function latestRequest(): IntegrationRequest
     {
         $request = IntegrationRequest::query()->latest('id')->first();

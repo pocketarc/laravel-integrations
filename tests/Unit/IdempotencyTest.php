@@ -672,6 +672,23 @@ class IdempotencyTest extends TestCase
         }
     }
 
+    public function test_conflict_carries_unparseable_state_when_the_prior_response_held_inf(): void
+    {
+        $this->integration->at('/api/charge')
+            ->withIdempotencyKey('inf:1')
+            ->post(fn (): array => ['amount' => INF]);
+
+        try {
+            $this->integration->at('/api/charge')
+                ->withIdempotencyKey('inf:1')
+                ->post(fn (): array => ['ok' => true]);
+            $this->fail('Expected IdempotencyConflict.');
+        } catch (IdempotencyConflict $e) {
+            $this->assertNull($e->priorResponse);
+            $this->assertSame(IdempotencyPriorState::Unparseable, $e->priorState);
+        }
+    }
+
     public function test_conflict_carries_unparseable_state_when_prior_row_response_data_decodes_to_scalar(): void
     {
         // Valid JSON but decodes to a string rather than an array — same
