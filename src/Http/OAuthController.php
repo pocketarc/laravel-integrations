@@ -73,6 +73,7 @@ class OAuthController extends Controller
         $integration->update([
             'credentials' => array_merge($integration->credentialsArray(), $tokenData),
         ]);
+        $integration->forgetAuthenticatedUser();
 
         OAuthCompleted::dispatch($integration);
 
@@ -94,6 +95,7 @@ class OAuthController extends Controller
         unset($credentials['access_token'], $credentials['refresh_token'], $credentials['token_expires_at']);
 
         $model->update(['credentials' => $credentials]);
+        $model->forgetAuthenticatedUser();
 
         OAuthRevoked::dispatch($model);
 
