@@ -2,6 +2,40 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
+## 6.2 to 6.3
+
+6.3 adds a column and an index to the webhooks table. There are no breaking changes, and no code change is required.
+
+### Add the column and the index
+
+The `attempts` column holds the number of times a job has claimed the webhook. The `(status, updated_at)` index is for the queries in [`integrations:recover-webhooks`](/reference/artisan-commands#integrations-recover-webhooks).
+
+A fresh install gets both from the published baseline migration. On an existing deployment, you have already run that migration, so add a downstream migration:
+
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Integrations\Support\Config;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        Schema::table(Config::tablePrefix().'_webhooks', function (Blueprint $table): void {
+            $table->unsignedSmallInteger('attempts')->default(0);
+            $table->index(['status', 'updated_at']);
+        });
+    }
+};
+```
+
+Then run `php artisan migrate` before any web server, queue worker, or scheduled command runs the 6.3 code. `ProcessWebhook` writes `attempts` when it claims a webhook, and `integrations:recover-webhooks` reads it, so both fail until the column exists. Existing webhooks have an `attempts` value of 0. `integrations:recover-webhooks` never retries a failed webhook with 0 attempts, so a webhook that failed before the upgrade stays `failed`.
+
+### Behaviour changes
+
+`integrations:recover-webhooks` now also dispatches a job for a webhook that has been `pending` for longer than [`webhook.pending_timeout`](/reference/configuration#webhook). Its first run after the upgrade dispatches a job for every such webhook, however long ago its job was lost. Failed webhooks are not retried unless you raise `webhook.max_attempts`. The recommended schedule for the command is now every five minutes instead of hourly, because a failed webhook is retried only when the command runs.
+
 ## 6.1 to 6.2
 
 6.2 adds two columns to the integrations table. There are no breaking changes, and no code change is required.

@@ -154,12 +154,15 @@ return new class extends Migration
             $table->text('payload');
             $table->json('headers');
             $table->string('status')->default('pending');
+            // Number of times a ProcessWebhook job has claimed this webhook.
+            $table->unsignedSmallInteger('attempts')->default(0);
             $table->text('error')->nullable();
             $table->timestamp('processed_at')->nullable();
             $table->timestamps();
 
             $table->unique(['integration_id', 'delivery_id']);
             $table->index(['integration_id', 'created_at']);
+            $table->index(['status', 'updated_at']);
         });
 
         Schema::create("{$prefix}_idempotency_keys", function (Blueprint $table) use ($prefix): void {

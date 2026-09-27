@@ -4,6 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Models;
 
+use Carbon\CarbonInterface;
 use Illuminate\Database\Eloquent\Model;
 use Illuminate\Database\Eloquent\Relations\BelongsTo;
 use Illuminate\Database\Query\Builder;
@@ -18,6 +19,7 @@ use Integrations\Support\Config;
  * @property string $payload
  * @property array<string, mixed> $headers
  * @property string $status
+ * @property int $attempts
  * @property string|null $error
  * @property Carbon|null $processed_at
  * @property Carbon|null $created_at
@@ -31,6 +33,8 @@ use Integrations\Support\Config;
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook forEventType(string $eventType)
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook recent(int $hours = 24)
  * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook staleProcessing(int $timeoutSeconds)
+ * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook stalePending(int $timeoutSeconds)
+ * @method static Builders\IntegrationWebhookBuilder<static>|IntegrationWebhook retryable(int $maxAttempts)
  *
  * @property-read Integration|null $integration
  *
@@ -55,6 +59,7 @@ class IntegrationWebhook extends Model
     {
         return [
             'headers' => 'json',
+            'attempts' => 'integer',
             'processed_at' => 'datetime',
         ];
     }
@@ -65,58 +70,91 @@ class IntegrationWebhook extends Model
         return $this->belongsTo(Integration::class);
     }
 
+    private ?int $claimedAttempt = null;
+
     public function markProcessing(): bool
     {
-        $now = now();
+        $loaded = $this->getAttribute('attempts');
+        $attempts = (is_int($loaded) ? $loaded : 0) + 1;
 
-        $claimed = $this->newQuery()
-            ->where('id', $this->id)
-            ->where('status', 'pending')
-            ->update(['status' => 'processing', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
+        $claimed = $this->transition(
+            [['status', '=', 'pending'], ['attempts', '=', $attempts - 1]],
+            ['status' => 'processing', 'attempts' => $attempts, 'error' => null, 'processed_at' => null],
+        );
 
-        if ($claimed > 0) {
-            $this->fill(['status' => 'processing', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
-
-            return true;
+        if ($claimed) {
+            $this->claimedAttempt = $attempts;
         }
 
-        return false;
+        return $claimed;
     }
 
     public function resetToPending(): bool
     {
-        $now = now();
+        return $this->transition(
+            [['status', '=', 'processing']],
+            ['status' => 'pending', 'error' => null, 'processed_at' => null],
+        );
+    }
 
-        $reset = $this->newQuery()
-            ->where('id', $this->id)
-            ->where('status', 'processing')
-            ->update(['status' => 'pending', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
+    public function retry(): bool
+    {
+        return $this->transition(
+            [['status', '=', 'failed'], ['attempts', '=', $this->attempts]],
+            ['status' => 'pending', 'error' => null, 'processed_at' => null],
+        );
+    }
 
-        if ($reset > 0) {
-            $this->fill(['status' => 'pending', 'error' => null, 'processed_at' => null, 'updated_at' => $now]);
-
-            return true;
-        }
-
-        return false;
+    public function reclaimPending(CarbonInterface $staleBefore): bool
+    {
+        return $this->transition([['status', '=', 'pending'], ['updated_at', '<', $staleBefore]], []);
     }
 
     public function markProcessed(): void
     {
-        $this->update([
-            'status' => 'processed',
-            'error' => null,
-            'processed_at' => now(),
-        ]);
+        $this->finish(['status' => 'processed', 'error' => null, 'processed_at' => now()]);
     }
 
     public function markFailed(string $error): void
     {
-        $this->update([
-            'status' => 'failed',
-            'error' => $error,
-            'processed_at' => now(),
-        ]);
+        $this->finish(['status' => 'failed', 'error' => $error, 'processed_at' => now()]);
+    }
+
+    /**
+     * @param  array<model-property<IntegrationWebhook>, mixed>  $attributes
+     */
+    private function finish(array $attributes): void
+    {
+        if ($this->claimedAttempt === null) {
+            $this->fill($attributes)->save();
+
+            return;
+        }
+
+        $this->transition([['status', '=', 'processing'], ['attempts', '=', $this->claimedAttempt]], $attributes);
+    }
+
+    /**
+     * @param  list<array{model-property<IntegrationWebhook>, string, mixed}>  $conditions
+     * @param  array<model-property<IntegrationWebhook>, mixed>  $attributes
+     */
+    private function transition(array $conditions, array $attributes): bool
+    {
+        $attributes['updated_at'] = now();
+
+        $query = $this->newQuery()->where('id', $this->id);
+
+        foreach ($conditions as [$column, $operator, $value]) {
+            $query->where($column, $operator, $value);
+        }
+
+        if ($query->update($attributes) === 0) {
+            return false;
+        }
+
+        $this->fill($attributes)->syncOriginalAttributes(array_keys($attributes));
+
+        return true;
     }
 
     /**

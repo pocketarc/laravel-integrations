@@ -21,6 +21,9 @@ php artisan vendor:publish --tag=integrations-config
 | `webhook.queue` | `string` | `'default'` | Queue for `ProcessWebhook` jobs |
 | `webhook.max_payload_bytes` | `int` | `1048576` | Reject payloads larger than this (1MB) |
 | `webhook.processing_timeout` | `int` | `1800` | Seconds before a processing webhook is stale (30 min) |
+| `webhook.pending_timeout` | `int` | `3600` | Seconds before `integrations:recover-webhooks` dispatches another job for a pending webhook (1 hour) |
+| `webhook.max_attempts` | `int` | `1` | Maximum processing attempts per webhook, including the first. With `1`, failed webhooks are not retried |
+| `webhook.retry_backoff` | `array` | `[60, 300, 1800, 7200, 21600]` | Seconds to wait before each retry of a failed webhook. Entry N is the wait after attempt N; past the end of the list, the last entry is used |
 | `webhook.middleware` | `array` | `[]` | Additional middleware for webhook routes |
 
 ## OAuth

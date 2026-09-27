@@ -232,6 +232,154 @@ class IntegrationWebhookTest extends TestCase
         }
     }
 
+    public function test_mark_processing_counts_the_attempt(): void
+    {
+        $webhook = $this->webhook('attempt-1', 'pending');
+
+        $webhook->markProcessing();
+
+        $this->assertSame(1, $webhook->attempts);
+        $this->assertSame(1, $webhook->refresh()->attempts);
+    }
+
+    public function test_a_claim_that_loses_counts_no_attempt(): void
+    {
+        $webhook = $this->webhook('attempt-2', 'processed');
+
+        $this->assertFalse($webhook->markProcessing());
+        $this->assertSame(0, $webhook->refresh()->attempts);
+    }
+
+    public function test_mark_processing_refuses_a_copy_loaded_before_another_attempt(): void
+    {
+        $webhook = $this->webhook('claim-stale', 'pending');
+        $stale = IntegrationWebhook::query()->findOrFail($webhook->id);
+        $webhook->newQuery()->where('id', $webhook->id)->update(['attempts' => 1]);
+
+        $this->assertFalse($stale->markProcessing());
+        $this->assertSame(1, $stale->refresh()->attempts);
+    }
+
+    public function test_a_later_save_does_not_write_back_the_claimed_attempt_count(): void
+    {
+        $webhook = $this->webhook('claim-save', 'pending');
+        $webhook->markProcessing();
+        $webhook->newQuery()->where('id', $webhook->id)->update(['attempts' => 5]);
+
+        $webhook->save();
+
+        $this->assertSame(5, $webhook->refresh()->attempts);
+    }
+
+    public function test_a_job_that_lost_its_claim_leaves_the_newer_attempt_alone(): void
+    {
+        $first = $this->webhook('claim-lost', 'pending');
+        $first->markProcessing();
+        IntegrationWebhook::query()->findOrFail($first->id)->resetToPending();
+        $this->assertTrue(IntegrationWebhook::query()->findOrFail($first->id)->markProcessing());
+
+        $first->markFailed('Too slow.');
+        $first->markProcessed();
+
+        $first->refresh();
+        $this->assertSame('processing', $first->status);
+        $this->assertSame(2, $first->attempts);
+        $this->assertNull($first->error);
+    }
+
+    public function test_mark_failed_still_updates_a_webhook_this_copy_did_not_claim(): void
+    {
+        $webhook = $this->webhook('unclaimed', 'pending');
+
+        $webhook->markFailed('Rejected.');
+
+        $this->assertSame('failed', $webhook->refresh()->status);
+    }
+
+    public function test_retry_moves_a_failed_webhook_back_to_pending(): void
+    {
+        $webhook = $this->webhook('retry-1', 'failed', attempts: 1);
+
+        $this->assertTrue($webhook->retry());
+        $webhook->refresh();
+
+        $this->assertSame('pending', $webhook->status);
+        $this->assertNull($webhook->error);
+        $this->assertNull($webhook->processed_at);
+        $this->assertSame(1, $webhook->attempts);
+    }
+
+    public function test_retry_only_from_failed(): void
+    {
+        foreach (['pending', 'processing', 'processed'] as $status) {
+            $this->assertFalse($this->webhook("retry-{$status}", $status)->retry());
+        }
+    }
+
+    public function test_retry_refuses_a_copy_read_before_another_attempt_failed(): void
+    {
+        $webhook = $this->webhook('retry-stale', 'failed', attempts: 1);
+        $stale = IntegrationWebhook::query()->findOrFail($webhook->id);
+        $webhook->newQuery()->where('id', $webhook->id)->update(['attempts' => 2]);
+
+        $this->assertFalse($stale->retry());
+        $this->assertSame('failed', $stale->refresh()->status);
+    }
+
+    public function test_reclaim_pending_touches_a_pending_webhook_older_than_the_cutoff(): void
+    {
+        $webhook = $this->webhook('reclaim-1', 'pending');
+        $webhook->newQuery()->where('id', $webhook->id)->update(['updated_at' => now()->subHours(2)]);
+
+        $this->assertTrue($webhook->reclaimPending(now()->subHour()));
+        $this->assertTrue($webhook->refresh()->updated_at->greaterThan(now()->subMinute()));
+    }
+
+    public function test_reclaim_pending_claims_a_webhook_once(): void
+    {
+        $webhook = $this->webhook('reclaim-2', 'pending');
+        $webhook->newQuery()->where('id', $webhook->id)->update(['updated_at' => now()->subHours(2)]);
+        $sibling = IntegrationWebhook::query()->findOrFail($webhook->id);
+
+        $this->assertTrue($webhook->reclaimPending(now()->subHour()));
+        $this->assertFalse($sibling->reclaimPending(now()->subHour()));
+    }
+
+    public function test_reclaim_pending_leaves_other_webhooks_alone(): void
+    {
+        foreach (['processing', 'processed', 'failed'] as $status) {
+            $webhook = $this->webhook("reclaim-{$status}", $status);
+            $webhook->newQuery()->where('id', $webhook->id)->update(['updated_at' => now()->subHours(2)]);
+
+            $this->assertFalse($webhook->reclaimPending(now()->subHour()));
+        }
+    }
+
+    public function test_stale_pending_scope(): void
+    {
+        $stale = $this->webhook('stale-pending-1', 'pending');
+        $stale->newQuery()->where('id', $stale->id)->update(['updated_at' => now()->subHours(2)]);
+        $this->webhook('fresh-pending-1', 'pending');
+
+        $results = IntegrationWebhook::query()->stalePending(3600)->get();
+
+        $this->assertCount(1, $results);
+        $this->assertSame($stale->id, $results->first()?->id);
+    }
+
+    public function test_retryable_scope_counts_only_claimed_attempts_below_the_limit(): void
+    {
+        $this->webhook('never-claimed', 'failed', attempts: 0);
+        $retryable = $this->webhook('once', 'failed', attempts: 1);
+        $this->webhook('exhausted', 'failed', attempts: 3);
+        $this->webhook('pending', 'pending', attempts: 1);
+
+        $results = IntegrationWebhook::query()->retryable(3)->get();
+
+        $this->assertCount(1, $results);
+        $this->assertSame($retryable->id, $results->first()?->id);
+    }
+
     public function test_stale_processing_scope(): void
     {
         $stale = IntegrationWebhook::create([
@@ -258,5 +406,17 @@ class IntegrationWebhookTest extends TestCase
 
         $this->assertCount(1, $results);
         $this->assertSame($stale->id, $results->first()->id);
+    }
+
+    private function webhook(string $deliveryId, string $status, int $attempts = 0): IntegrationWebhook
+    {
+        return IntegrationWebhook::create([
+            'integration_id' => $this->integration->id,
+            'delivery_id' => $deliveryId,
+            'payload' => '{}',
+            'headers' => [],
+            'status' => $status,
+            'attempts' => $attempts,
+        ]);
     }
 }

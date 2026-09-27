@@ -22,9 +22,26 @@ return [
 
         // Maximum time (in seconds) a webhook can remain in "processing" status before
         // it is considered stale and eligible for recovery by integrations:recover-webhooks.
-        // If a queue worker dies mid-processing, the webhook gets stuck; this timeout
-        // allows automatic recovery. Minimum 60 seconds.
+        // Without this timeout, a webhook whose queue worker died mid-processing would
+        // stay in "processing" forever. If the value is not an integer of 60 or more, the
+        // package uses the default instead.
         'processing_timeout' => 1800, // 30 minutes
+
+        // Seconds a webhook can stay "pending" before integrations:recover-webhooks
+        // dispatches another job for it. If the first job is still queued, only one of
+        // the two jobs can claim the webhook, so the handler runs once. If the value is
+        // not an integer of 60 or more, the package uses the default instead.
+        'pending_timeout' => 3600, // 1 hour
+
+        // Maximum processing attempts per webhook, including the first. With a value
+        // above 1, integrations:recover-webhooks retries a failed webhook after its
+        // retry_backoff wait has elapsed.
+        'max_attempts' => 1,
+
+        // Seconds to wait before each retry of a failed webhook, counted from the end of
+        // the failed attempt. Entry N is the wait after attempt N. Past the end of the
+        // list, the last entry is used.
+        'retry_backoff' => [60, 300, 1800, 7200, 21600],
 
         // Additional middleware applied to webhook routes. Webhook routes intentionally
         // have no middleware by default - most webhook providers can't handle CSRF tokens
