@@ -2,6 +2,13 @@
 
 All notable changes to this project are documented here. This project follows [Semantic Versioning](https://semver.org/).
 
+## 6.3.0
+
+- Fix: [`authenticatedUser(cacheFor: ...)`](/features/authenticated-identity#caching) no longer throws a `TypeError` on a cache hit when `cache.serializable_classes` is `false`, a setting under which cached objects can't be unserialized. The identity is now cached as JSON under a new key. During a deploy, workers still on an older release read only the old key, so they never read an entry in the new format. A malformed cached entry counts as a cache miss, and the identity is fetched again and written over it. On a cache hit, `authenticatedUser()` now builds a plain `AuthenticatedUser` from the cached fields, so any property that a provider's subclass adds is lost. Each object in `raw` is returned as the array or scalar that `json_decode()` produces from its JSON. On a cache miss, `authenticatedUser()` still returns the provider's own object.
+- Fix: now that the identity is cached as JSON, `authenticatedUser(cacheFor: ...)` throws `UncacheableAuthenticatedUser` and caches nothing if the provider returns an identity that isn't JSON-encodable or whose `raw` has an integer top-level key. PHP converts a numeric string key such as `"123"` to an integer when it decodes JSON, so if `raw` is decoded from an upstream object with a numeric top-level key, the identity can't be cached. A call without `cacheFor` is unaffected. See [implementing it on a provider](/features/authenticated-identity#implementing-it-on-a-provider).
+- Fix: the cached identity is now cleared when the OAuth callback or revoke route runs. Previously, the cached entry held the old account until it expired, and both `authenticatedUser(cacheFor: ...)` and [`integrations:health`](/reference/artisan-commands#integrations-health) read from it. With the one-day TTL from the [caching example](/features/authenticated-identity#caching), that meant up to a day.
+- New: `Integration::forgetAuthenticatedUser()` clears the cached identity. Call it after changing credentials outside the OAuth routes. See [credential changes](/features/authenticated-identity#credential-changes).
+
 ## 6.2.0
 
 A sync run always reaches a terminal state, and the schedule always moves afterwards. Everything below closes a case where one or the other did not hold.

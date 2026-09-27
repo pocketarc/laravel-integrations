@@ -10,6 +10,7 @@ use Integrations\Events\OAuthCompleted;
 use Integrations\Events\OAuthRevoked;
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Support\Config;
 use Integrations\Tests\Fixtures\TestProvider;
 use Integrations\Tests\TestCase;
 
@@ -52,6 +53,20 @@ class OAuthControllerTest extends TestCase
         Event::assertDispatched(OAuthCompleted::class);
     }
 
+    public function test_callback_forgets_the_cached_identity(): void
+    {
+        $integration = Integration::create(['provider' => 'test', 'name' => 'Test']);
+        $identityKey = Config::cachePrefix().":auth-user:v2:{$integration->id}";
+        Cache::put($identityKey, '{"id":"previous-account","raw":{}}', 600);
+
+        $state = 'test-state-token';
+        Cache::put("integrations:oauth:state:{$state}", $integration->id, 600);
+
+        $this->get("/integrations/oauth/callback?state={$state}&code=auth-code-123");
+
+        $this->assertFalse(Cache::has($identityKey));
+    }
+
     public function test_callback_rejects_invalid_state(): void
     {
         $response = $this->get('/integrations/oauth/callback?state=bogus&code=abc');
@@ -91,5 +106,20 @@ class OAuthControllerTest extends TestCase
         $this->assertSame('my-client', ($integration->credentials ?? [])['client_id'] ?? null);
 
         Event::assertDispatched(OAuthRevoked::class);
+    }
+
+    public function test_revoke_forgets_the_cached_identity(): void
+    {
+        $integration = Integration::create([
+            'provider' => 'test',
+            'name' => 'Test',
+            'credentials' => ['access_token' => 'old-token'],
+        ]);
+        $identityKey = Config::cachePrefix().":auth-user:v2:{$integration->id}";
+        Cache::put($identityKey, '{"id":"previous-account","raw":{}}', 600);
+
+        $this->post("/integrations/{$integration->id}/oauth/revoke");
+
+        $this->assertFalse(Cache::has($identityKey));
     }
 }

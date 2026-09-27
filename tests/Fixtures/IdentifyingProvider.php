@@ -8,26 +8,33 @@ use Integrations\Contracts\IdentifiesAuthenticatedUser;
 use Integrations\Contracts\IntegrationProvider;
 use Integrations\Data\AuthenticatedUser;
 use Integrations\Models\Integration;
+use RuntimeException;
 
 class IdentifyingProvider implements IdentifiesAuthenticatedUser, IntegrationProvider
 {
-    /**
-     * How many times authenticatedUser() has run, so caching tests can assert
-     * the provider is hit once (cached) or every call (uncached). Bind a
-     * shared instance via $this->app->instance() to read it across calls.
-     */
     public int $calls = 0;
+
+    public ?AuthenticatedUser $lastReturned = null;
+
+    public bool $fails = false;
+
+    /** @var array<array-key, mixed> */
+    public array $raw = ['login' => 'octocat', 'id' => 1];
 
     public function authenticatedUser(Integration $integration): AuthenticatedUser
     {
         $this->calls++;
 
-        return new AuthenticatedUser(
+        if ($this->fails) {
+            throw new RuntimeException('Upstream unavailable.');
+        }
+
+        return $this->lastReturned = new AuthenticatedUser(
             id: 'u-1',
             username: 'octocat',
             name: 'The Octocat',
             email: 'octo@example.com',
-            raw: ['login' => 'octocat', 'id' => 1],
+            raw: $this->raw,
         );
     }
 
