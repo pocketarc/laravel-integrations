@@ -42,9 +42,9 @@ Then run `php artisan migrate` before any web server, queue worker, or scheduled
 
 ### Add the new columns
 
-`consecutive_sync_failures` sets the multiplier on the [failure backoff](/features/scheduled-syncs#failure-backoff), and `sync_stale_alerted_at` holds the open/closed state for the [staleness signal](/core-concepts/health-monitoring#sync-staleness).
+The package derives the multiplier on the [failure backoff](/features/scheduled-syncs#failure-backoff) from `consecutive_sync_failures`, and `sync_stale_alerted_at` holds the open/closed state for the [staleness signal](/core-concepts/health-monitoring#sync-staleness).
 
-A fresh install gets them from the published baseline migration. An existing deployment has already run that migration, so add a downstream migration that appends the columns:
+A fresh install gets them from the published baseline migration. On an existing deployment, you have already run that migration, so add a downstream migration:
 
 ```php
 use Illuminate\Database\Migrations\Migration;
@@ -64,9 +64,9 @@ return new class extends Migration
 };
 ```
 
-Then run `php artisan migrate`. A default of 0 is correct for every existing row: the first run that finalises with failures sets the multiplier from there, and the first clean run resets it.
+Then run `php artisan migrate` before any queue worker or scheduled command runs the 6.2 code. `SyncIntegration`, `FinaliseSyncRun`, `integrations:sync` and `integrations:prune` read or write these columns and fail until the columns exist. Existing integrations have a `consecutive_sync_failures` value of 0. You don't need to backfill it: the first run that is finalised with failures after the upgrade sets it to 1.
 
-### What changes without you doing anything
+### Behaviour changes
 
 `next_sync_at` now advances after a run that finalised with failures, where before only a clean run moved it. An integration held due on every scheduler tick by a failing item will start pacing itself instead. `last_synced_at` still moves only on a clean run, so anything reading it for "when did this last work" is unaffected.
 
@@ -132,6 +132,63 @@ Only on MySQL and MariaDB, and only if your own tables use a different collation
 Then publish and run the migrations. `0001_01_01_000002_pin_integration_mappings_collation.php` applies it to an existing table and no-ops when the setting is null or the driver has no per-column collation.
 
 `integrations:find-orphans` compares in PHP, so you don't need this just to run it.
+
+## 5.2 to 5.3
+
+5.3 adds four columns, an index, and a table. There are no breaking changes, and no code change is required.
+
+### Add the columns, the index, and the table
+
+`integration_requests.failure_class` holds the `FailureClass` of a failed request. For a failure logged inside a sync item run, `integration_logs.attempt` and `max_attempts` hold the attempt number and the maximum number of attempts. `integrations.anomaly_alerted_at` holds the open/closed state for the [anomaly signal](/advanced/circuit-breaker#anomaly-signal), and `integration_incidents` holds the [incident history](/core-concepts/health-monitoring#incident-history).
+
+A fresh install gets all of them from the published baseline migration. On an existing deployment, you have already run that migration, so add a downstream migration:
+
+```php
+use Illuminate\Database\Migrations\Migration;
+use Illuminate\Database\Schema\Blueprint;
+use Illuminate\Support\Facades\Schema;
+use Integrations\Support\Config;
+
+return new class extends Migration
+{
+    public function up(): void
+    {
+        $prefix = Config::tablePrefix();
+
+        Schema::table("{$prefix}s", function (Blueprint $table): void {
+            $table->timestamp('anomaly_alerted_at')->nullable();
+        });
+
+        Schema::table("{$prefix}_requests", function (Blueprint $table) use ($prefix): void {
+            $table->string('failure_class')->nullable();
+            $table->index(['integration_id', 'failure_class', 'created_at'], "{$prefix}_requests_failure_class_idx");
+        });
+
+        Schema::table("{$prefix}_logs", function (Blueprint $table): void {
+            $table->unsignedSmallInteger('attempt')->nullable();
+            $table->unsignedSmallInteger('max_attempts')->nullable();
+        });
+
+        Schema::create("{$prefix}_incidents", function (Blueprint $table) use ($prefix): void {
+            $table->id();
+            $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
+            $table->string('status', 16)->default('open');
+            $table->string('source', 16);
+            $table->string('reason');
+            $table->string('peak_severity');
+            $table->timestamp('opened_at');
+            $table->timestamp('last_error_at')->nullable();
+            $table->timestamp('closed_at')->nullable();
+            $table->timestamps();
+
+            $table->index(['integration_id', 'status']);
+            $table->index(['integration_id', 'opened_at']);
+        });
+    }
+};
+```
+
+Then run `php artisan migrate` before any web server or queue worker runs the 5.3 code. In 5.3, the package writes `failure_class` with every request it logs, and `attempt` and `max_attempts` with every operation it logs. Incident recording is on by default (`observability.incidents_enabled`), so the package also writes to `integration_incidents` when an integration's health or circuit breaker state changes. Each of these writes fails until the migration adds its column or table. Requests logged before the upgrade have a null `failure_class`, which [`failureSummary()`](/core-concepts/health-monitoring#failure-summary) counts as `unknown`.
 
 ## 4.x to 5.0
 
