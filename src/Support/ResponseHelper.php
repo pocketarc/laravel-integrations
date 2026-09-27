@@ -4,7 +4,7 @@ declare(strict_types=1);
 
 namespace Integrations\Support;
 
-use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
+use GuzzleHttp\Exception\BadResponseException;
 use Illuminate\Http\Client\RequestException as LaravelRequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
@@ -26,7 +26,8 @@ final class ResponseHelper
                 return $current->response->status();
             }
 
-            if ($current instanceof GuzzleRequestException && $current->getResponse() !== null) {
+            // RequestException has no getResponse() in Guzzle 8.
+            if ($current instanceof BadResponseException) {
                 return $current->getResponse()->getStatusCode();
             }
 
