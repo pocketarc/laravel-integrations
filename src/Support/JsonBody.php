@@ -8,10 +8,6 @@ use JsonException;
 
 use function Safe\json_encode;
 
-/**
- * JSON-encodes a request or response body for storage, returning an
- * "[UNENCODABLE <exception message>]" marker when json_encode throws.
- */
 final class JsonBody
 {
     private const MARKER_PREFIX = '[UNENCODABLE ';
@@ -21,6 +17,8 @@ final class JsonBody
         try {
             return json_encode($value, JSON_THROW_ON_ERROR);
         } catch (JsonException $e) {
+            // Keep $value out of the marker. Redactor::redact() returns non-JSON bodies
+            // unchanged, so sensitive fields from $value would be stored unredacted.
             return self::MARKER_PREFIX.$e->getMessage().']';
         }
     }
