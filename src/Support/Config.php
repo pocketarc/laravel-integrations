@@ -421,6 +421,38 @@ final class Config
         return self::boundedInt(config('integrations.webhook.processing_timeout', 1800), 1800, 60);
     }
 
+    public static function webhookPendingTimeout(): int
+    {
+        return self::boundedInt(config('integrations.webhook.pending_timeout', 3600), 3600, 60);
+    }
+
+    public static function webhookMaxAttempts(): int
+    {
+        return self::boundedInt(config('integrations.webhook.max_attempts', 1), 1, 1);
+    }
+
+    /**
+     * Seconds to wait before each retry of a failed webhook.
+     *
+     * @return non-empty-list<int>
+     */
+    public static function webhookRetryBackoff(): array
+    {
+        $default = [60, 300, 1800, 7200, 21600];
+        $value = config('integrations.webhook.retry_backoff', $default);
+
+        if (! is_array($value)) {
+            return $default;
+        }
+
+        $backoff = array_values(array_filter(
+            $value,
+            static fn (mixed $seconds): bool => is_int($seconds) && $seconds >= 0,
+        ));
+
+        return $backoff === [] ? $default : $backoff;
+    }
+
     /**
      * Byte cap on a stored response body, or null to store it whole. A value
      * below 1KB is treated as unset: a body cut that short is not worth the

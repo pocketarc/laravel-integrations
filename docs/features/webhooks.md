@@ -122,21 +122,32 @@ php artisan integrations:replay-webhook {webhookId}
 
 This reconstructs the request from stored data and re-dispatches it through `handleWebhook()`.
 
-## Recovering stale webhooks
+## Recovering stranded webhooks
 
-If a queue worker dies mid-processing, a webhook can get stuck in `processing` status. The recovery command finds these and re-queues them:
+A webhook can be left with no job to process it:
+
+- A queue worker died while processing it. The webhook stays `processing`.
+- Its job was lost before a worker picked it up, for example when the queue store was flushed. The webhook stays `pending`.
+- Processing failed, for example because the handler threw an exception. The webhook is `failed`.
+
+`integrations:recover-webhooks` dispatches a new job for each webhook that has been `processing` for longer than `webhook.processing_timeout` (default 30 minutes) or `pending` for longer than `webhook.pending_timeout` (default 1 hour):
 
 ```bash
 php artisan integrations:recover-webhooks
 ```
 
-Add to your scheduler for automatic recovery:
+If the first job of a pending webhook is still queued, only one of the two jobs can claim the webhook, so the handler runs once. The command dispatches at most one extra job per webhook per `webhook.pending_timeout`, even when two runs of the command overlap.
+
+Failed webhooks are not retried by default. A retry runs the handler again from the start, so raise `webhook.max_attempts` above 1 only if every handler is idempotent. With a higher value, the command moves a failed webhook back to `pending` and dispatches a job when both of these conditions are true:
+
+- The webhook has at least 1 attempt and fewer than `max_attempts`. A job increments `attempts` each time it claims the webhook. A webhook with 0 attempts, such as one that failed before 6.4, is never retried.
+- The backoff for the webhook's last attempt has elapsed since that attempt failed. The backoff after attempt N is entry N of `webhook.retry_backoff`. Past the end of the list, the last entry is used.
+
+A failed webhook is retried on the first run of the command after its backoff has elapsed. Add the command to your scheduler:
 
 ```php
-Schedule::command('integrations:recover-webhooks')->hourly();
+Schedule::command('integrations:recover-webhooks')->everyFiveMinutes();
 ```
-
-A webhook is considered stale after `webhook.processing_timeout` seconds (default 1800 / 30 minutes).
 
 ## Configuration
 
@@ -147,6 +158,9 @@ A webhook is considered stale after `webhook.processing_timeout` seconds (defaul
     'queue' => 'default',
     'max_payload_bytes' => 1_048_576,  // 1MB
     'processing_timeout' => 1800,      // 30 minutes
+    'pending_timeout' => 3600,         // 1 hour
+    'max_attempts' => 1,               // no retries
+    'retry_backoff' => [60, 300, 1800, 7200, 21600],
     'middleware' => [],
 ],
 ```

@@ -208,7 +208,13 @@ Configure retention in `config/integrations.php`:
 
 ## integrations:recover-webhooks
 
-Reset stale processing webhooks to pending and re-dispatch them.
+Dispatch a new job for each webhook that is:
+
+- `processing` for longer than `webhook.processing_timeout` (default 30 minutes). The command sets the webhook back to `pending` first.
+- `pending` for longer than `webhook.pending_timeout` (default 1 hour).
+- `failed` with at least 1 attempt and fewer than `webhook.max_attempts`, after the `webhook.retry_backoff` wait for its last attempt has elapsed. The command sets the webhook back to `pending` first. With the default `max_attempts` of 1, failed webhooks are not retried.
+
+See [recovering stranded webhooks](/features/webhooks#recovering-stranded-webhooks).
 
 ```bash
 php artisan integrations:recover-webhooks
@@ -217,10 +223,8 @@ php artisan integrations:recover-webhooks
 Add to your scheduler:
 
 ```php
-Schedule::command('integrations:recover-webhooks')->hourly();
+Schedule::command('integrations:recover-webhooks')->everyFiveMinutes();
 ```
-
-A webhook is considered stale after `webhook.processing_timeout` seconds (default 30 minutes).
 
 ## integrations:replay-webhook
 

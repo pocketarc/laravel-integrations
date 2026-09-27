@@ -6,7 +6,6 @@ namespace Integrations;
 
 use Carbon\Carbon;
 use Closure;
-use GuzzleHttp\Exception\BadResponseException;
 use Illuminate\Http\Client\ConnectionException;
 use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\Exceptions\RetryableException;
@@ -188,25 +187,27 @@ class RetryHandler
     private static function extractRetryAfterMs(Throwable $e): ?int
     {
         for ($current = $e; $current !== null; $current = $current->getPrevious()) {
-            // RequestException has no getResponse() in Guzzle 8.
-            if ($current instanceof BadResponseException) {
-                $header = $current->getResponse()->getHeaderLine('Retry-After');
-                if ($header === '') {
-                    break;
-                }
+            $response = ResponseHelper::responseFrom($current);
+            if ($response === null) {
+                continue;
+            }
 
-                if (is_numeric($header)) {
-                    return (int) ((float) $header * 1000);
-                }
+            $header = $response->getHeaderLine('Retry-After');
+            if ($header === '') {
+                break;
+            }
 
-                try {
-                    $retryAt = Carbon::parse($header);
-                    $delaySeconds = now()->diffInSeconds($retryAt, absolute: false);
+            if (is_numeric($header)) {
+                return (int) ((float) $header * 1000);
+            }
 
-                    return $delaySeconds > 0 ? (int) ($delaySeconds * 1000) : null;
-                } catch (Throwable) {
-                    return null;
-                }
+            try {
+                $retryAt = Carbon::parse($header);
+                $delaySeconds = now()->diffInSeconds($retryAt, absolute: false);
+
+                return $delaySeconds > 0 ? (int) ($delaySeconds * 1000) : null;
+            } catch (Throwable) {
+                return null;
             }
         }
 

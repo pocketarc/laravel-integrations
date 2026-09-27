@@ -48,4 +48,21 @@ class IntegrationWebhookBuilder extends Builder
 
         return $this;
     }
+
+    public function stalePending(int $timeoutSeconds): static
+    {
+        $this->where('status', 'pending')
+            ->where('updated_at', '<', now()->subSeconds($timeoutSeconds));
+
+        return $this;
+    }
+
+    public function retryable(int $maxAttempts): static
+    {
+        $this->where('status', 'failed')
+            ->where('attempts', '>=', 1)
+            ->where('attempts', '<', $maxAttempts);
+
+        return $this;
+    }
 }

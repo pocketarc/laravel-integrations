@@ -131,7 +131,7 @@ Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(sync_lo
 
 ## integration_incidents
 
-Durable audit of periods an integration was in trouble. One open row per integration, written from health/circuit state-change events; see [Incident history](/core-concepts/health-monitoring#incident-history).
+Durable audit of periods an integration was in trouble. At most one open row per integration, written from health, circuit and sync-staleness state-change events; see [Incident history](/core-concepts/health-monitoring#incident-history).
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -155,12 +155,15 @@ Webhook audit trail.
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | bigint (PK) | Auto-incrementing ID |
-| `integration_id` | bigint (FK, nullable) | Parent integration (null for generic webhooks) |
-| `provider` | string | Provider identifier |
+| `integration_id` | bigint (FK) | Parent integration |
+| `delivery_id` | string | Deduplication key |
 | `event_type` | string (nullable) | Resolved event type |
-| `delivery_id` | string (nullable) | Deduplication key |
 | `payload` | text | Full webhook payload |
-| `headers` | json (nullable) | Request headers |
+| `headers` | json | Request headers |
 | `status` | string | `pending`, `processing`, `processed`, `failed` |
-| `processed_at` | timestamp (nullable) | When processing completed |
+| `attempts` | unsigned smallint | Number of times a job has claimed this webhook. A failed webhook is not retried once this reaches `webhook.max_attempts` |
+| `error` | text (nullable) | Error message from the last attempt. Null unless `status` is `failed` |
+| `processed_at` | timestamp (nullable) | When the webhook was marked `processed` or `failed` |
 | `timestamps` | | `created_at`, `updated_at` |
+
+Unique constraint on `(integration_id, delivery_id)`. Indexed on `(integration_id, created_at)`, and on `(status, updated_at)` for the queries in `integrations:recover-webhooks`.

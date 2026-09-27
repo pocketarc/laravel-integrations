@@ -5,7 +5,7 @@ declare(strict_types=1);
 namespace Integrations\Tests\Unit;
 
 use Carbon\CarbonImmutable;
-use GuzzleHttp\Exception\BadResponseException;
+use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Client\ConnectionException;
@@ -61,7 +61,7 @@ class FailureClassifierTest extends TestCase
     public function test_classifies_wrapped_guzzle_status(): void
     {
         $request = new Request('GET', 'https://example.com');
-        $guzzle = new BadResponseException('down', $request, new Response(503));
+        $guzzle = GuzzleRequestException::create($request, new Response(503));
         $wrapper = new RuntimeException('SDK error', 0, $guzzle);
 
         $this->assertSame(FailureClass::Upstream, FailureClassifier::classify($wrapper));
@@ -130,6 +130,19 @@ class FailureClassifierTest extends TestCase
             public function getStatusCode(): int
             {
                 return 503;
+            }
+        };
+
+        $this->assertSame(FailureClass::Upstream, FailureClassifier::classify($e));
+    }
+
+    public function test_duck_typed_get_http_status(): void
+    {
+        $e = new class('sdk') extends RuntimeException
+        {
+            public function getHttpStatus(): int
+            {
+                return 502;
             }
         };
 

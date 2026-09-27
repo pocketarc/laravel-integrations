@@ -183,7 +183,7 @@ class ProcessSyncItemTest extends TestCase
             'attempts' => 0,
         ]);
 
-        $queueJob = $this->createMock(Job::class);
+        $queueJob = $this->createStub(Job::class);
         $queueJob->method('attempts')->willReturn(3);
 
         $job = new ProcessSyncItem($item->id, new TestSyncItemEvent($integration, 'item-1'), $this->logId);

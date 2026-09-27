@@ -39,6 +39,6 @@ If you plan to use scheduled syncs or webhook recovery, add these to your schedu
 ```php
 // bootstrap/app.php (Laravel 11+)
 Schedule::command('integrations:sync')->everyMinute();
-Schedule::command('integrations:recover-webhooks')->hourly();
+Schedule::command('integrations:recover-webhooks')->everyFiveMinutes();
 Schedule::command('integrations:prune')->daily();
 ```

@@ -24,7 +24,7 @@ Each retry is persisted as its own `IntegrationRequest` row with `retry_of` poin
 |------------------|----------------------------------------------------------------------|
 | `Retry-After`    | Respects the header value, capped at configured max (default 10 min) |
 | 429              | Fixed 30-second delay (when no `Retry-After` header)                 |
-| 5xx              | Exponential (attempt x 2s)                                           |
+| 5xx              | Linear (attempt x 2s)                                                |
 | Connection error | Linear (attempt x 1s)                                                |
 | 4xx (except 429) | Not retried, thrown immediately                                      |
 
@@ -64,13 +64,13 @@ Domain-specific subclasses work too: extend `RetryableException`.
 
 ## SDK exception support
 
-The retry handler walks the exception chain (`getPrevious()`) to detect retryable status codes and connection errors wrapped by third-party SDKs. If your SDK wraps a Guzzle, Laravel HTTP, or Symfony HTTP exception as a previous exception, retries work automatically with no adapter code needed.
+The retry handler walks the exception chain (`getPrevious()`) to detect retryable status codes and connection errors wrapped by third-party SDKs. If your SDK wraps a Guzzle, Laravel HTTP, or Symfony HTTP exception as a previous exception, retries work automatically with no adapter code needed. Retries also work automatically when an SDK exception exposes its status through one of the [common SDK accessors](/advanced/circuit-breaker#what-counts-as-a-failure). The retry handler reads the `Retry-After` header from the first exception in the chain that has a response. A Laravel HTTP client `RequestException` has a response. Any other exception has a response if its `getResponse()` method returns a PSR-7 response, for example a Guzzle exception for a 4xx or 5xx status.
 
-For SDKs that throw completely custom exceptions (not wrapping Guzzle), you have two options:
+For SDK exceptions that carry no status the retry handler can read, you have these options:
 
 - Throw a [`RetryableException`](#retryableexception) from the call site when you know an error is transient. Best for adapters and code you control.
 - Implement [`CustomizesRetry`](/advanced/custom-retry) on the provider to inspect exceptions after the fact. Best for third-party SDK exceptions you can't modify.
-- Implement [`ClassifiesFailures`](/advanced/circuit-breaker#provider-classification) on the provider. Classification doubles as a retry signal: a class of `Upstream` or `Throttle` is retried automatically (after `RetryableException` and `CustomizesRetry` have had their say), so a provider that classifies its SDK's exceptions gets correct retry behaviour and correct breaker behaviour from one method.
+- Implement [`ClassifiesFailures`](/advanced/circuit-breaker#provider-classification) on the provider. Classification doubles as a retry signal: a class of `Upstream` or `Throttle` is retried automatically (checked after `RetryableException` and `CustomizesRetry`), so a provider that classifies its SDK's exceptions gets correct retry behaviour and correct breaker behaviour from one method.
 
 ## Standalone retry handler
 

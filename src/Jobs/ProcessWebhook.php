@@ -34,6 +34,10 @@ class ProcessWebhook implements ShouldQueue
             return;
         }
 
+        if (! $webhook->markProcessing()) {
+            return;
+        }
+
         $integration = $webhook->integration;
 
         if ($integration === null) {
@@ -42,21 +46,17 @@ class ProcessWebhook implements ShouldQueue
             return;
         }
 
-        $provider = $integration->provider();
-
-        if (! $provider instanceof HandlesWebhooks) {
-            $webhook->markFailed('Provider does not support webhooks.');
-
-            return;
-        }
-
-        if (! $webhook->markProcessing()) {
-            return;
-        }
-
         IntegrationContext::push($integration, 'webhook');
 
         try {
+            $provider = $integration->provider();
+
+            if (! $provider instanceof HandlesWebhooks) {
+                $webhook->markFailed('Provider does not support webhooks.');
+
+                return;
+            }
+
             $request = Request::create(
                 uri: '/',
                 method: 'POST',
