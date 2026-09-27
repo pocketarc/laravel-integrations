@@ -5,7 +5,6 @@ declare(strict_types=1);
 namespace Integrations\Support;
 
 use function Safe\json_decode;
-use function Safe\json_encode;
 
 class Redactor
 {
@@ -34,6 +33,6 @@ class Redactor
             data_set($data, $path, '[REDACTED]');
         }
 
-        return json_encode($data, JSON_THROW_ON_ERROR);
+        return JsonBody::encode($data);
     }
 }

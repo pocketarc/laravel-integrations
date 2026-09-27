@@ -2,9 +2,9 @@
 
 This project follows [Semantic Versioning](https://semver.org/). Minor and patch releases will never contain breaking changes.
 
-## 6.2 to 6.3
+## 6.3 to 6.4
 
-6.3 adds a column and an index to the webhooks table. There are no breaking changes, and no code change is required.
+6.4 adds a column and an index to the webhooks table. There are no breaking changes, and no code change is required.
 
 ### Add the column and the index
 
@@ -30,7 +30,7 @@ return new class extends Migration
 };
 ```
 
-Then run `php artisan migrate` before any web server, queue worker, or scheduled command runs the 6.3 code. `ProcessWebhook` writes `attempts` when it claims a webhook, and `integrations:recover-webhooks` reads it, so both fail until the column exists. Existing webhooks have an `attempts` value of 0. `integrations:recover-webhooks` never retries a failed webhook with 0 attempts, so a webhook that failed before the upgrade stays `failed`.
+Then run `php artisan migrate` before any web server, queue worker, or scheduled command runs the 6.4 code. `ProcessWebhook` writes `attempts` when it claims a webhook, and `integrations:recover-webhooks` reads it, so both fail until the column exists. Existing webhooks have an `attempts` value of 0. `integrations:recover-webhooks` never retries a failed webhook with 0 attempts, so a webhook that failed before the upgrade stays `failed`.
 
 ### Behaviour changes
 

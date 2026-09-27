@@ -140,7 +140,7 @@ If the first job of a pending webhook is still queued, only one of the two jobs 
 
 Failed webhooks are not retried by default. A retry runs the handler again from the start, so raise `webhook.max_attempts` above 1 only if every handler is idempotent. With a higher value, the command moves a failed webhook back to `pending` and dispatches a job when both of these conditions are true:
 
-- The webhook has at least 1 attempt and fewer than `max_attempts`. A job increments `attempts` each time it claims the webhook. A webhook with 0 attempts, such as one that failed before 6.3, is never retried.
+- The webhook has at least 1 attempt and fewer than `max_attempts`. A job increments `attempts` each time it claims the webhook. A webhook with 0 attempts, such as one that failed before 6.4, is never retried.
 - The backoff for the webhook's last attempt has elapsed since that attempt failed. The backoff after attempt N is entry N of `webhook.retry_backoff`. Past the end of the list, the last entry is used.
 
 A failed webhook is retried on the first run of the command after its backoff has elapsed. Add the command to your scheduler:
