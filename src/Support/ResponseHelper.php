@@ -4,7 +4,6 @@ declare(strict_types=1);
 
 namespace Integrations\Support;
 
-use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use Illuminate\Http\Client\RequestException as LaravelRequestException;
 use Illuminate\Http\Client\Response;
 use Illuminate\Http\JsonResponse;
@@ -27,10 +26,6 @@ final class ResponseHelper
                 return $current->response->status();
             }
 
-            if ($current instanceof GuzzleRequestException && $current->getResponse() !== null) {
-                return $current->getResponse()->getStatusCode();
-            }
-
             if ($current instanceof HttpExceptionInterface) {
                 return $current->getStatusCode();
             }
@@ -45,12 +40,8 @@ final class ResponseHelper
     }
 
     /**
-     * Best-effort status extraction for SDK exceptions that don't implement
-     * the HTTP-client interfaces above. Tries the common accessor names
-     * (Stripe's `getHttpStatus()`, Postmark's `getHttpStatusCode()`, a wrapped
-     * PSR-7 response), falling back to `getCode()` last because most throwables
-     * use it for a non-HTTP error code or 0. Only values in the HTTP range are
-     * trusted, so a vendor error code that isn't a status is ignored.
+     * Extract a best-effort HTTP status by duck typing the exception's
+     * accessors, or return null.
      */
     private static function duckTypeStatusCode(\Throwable $e): ?int
     {
@@ -59,12 +50,24 @@ final class ResponseHelper
             return $fromAccessor;
         }
 
-        $response = self::safeInvokeNoArg($e, 'getResponse');
-        if ($response instanceof ResponseInterface) {
+        $response = self::responseFrom($e);
+        if ($response !== null) {
             return $response->getStatusCode();
         }
 
         return self::httpRange($e->getCode());
+    }
+
+    /**
+     * Return the exception's PSR-7 response, or null if it has none. Checking
+     * for Guzzle's `RequestException` is not enough: in Guzzle 8, only its
+     * `ResponseException` subclass has `getResponse()`.
+     */
+    public static function responseFrom(\Throwable $e): ?ResponseInterface
+    {
+        $response = self::safeInvokeNoArg($e, 'getResponse');
+
+        return $response instanceof ResponseInterface ? $response : null;
     }
 
     /**
@@ -88,10 +91,9 @@ final class ResponseHelper
 
     /**
      * Invoke a no-argument accessor on an SDK exception, returning null if the
-     * method isn't callable from here (non-public visibility, a magic-method
-     * mirage) or throws. `method_exists()` alone would let a non-public method
-     * through, and the resulting Error would mask the original exception we're
-     * trying to classify.
+     * method isn't callable from here or throws. `method_exists()` also returns
+     * true for a non-public method, and calling one would throw an Error that
+     * propagates in place of the original exception.
      */
     private static function safeInvokeNoArg(\Throwable $e, string $method): mixed
     {

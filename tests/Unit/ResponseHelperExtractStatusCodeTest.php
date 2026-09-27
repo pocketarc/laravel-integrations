@@ -29,7 +29,7 @@ class ResponseHelperExtractStatusCodeTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(503);
-        $e = new GuzzleRequestException('Server error', $request, $response);
+        $e = GuzzleRequestException::create($request, $response);
 
         $this->assertSame(503, ResponseHelper::extractStatusCode($e));
     }
@@ -45,7 +45,7 @@ class ResponseHelperExtractStatusCodeTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(429);
-        $guzzle = new GuzzleRequestException('Rate limited', $request, $response);
+        $guzzle = GuzzleRequestException::create($request, $response);
         $wrapper = new RuntimeException('SDK error', 0, $guzzle);
 
         $this->assertSame(429, ResponseHelper::extractStatusCode($wrapper));
@@ -55,7 +55,7 @@ class ResponseHelperExtractStatusCodeTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(502);
-        $guzzle = new GuzzleRequestException('Bad gateway', $request, $response);
+        $guzzle = GuzzleRequestException::create($request, $response);
         $inner = new RuntimeException('Inner', 0, $guzzle);
         $outer = new RuntimeException('Outer', 0, $inner);
 
@@ -90,7 +90,7 @@ class ResponseHelperExtractStatusCodeTest extends TestCase
     public function test_returns_null_for_guzzle_without_response(): void
     {
         $request = new Request('GET', 'https://example.com');
-        $e = new GuzzleRequestException('Connection failed', $request);
+        $e = GuzzleRequestException::create($request);
 
         $this->assertNull(ResponseHelper::extractStatusCode($e));
     }
@@ -98,7 +98,7 @@ class ResponseHelperExtractStatusCodeTest extends TestCase
     public function test_prefers_outermost_recognized_exception(): void
     {
         $request = new Request('GET', 'https://example.com');
-        $guzzle = new GuzzleRequestException('Inner', $request, new Response(500));
+        $guzzle = GuzzleRequestException::create($request, new Response(500));
         $symfony = new HttpException(429, 'Outer', $guzzle);
 
         $this->assertSame(429, ResponseHelper::extractStatusCode($symfony));

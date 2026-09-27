@@ -61,7 +61,7 @@ class FailureClassifierTest extends TestCase
     public function test_classifies_wrapped_guzzle_status(): void
     {
         $request = new Request('GET', 'https://example.com');
-        $guzzle = new GuzzleRequestException('down', $request, new Response(503));
+        $guzzle = GuzzleRequestException::create($request, new Response(503));
         $wrapper = new RuntimeException('SDK error', 0, $guzzle);
 
         $this->assertSame(FailureClass::Upstream, FailureClassifier::classify($wrapper));

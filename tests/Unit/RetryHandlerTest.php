@@ -122,7 +122,7 @@ class RetryHandlerTest extends TestCase
                 if ($attempts < 2) {
                     $request = new Request('GET', 'https://example.com');
                     $response = new Response(429);
-                    $guzzle = new GuzzleRequestException('Rate limited', $request, $response);
+                    $guzzle = GuzzleRequestException::create($request, $response);
                     throw new RuntimeException('SDK error', 0, $guzzle);
                 }
 
@@ -149,7 +149,7 @@ class RetryHandlerTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(503);
-        $guzzle = new GuzzleRequestException('Unavailable', $request, $response);
+        $guzzle = GuzzleRequestException::create($request, $response);
         $wrapped = new RuntimeException('SDK error', 0, $guzzle);
 
         $this->assertTrue(RetryHandler::isRetryable($wrapped));
@@ -159,7 +159,7 @@ class RetryHandlerTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(429, ['Retry-After' => '5']);
-        $e = new GuzzleRequestException('Rate limited', $request, $response);
+        $e = GuzzleRequestException::create($request, $response);
 
         $this->assertSame(5000, RetryHandler::calculateDelayMs($e, 1));
     }
@@ -171,7 +171,7 @@ class RetryHandlerTest extends TestCase
         $request = new Request('GET', 'https://example.com');
         $retryDate = Carbon::parse('2026-04-05 12:00:30')->toRfc7231String();
         $response = new Response(429, ['Retry-After' => $retryDate]);
-        $e = new GuzzleRequestException('Rate limited', $request, $response);
+        $e = GuzzleRequestException::create($request, $response);
 
         $delayMs = RetryHandler::calculateDelayMs($e, 1);
         $this->assertGreaterThanOrEqual(29000, $delayMs);
@@ -186,7 +186,7 @@ class RetryHandlerTest extends TestCase
 
         $request = new Request('GET', 'https://example.com');
         $response = new Response(429, ['Retry-After' => '3600']);
-        $e = new GuzzleRequestException('Rate limited', $request, $response);
+        $e = GuzzleRequestException::create($request, $response);
 
         $this->assertSame(10000, RetryHandler::calculateDelayMs($e, 1));
     }
@@ -195,7 +195,7 @@ class RetryHandlerTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(429, ['Retry-After' => '10']);
-        $guzzle = new GuzzleRequestException('Rate limited', $request, $response);
+        $guzzle = GuzzleRequestException::create($request, $response);
         $wrapped = new RuntimeException('SDK error', 0, $guzzle);
 
         $this->assertSame(10000, RetryHandler::calculateDelayMs($wrapped, 1));
@@ -205,8 +205,15 @@ class RetryHandlerTest extends TestCase
     {
         $request = new Request('GET', 'https://example.com');
         $response = new Response(429);
-        $e = new GuzzleRequestException('Rate limited', $request, $response);
+        $e = GuzzleRequestException::create($request, $response);
 
         $this->assertSame(30_000, RetryHandler::calculateDelayMs($e, 1));
+    }
+
+    public function test_calculate_delay_falls_back_for_a_guzzle_exception_without_a_response(): void
+    {
+        $e = GuzzleRequestException::create(new Request('GET', 'https://example.com'));
+
+        $this->assertSame(1_000, RetryHandler::calculateDelayMs($e, 1));
     }
 }
