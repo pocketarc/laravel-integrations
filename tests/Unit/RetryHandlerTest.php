@@ -9,6 +9,8 @@ use GuzzleHttp\Exception\RequestException as GuzzleRequestException;
 use GuzzleHttp\Psr7\Request;
 use GuzzleHttp\Psr7\Response;
 use Illuminate\Http\Client\ConnectionException;
+use Illuminate\Http\Client\RequestException as LaravelRequestException;
+use Illuminate\Http\Client\Response as LaravelResponse;
 use Integrations\Exceptions\RetriesExhaustedException;
 use Integrations\RetryHandler;
 use Integrations\Tests\TestCase;
@@ -208,6 +210,13 @@ class RetryHandlerTest extends TestCase
         $e = GuzzleRequestException::create($request, $response);
 
         $this->assertSame(30_000, RetryHandler::calculateDelayMs($e, 1));
+    }
+
+    public function test_calculate_delay_uses_retry_after_from_a_laravel_request_exception(): void
+    {
+        $e = new LaravelRequestException(new LaravelResponse(new Response(429, ['Retry-After' => '5'])));
+
+        $this->assertSame(5000, RetryHandler::calculateDelayMs($e, 1));
     }
 
     public function test_calculate_delay_falls_back_for_a_guzzle_exception_without_a_response(): void

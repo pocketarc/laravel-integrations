@@ -65,6 +65,10 @@ final class ResponseHelper
      */
     public static function responseFrom(\Throwable $e): ?ResponseInterface
     {
+        if ($e instanceof LaravelRequestException) {
+            return $e->response->toPsrResponse();
+        }
+
         $response = self::safeInvokeNoArg($e, 'getResponse');
 
         return $response instanceof ResponseInterface ? $response : null;
