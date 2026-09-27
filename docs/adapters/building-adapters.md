@@ -426,4 +426,4 @@ If you prefer to maintain your own package:
 3. Follow the same patterns for consistency.
 4. Ship a service provider that calls `IntegrationManager::registerDefaults()` (see [Auto-registration](#auto-registration) above).
 5. Register it for auto-discovery in your `composer.json`.
-6. Submit your adapter for listing on these docs by opening an issue on the [laravel-integrations](https://github.com/pocketarc/laravel-integrations) repository.
+6. Submit your adapter for listing on these docs by opening an issue on the [laravel-integrations](https://github.com/solmyrhq/laravel-integrations) repository.

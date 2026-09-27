@@ -26,4 +26,4 @@ Providers opt into additional capabilities by implementing interfaces: `HasSched
 
 ## Official adapters
 
-The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) has ready-to-use adapters for GitHub, Zendesk, Stripe, and Postmark. See the [Adapters](/adapters/overview) section.
+The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/solmyrhq/laravel-integrations-adapters) has ready-to-use adapters for GitHub, Zendesk, Stripe, and Postmark. See the [Adapters](/adapters/overview) section.

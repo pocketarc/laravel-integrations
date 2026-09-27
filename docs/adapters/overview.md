@@ -4,7 +4,7 @@ Adapters wrap third-party SDKs and implement the core package's contracts. Insta
 
 ## Official adapters
 
-The [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package has officially maintained adapters:
+The [`pocketarc/laravel-integrations-adapters`](https://github.com/solmyrhq/laravel-integrations-adapters) package has officially maintained adapters:
 
 | Adapter | SDK | Focus |
 |---------|-----|-------|
@@ -34,7 +34,7 @@ Register the adapters you need in `config/integrations.php`:
 
 ## Community adapters
 
-If you've built an adapter for a service, open an issue or PR on the [laravel-integrations](https://github.com/pocketarc/laravel-integrations) repository and it can be listed here.
+If you've built an adapter for a service, open an issue or PR on the [laravel-integrations](https://github.com/solmyrhq/laravel-integrations) repository and it can be listed here.
 
 ## Building your own
 
