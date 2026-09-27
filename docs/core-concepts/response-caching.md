@@ -27,9 +27,23 @@ $tickets = $integration->request(
 
 ## How it works
 
-Cache keys are composed from the integration ID, endpoint, HTTP method, and a hash of the request data. The same endpoint with different parameters produces separate cache entries.
+Cache keys are composed from the integration ID, endpoint, HTTP method, and a hash of the request data. The same endpoint with different parameters produces separate cache entries. The package stores only the first 65530 bytes of the request data in the `request_data` column. It calculates the hash from all of the request data.
 
 When `->as(...)` is set, both live and cached paths reconstruct the response via `Data::from()`, so you receive the same typed Data object whether it came from cache or from a live call.
+
+## Requests that are never cached
+
+A request whose body contains a field from the provider's [`sensitiveRequestFields()`](/features/redaction) is not cached, and it is not served from the cache. `cacheFor` and `serveStale` have no effect on it. A request whose body contains none of these fields is cached as usual.
+
+Before the package calculates the cache key's hash, it replaces each secret in the request data with `[REDACTED]`. If the package cached requests with redacted fields, two requests that differ only in a secret would have the same cache key. The second caller would then get the response to the first request. If the key were a hash of the unredacted body, the database would contain a fast, non-cryptographic hash of the secret.
+
+The package also does not cache a response that it cannot store unchanged:
+
+- A response with a binary body. The package stores a `[BINARY ...]` marker in place of the body.
+- A response that `json_encode` cannot encode. The package stores an `[UNENCODABLE ...]` marker in place of the body.
+- A response whose body contains a field from `sensitiveResponseFields()`. The package stores `[REDACTED]` in place of each of these fields.
+
+A caller served from the cache would get the stored copy of the response.
 
 ## Stale cache fallback
 

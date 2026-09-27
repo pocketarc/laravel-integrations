@@ -110,4 +110,27 @@ class CachingTest extends TestCase
             serveStale: false,
         );
     }
+
+    public function test_request_bodies_that_share_a_long_prefix_do_not_share_a_cached_response(): void
+    {
+        $prefix = str_repeat('a', 65530);
+
+        $first = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'first'],
+            requestData: $prefix.'first',
+            cacheFor: now()->addHour(),
+        );
+        $second = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'second'],
+            requestData: $prefix.'second',
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['query' => 'first'], $first);
+        $this->assertSame(['query' => 'second'], $second);
+    }
 }

@@ -50,6 +50,23 @@ class RedactionTest extends TestCase
         $this->assertSame($json, $result);
     }
 
+    public function test_a_body_without_the_sensitive_fields_is_returned_byte_for_byte(): void
+    {
+        $json = '{ "username": "admin", "url": "https:\/\/example.com" }';
+
+        $this->assertSame($json, Redactor::redact($json, ['password', 'card.number']));
+    }
+
+    public function test_wildcard_paths_redact_only_the_keys_that_exist(): void
+    {
+        $json = json_encode(['users' => [['name' => 'a', 'password' => 'one'], ['name' => 'b']]]);
+
+        $decoded = json_decode(Redactor::redact($json, ['users.*.password']), true);
+
+        $this->assertSame('[REDACTED]', $decoded['users'][0]['password']);
+        $this->assertSame(['name' => 'b'], $decoded['users'][1]);
+    }
+
     public function test_persist_request_redacts_when_provider_implements_contract(): void
     {
         $integration = $this->redactingIntegration();
@@ -144,6 +161,75 @@ class RedactionTest extends TestCase
         $this->assertSame(['user' => 'bob'], $second);
         $this->assertSame(2, $integration->requests()->count());
         $this->assertSame(0, $integration->requests()->whereNotNull('expires_at')->count());
+    }
+
+    public function test_requests_with_different_redacted_secrets_do_not_share_a_cached_response(): void
+    {
+        $integration = $this->redactingIntegration();
+
+        $first = $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): array => ['user' => 'alice'],
+            requestData: '{"password":"alice-secret"}',
+            cacheFor: now()->addHour(),
+        );
+        $second = $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): array => ['user' => 'bob'],
+            requestData: '{"password":"bob-secret"}',
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['user' => 'alice'], $first);
+        $this->assertSame(['user' => 'bob'], $second);
+        $this->assertSame(0, $integration->requests()->whereNotNull('expires_at')->count());
+    }
+
+    public function test_a_request_without_redacted_fields_is_still_cached(): void
+    {
+        $integration = $this->redactingIntegration();
+        $calls = 0;
+
+        for ($i = 0; $i < 2; $i++) {
+            $integration->request(
+                endpoint: '/api/profile',
+                method: 'GET',
+                callback: function () use (&$calls): array {
+                    $calls++;
+
+                    return ['user' => 'alice'];
+                },
+                requestData: '{"user":"alice"}',
+                cacheFor: now()->addHour(),
+            );
+        }
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_a_response_with_a_redacted_field_is_not_served_from_the_cache(): void
+    {
+        $integration = $this->redactingIntegration();
+        $calls = 0;
+        $results = [];
+
+        for ($i = 0; $i < 2; $i++) {
+            $results[] = $integration->request(
+                endpoint: '/api/token',
+                method: 'POST',
+                callback: function () use (&$calls): array {
+                    $calls++;
+
+                    return ['token' => 'secret-jwt-token'];
+                },
+                cacheFor: now()->addHour(),
+            );
+        }
+
+        $this->assertSame(2, $calls);
+        $this->assertSame(['token' => 'secret-jwt-token'], $results[1]);
     }
 
     private function redactingIntegration(): Integration

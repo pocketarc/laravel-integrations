@@ -106,4 +106,26 @@ class BinaryResponseTest extends TestCase
             (string) $request->request_data,
         );
     }
+
+    public function test_a_binary_request_body_is_served_from_the_cache(): void
+    {
+        $binaryRequestData = "\x89PNG\r\n\x1A\n\0\0\0\rIHDR".random_bytes(80);
+        $calls = 0;
+
+        for ($i = 0; $i < 2; $i++) {
+            $this->integration->request(
+                endpoint: '/api/upload',
+                method: 'POST',
+                callback: function () use (&$calls): array {
+                    $calls++;
+
+                    return ['received' => true];
+                },
+                requestData: $binaryRequestData,
+                cacheFor: now()->addHour(),
+            );
+        }
+
+        $this->assertSame(1, $calls);
+    }
 }

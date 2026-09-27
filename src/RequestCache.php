@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\BinaryGuard;
 use JsonException;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -50,7 +51,7 @@ final class RequestCache
 
     private function findCached(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $this->computeRequestHash($requestData);
+        $hash = self::requestDataHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -65,7 +66,7 @@ final class RequestCache
 
     private function findStale(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $this->computeRequestHash($requestData);
+        $hash = self::requestDataHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -78,9 +79,26 @@ final class RequestCache
             ->first();
     }
 
-    private function computeRequestHash(?string $requestData): ?string
+    /**
+     * Return the request data in the form stored in the `request_data` column.
+     */
+    public static function storedRequestData(?string $requestData): ?string
     {
-        return $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
+        $sanitized = BinaryGuard::sanitize($requestData);
+
+        return $sanitized !== null ? mb_strcut($sanitized, 0, 65530) : null;
+    }
+
+    /**
+     * Hash the whole sanitised body. `storedRequestData()` truncates it to
+     * 65530 bytes, and two bodies that differ only after that point must
+     * have different cache keys.
+     */
+    public static function requestDataHash(?string $requestData): ?string
+    {
+        $sanitized = BinaryGuard::sanitize($requestData);
+
+        return $sanitized !== null ? hash('xxh128', $sanitized) : null;
     }
 
     /**
