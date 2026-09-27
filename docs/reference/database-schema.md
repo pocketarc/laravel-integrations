@@ -131,7 +131,7 @@ Indexed on `(integration_id, status)`, `(integration_id, created_at)`, `(sync_lo
 
 ## integration_incidents
 
-Durable audit of periods an integration was in trouble. One open row per integration, written from health/circuit state-change events; see [Incident history](/core-concepts/health-monitoring#incident-history).
+Durable audit of periods an integration was in trouble. At most one open row per integration, written from health, circuit and sync-staleness state-change events; see [Incident history](/core-concepts/health-monitoring#incident-history).
 
 | Column | Type | Description |
 |--------|------|-------------|

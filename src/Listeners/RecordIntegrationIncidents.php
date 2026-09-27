@@ -18,11 +18,12 @@ use Integrations\Models\IntegrationIncident;
 use Integrations\Support\Config;
 
 /**
- * Records a durable incident audit from the package's own health and circuit
- * state-change events. One open incident per integration: health degradation
- * and circuit trips fold into the same row (tracking peak severity), and it
- * closes on recovery. Runs synchronously so the audit stays consistent with
- * the state change; flapping is collapsed under a row lock.
+ * Records a durable incident audit from the package's own health, circuit, and
+ * sync-staleness state-change events. At most one open incident per
+ * integration: health degradation, circuit trips, and sync staleness fold into
+ * the same row (tracking peak severity), and it closes on recovery. Runs
+ * synchronously so the audit stays consistent with the state change; flapping
+ * is collapsed under a row lock.
  *
  * Operator overrides (forced_open / forced_closed) are deliberate actions, not
  * detected failures, so they neither open nor close an incident.

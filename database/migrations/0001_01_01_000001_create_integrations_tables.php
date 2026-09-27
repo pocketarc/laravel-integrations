@@ -211,7 +211,7 @@ return new class extends Migration
             $table->foreignId('integration_id')->constrained("{$prefix}s")->cascadeOnDelete();
             // open | closed
             $table->string('status', 16)->default('open');
-            // What opened the incident: health | circuit.
+            // The signal the incident was opened for: IntegrationIncident::SOURCE_*.
             $table->string('source', 16);
             // The opening reason (e.g. health_degraded, threshold_reached).
             $table->string('reason');
