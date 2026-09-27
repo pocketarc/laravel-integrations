@@ -136,6 +136,19 @@ class FailureClassifierTest extends TestCase
         $this->assertSame(FailureClass::Upstream, FailureClassifier::classify($e));
     }
 
+    public function test_duck_typed_get_http_status(): void
+    {
+        $e = new class('sdk') extends RuntimeException
+        {
+            public function getHttpStatus(): int
+            {
+                return 502;
+            }
+        };
+
+        $this->assertSame(FailureClass::Upstream, FailureClassifier::classify($e));
+    }
+
     public function test_duck_typed_get_http_status_code(): void
     {
         // Postmark-style accessor.
