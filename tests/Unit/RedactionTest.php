@@ -52,10 +52,7 @@ class RedactionTest extends TestCase
 
     public function test_persist_request_redacts_when_provider_implements_contract(): void
     {
-        app(IntegrationManager::class)->register('redacting', RedactingProvider::class);
-
-        $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
-        $integration->refresh();
+        $integration = $this->redactingIntegration();
 
         $integration->request(
             endpoint: '/api/login',
@@ -87,10 +84,7 @@ class RedactionTest extends TestCase
 
     public function test_a_redacted_response_that_decodes_to_inf_is_stored_as_a_marker_and_not_cached(): void
     {
-        app(IntegrationManager::class)->register('redacting', RedactingProvider::class);
-
-        $integration = Integration::create(['provider' => 'redacting', 'name' => 'Redacting']);
-        $integration->refresh();
+        $integration = $this->redactingIntegration();
 
         $body = '{"token":"secret-jwt-token","score":1e999}';
 
@@ -109,5 +103,53 @@ class RedactionTest extends TestCase
         $this->assertStringStartsWith('[UNENCODABLE', (string) $request->response_data);
         $this->assertStringNotContainsString('secret-jwt-token', (string) $request->response_data);
         $this->assertNull($request->expires_at);
+    }
+
+    public function test_an_unencodable_callback_value_is_stored_without_its_redacted_field(): void
+    {
+        $integration = $this->redactingIntegration();
+
+        $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): array => ['token' => 'secret-jwt-token', 'score' => INF],
+        );
+
+        $request = $integration->requests()->latest()->first();
+        $this->assertNotNull($request);
+        $this->assertStringStartsWith('[UNENCODABLE', (string) $request->response_data);
+        $this->assertStringNotContainsString('secret-jwt-token', (string) $request->response_data);
+    }
+
+    public function test_request_bodies_that_cannot_be_encoded_after_redaction_do_not_share_a_cached_response(): void
+    {
+        $integration = $this->redactingIntegration();
+
+        $first = $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): array => ['user' => 'alice'],
+            requestData: '{"password":"alice-secret","score":1e999}',
+            cacheFor: now()->addHour(),
+        );
+        $second = $integration->request(
+            endpoint: '/api/login',
+            method: 'POST',
+            callback: fn (): array => ['user' => 'bob'],
+            requestData: '{"password":"bob-secret","score":1e999}',
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['user' => 'alice'], $first);
+        $this->assertSame(['user' => 'bob'], $second);
+        $this->assertSame(2, $integration->requests()->count());
+        $this->assertSame(0, $integration->requests()->whereNotNull('expires_at')->count());
+    }
+
+    private function redactingIntegration(): Integration
+    {
+        app(IntegrationManager::class)->register('redacting', RedactingProvider::class);
+
+        return Integration::create(['provider' => 'redacting', 'name' => 'Redacting'])->refresh();
     }
 }

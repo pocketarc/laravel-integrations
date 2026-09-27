@@ -78,6 +78,11 @@ final class RequestExecutor
     ): mixed {
         $encodedRequestData = $this->redactRequestData($encodedRequestData);
 
+        if (JsonBody::isUnencodable($encodedRequestData)) {
+            $cacheFor = null;
+            $serveStale = false;
+        }
+
         if ($cacheFor !== null) {
             $cached = $this->cache->serve($endpoint, $method, $encodedRequestData, $responseClass);
             if ($cached !== null) {
