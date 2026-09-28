@@ -8,6 +8,7 @@ use Illuminate\Database\Eloquent\Builder;
 use Integrations\Exceptions\SchemaDriftException;
 use Integrations\Models\Integration;
 use Integrations\Models\IntegrationRequest;
+use Integrations\Support\BinaryGuard;
 use JsonException;
 use Spatie\LaravelData\Data;
 use Throwable;
@@ -50,7 +51,7 @@ final class RequestCache
 
     private function findCached(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $this->computeRequestHash($requestData);
+        $hash = self::requestDataHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -65,7 +66,7 @@ final class RequestCache
 
     private function findStale(string $endpoint, string $method, ?string $requestData): ?IntegrationRequest
     {
-        $hash = $this->computeRequestHash($requestData);
+        $hash = self::requestDataHash($requestData);
 
         return $this->integration->requests()
             ->where('endpoint', $endpoint)
@@ -78,9 +79,25 @@ final class RequestCache
             ->first();
     }
 
-    private function computeRequestHash(?string $requestData): ?string
+    /**
+     * Return the request data in the form stored in the `request_data` column.
+     */
+    public static function storedRequestData(?string $requestData): ?string
     {
-        return $requestData !== null ? hash('xxh128', mb_strcut($requestData, 0, 65530)) : null;
+        $sanitized = BinaryGuard::sanitize($requestData);
+
+        return $sanitized !== null ? mb_strcut($sanitized, 0, 65530) : null;
+    }
+
+    /**
+     * Hash the whole request data for the cache key.
+     *
+     * Rows written by earlier releases hold a hash of `storedRequestData()`.
+     * With the `v2:` prefix, no new key can equal one of those hashes.
+     */
+    public static function requestDataHash(?string $requestData): ?string
+    {
+        return $requestData !== null ? hash('xxh128', 'v2:'.$requestData) : null;
     }
 
     /**

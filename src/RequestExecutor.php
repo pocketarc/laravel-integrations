@@ -76,12 +76,16 @@ final class RequestExecutor
         int $maxAttempts,
         ?string $idempotencyKey = null,
     ): mixed {
-        $encodedRequestData = $this->redactRequestData($encodedRequestData);
+        $redactedRequestData = $this->redactRequestData($encodedRequestData);
 
-        if (JsonBody::isUnencodable($encodedRequestData)) {
+        // Keying a redacted request on its unredacted body would put a
+        // brute-forceable xxh128 hash of the secret in request_data_hash.
+        if ($redactedRequestData !== $encodedRequestData) {
             $cacheFor = null;
             $serveStale = false;
         }
+
+        $encodedRequestData = $redactedRequestData;
 
         if ($cacheFor !== null) {
             $cached = $this->cache->serve($endpoint, $method, $encodedRequestData, $responseClass);
@@ -347,13 +351,14 @@ final class RequestExecutor
         $provider = $this->integration->provider();
 
         if ($provider instanceof RedactsRequestData && $responseData !== null) {
-            $responseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
-        }
+            $redactedResponseData = Redactor::redact($responseData, $provider->sensitiveResponseFields());
 
-        $sanitizedRequestData = BinaryGuard::sanitize($requestData);
-        $truncatedRequestData = $sanitizedRequestData !== null
-            ? mb_strcut($sanitizedRequestData, 0, 65530)
-            : null;
+            if ($redactedResponseData !== $responseData) {
+                $cacheFor = null;
+            }
+
+            $responseData = $redactedResponseData;
+        }
 
         [$responseData, $cacheFor] = BinaryGuard::sanitizeResponseBody($responseData, $cacheFor);
 
@@ -371,8 +376,8 @@ final class RequestExecutor
         $request = $this->integration->requests()->create([
             'endpoint' => $endpoint,
             'method' => $method,
-            'request_data' => $truncatedRequestData,
-            'request_data_hash' => $truncatedRequestData !== null ? hash('xxh128', $truncatedRequestData) : null,
+            'request_data' => RequestCache::storedRequestData($requestData),
+            'request_data_hash' => RequestCache::requestDataHash($requestData),
             'idempotency_key' => $this->context?->idempotencyKey,
             'provider_request_id' => $this->context?->providerRequestId(),
             'retry_of' => $retryOfId,

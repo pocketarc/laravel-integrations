@@ -110,4 +110,52 @@ class CachingTest extends TestCase
             serveStale: false,
         );
     }
+
+    public function test_request_bodies_that_share_a_long_prefix_do_not_share_a_cached_response(): void
+    {
+        $prefix = str_repeat('a', 65530);
+
+        $first = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'first'],
+            requestData: $prefix.'first',
+            cacheFor: now()->addHour(),
+        );
+        $second = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'second'],
+            requestData: $prefix.'second',
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['query' => 'first'], $first);
+        $this->assertSame(['query' => 'second'], $second);
+    }
+
+    public function test_a_row_hashed_from_a_truncated_body_is_not_served(): void
+    {
+        $prefix = str_repeat('a', 65530);
+
+        $this->integration->requests()->create([
+            'endpoint' => '/api/search',
+            'method' => 'POST',
+            'request_data' => $prefix,
+            'request_data_hash' => hash('xxh128', $prefix),
+            'response_data' => '{"query":"longer body"}',
+            'response_success' => true,
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $result = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'this body'],
+            requestData: $prefix,
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['query' => 'this body'], $result);
+    }
 }

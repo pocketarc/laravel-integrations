@@ -6,6 +6,7 @@ namespace Integrations\Tests\Unit;
 
 use Integrations\IntegrationManager;
 use Integrations\Models\Integration;
+use Integrations\Support\BinaryGuard;
 use Integrations\Tests\Fixtures\PlainProvider;
 use Integrations\Tests\TestCase;
 
@@ -105,5 +106,49 @@ class BinaryResponseTest extends TestCase
             hash('sha256', $binaryRequestData),
             (string) $request->request_data,
         );
+    }
+
+    public function test_a_binary_request_body_is_served_from_the_cache(): void
+    {
+        $binaryRequestData = "\x89PNG\r\n\x1A\n\0\0\0\rIHDR".random_bytes(80);
+        $calls = 0;
+
+        for ($i = 0; $i < 2; $i++) {
+            $this->integration->request(
+                endpoint: '/api/upload',
+                method: 'POST',
+                callback: function () use (&$calls): array {
+                    $calls++;
+
+                    return ['received' => true];
+                },
+                requestData: $binaryRequestData,
+                cacheFor: now()->addHour(),
+            );
+        }
+
+        $this->assertSame(1, $calls);
+    }
+
+    public function test_a_body_holding_a_binary_markers_text_does_not_share_its_cached_response(): void
+    {
+        $binaryRequestData = "\x89PNG\r\n\x1A\n\0\0\0\rIHDR".random_bytes(80);
+
+        $this->integration->request(
+            endpoint: '/api/upload',
+            method: 'POST',
+            callback: fn (): array => ['upload' => 'binary'],
+            requestData: $binaryRequestData,
+            cacheFor: now()->addHour(),
+        );
+        $result = $this->integration->request(
+            endpoint: '/api/upload',
+            method: 'POST',
+            callback: fn (): array => ['upload' => 'text'],
+            requestData: BinaryGuard::sanitize($binaryRequestData),
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['upload' => 'text'], $result);
     }
 }
