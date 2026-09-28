@@ -36,6 +36,8 @@ Then run `php artisan migrate` before any web server, queue worker, or scheduled
 
 `integrations:recover-webhooks` now also dispatches a job for a webhook that has been `pending` for longer than [`webhook.pending_timeout`](/reference/configuration#webhook). Its first run after the upgrade dispatches a job for every such webhook, however long ago its job was lost. Failed webhooks are not retried unless you raise `webhook.max_attempts`. The recommended schedule for the command is now every five minutes instead of hourly, because a failed webhook is retried only when the command runs.
 
+The hash in the [response cache](/core-concepts/response-caching#how-it-works) key has a new format. The package does not serve responses that it cached before the upgrade. On the next matching request, the package calls the upstream again and caches the new response.
+
 ## 6.1 to 6.2
 
 6.2 adds two columns to the integrations table. There are no breaking changes, and no code change is required.

@@ -90,15 +90,14 @@ final class RequestCache
     }
 
     /**
-     * Hash the whole sanitised body. `storedRequestData()` truncates it to
-     * 65530 bytes, and two bodies that differ only after that point must
-     * have different cache keys.
+     * Hash the whole request data for the cache key.
+     *
+     * Rows written by earlier releases hold a hash of `storedRequestData()`.
+     * With the `v2:` prefix, no new key can equal one of those hashes.
      */
     public static function requestDataHash(?string $requestData): ?string
     {
-        $sanitized = BinaryGuard::sanitize($requestData);
-
-        return $sanitized !== null ? hash('xxh128', $sanitized) : null;
+        return $requestData !== null ? hash('xxh128', 'v2:'.$requestData) : null;
     }
 
     /**

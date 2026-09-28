@@ -133,4 +133,29 @@ class CachingTest extends TestCase
         $this->assertSame(['query' => 'first'], $first);
         $this->assertSame(['query' => 'second'], $second);
     }
+
+    public function test_a_row_hashed_from_a_truncated_body_is_not_served(): void
+    {
+        $prefix = str_repeat('a', 65530);
+
+        $this->integration->requests()->create([
+            'endpoint' => '/api/search',
+            'method' => 'POST',
+            'request_data' => $prefix,
+            'request_data_hash' => hash('xxh128', $prefix),
+            'response_data' => '{"query":"longer body"}',
+            'response_success' => true,
+            'expires_at' => now()->addHour(),
+        ]);
+
+        $result = $this->integration->request(
+            endpoint: '/api/search',
+            method: 'POST',
+            callback: fn (): array => ['query' => 'this body'],
+            requestData: $prefix,
+            cacheFor: now()->addHour(),
+        );
+
+        $this->assertSame(['query' => 'this body'], $result);
+    }
 }

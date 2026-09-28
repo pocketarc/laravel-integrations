@@ -27,7 +27,7 @@ $tickets = $integration->request(
 
 ## How it works
 
-Cache keys are composed from the integration ID, endpoint, HTTP method, and a hash of the request data. The same endpoint with different parameters produces separate cache entries. The package stores only the first 65530 bytes of the request data in the `request_data` column. It calculates the hash from all of the request data.
+Cache keys are composed from the integration ID, endpoint, HTTP method, and a hash of the request data. The same endpoint with different parameters produces separate cache entries. The package stores only the first 65530 bytes of the request data in the `request_data` column. It stores a binary body as a `[BINARY ...]` marker. It calculates the hash from all of the request data, including the raw bytes of a binary body.
 
 When `->as(...)` is set, both live and cached paths reconstruct the response via `Data::from()`, so you receive the same typed Data object whether it came from cache or from a live call.
 
