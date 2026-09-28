@@ -11,7 +11,7 @@ hero:
       link: /getting-started/introduction
     - theme: alt
       text: View on GitHub
-      link: https://github.com/pocketarc/laravel-integrations
+      link: https://github.com/solmyrhq/laravel-integrations
 
 features:
   - title: Credential management

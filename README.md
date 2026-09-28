@@ -1,6 +1,6 @@
 # Laravel Integrations
 
-[![CI](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/pocketarc/laravel-integrations/actions/workflows/ci.yml)
+[![CI](https://github.com/solmyrhq/laravel-integrations/actions/workflows/ci.yml/badge.svg)](https://github.com/solmyrhq/laravel-integrations/actions/workflows/ci.yml)
 [![Latest Version on Packagist](https://img.shields.io/packagist/v/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
 [![Total Downloads](https://img.shields.io/packagist/dt/pocketarc/laravel-integrations)](https://packagist.org/packages/pocketarc/laravel-integrations)
 [![PHP 8.2+](https://img.shields.io/badge/PHP-8.2%2B-8892BF?logo=php)](https://www.php.net/)
@@ -37,7 +37,7 @@ Full documentation is available at **[laravel-integrations docs](docs/getting-st
 
 ## Official adapters
 
-The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) provides ready-to-use adapters for GitHub, Zendesk, Stripe, and Postmark.
+The companion package [`pocketarc/laravel-integrations-adapters`](https://github.com/solmyrhq/laravel-integrations-adapters) provides ready-to-use adapters for GitHub, Zendesk, Stripe, and Postmark.
 
 ## Contributing
 

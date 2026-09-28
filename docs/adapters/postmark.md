@@ -2,7 +2,7 @@
 
 Wraps the [wildbit/postmark-php](https://github.com/ActiveCampaign/postmark-php) SDK. Three jobs: bridges Postmark credentials into Laravel's mail config so `Mail::send()` works without `.env` tokens; ingests Postmark webhooks with both a catch-all event and one typed event per `RecordType`; covers the bounces, suppressions, messages, server-stats, and webhook-endpoint APIs.
 
-Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/pocketarc/laravel-integrations-adapters) package.
+Part of the [`pocketarc/laravel-integrations-adapters`](https://github.com/solmyrhq/laravel-integrations-adapters) package.
 
 ## Installation
 
