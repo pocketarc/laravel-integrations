@@ -13,7 +13,9 @@ concurrency:
 jobs:
     claude-review:
         name: Review pull request
-        if: contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
+        # A member's PR from a fork still has a trusted author_association, but GitHub withholds secrets from that
+        # run, so claude-code-action would fail without CLAUDE_CODE_OAUTH_TOKEN.
+        if: github.event.pull_request.head.repo.full_name == github.repository && contains(fromJSON('["OWNER", "MEMBER", "COLLABORATOR"]'), github.event.pull_request.author_association)
         runs-on: ubuntu-latest
         # claude-code-action posts the review with its Claude GitHub App token, which it gets through an OIDC
         # exchange, so pull-requests and issues permissions are left out here.
