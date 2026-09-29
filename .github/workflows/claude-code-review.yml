@@ -44,7 +44,7 @@ jobs:
                       contents: read
                       actions: read
 
-                  base_branch: main
+                  base_branch: ${{ github.event.pull_request.base.ref }}
 
                   # With a prompt and no track_progress, the action runs in agent mode. In agent mode it starts
                   # the inline-comment and CI MCP servers only when their tools are listed in --allowedTools.
